@@ -1,0 +1,17 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cmd /c \"cd /d c:\\\\Users\\\\Dani\\\\Downloads\\\\sailing-community-landing-page \\(1\\) && npx tsc --noEmit\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "npx tsc": true,
+        "/^node -e \"const fs=require\\('fs'\\);const p='c:/Users/Dani/Downloads/sailing-community-landing-page \\(1\\)/components/auth-gate-modal\\.tsx';let t=fs\\.readFileSync\\(p,'utf8'\\);const old='                  \\}\\)\\)\\\\r\\\\n';const newt='                  \\)\\}\\\\r\\\\n';if\\(!t\\.includes\\(old\\)\\)\\{throw 'pattern not found';\\}fs\\.writeFileSync\\(p,t\\.replace\\(old,newt\\),'utf8'\\);console\\.log\\('replaced'\\);\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node -e \"const fs=require\\('fs'\\);const p='c:/Users/Dani/Downloads/sailing-community-landing-page \\(1\\)/components/auth-gate-modal\\.tsx';const t=fs\\.readFileSync\\(p,'utf8'\\);const idx=t\\.indexOf\\('\\}\\}\\)'\\);console\\.log\\(idx\\);if\\(idx!==-1\\)\\{console\\.log\\(JSON\\.stringify\\(t\\.slice\\(idx-20, idx\\+10\\)\\)\\);\\}\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
