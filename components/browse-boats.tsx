@@ -18,6 +18,7 @@ import {
 import { AuthGateModal } from "@/components/auth-gate-modal"
 import { supabase } from "@/lib/supabase"
 import type { Commitment, Level } from "@/lib/mock-data"
+import { isAdVisibleByDate } from "@/lib/ad-visibility"
 
 type ListingPost = "mancsaft" | "kormanyos" | "barmilyen"
 
@@ -228,7 +229,7 @@ export function BrowseBoats() {
       setLoadError(null)
       const { data, error } = await supabase
         .from("ads")
-        .select("id, title, date_text, location, positions, commitment, experience_level, boat:boats(id, name, image_url), applications(id, user_id)")
+        .select("id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url), applications(id, user_id)")
         .eq("is_active", true)
         .order("created_at", { ascending: false })
 
@@ -255,7 +256,9 @@ export function BrowseBoats() {
         }
       }
 
-      const mapped: ListingRow[] = (data ?? []).map((ad: any) => {
+      const visibleAds = (data ?? []).filter((ad: any) => isAdVisibleByDate(ad))
+
+      const mapped: ListingRow[] = visibleAds.map((ad: any) => {
         const postValue = normalizePost(ad.positions?.[0])
 
         return {

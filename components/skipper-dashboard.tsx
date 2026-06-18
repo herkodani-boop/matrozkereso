@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AuthGateModal } from "@/components/auth-gate-modal"
+import { isAdVisibleByDate } from "@/lib/ad-visibility"
 
 type ApplicantStatus = "pending" | "accepted" | "rejected"
 
@@ -356,8 +357,10 @@ export function SkipperDashboard() {
         return
       }
 
-      if (adsData && Array.isArray(adsData) && adsData.length > 0) {
-        const mapped: Listing[] = adsData.map((ad: any) => ({
+      const visibleAds = (adsData ?? []).filter((ad: any) => isAdVisibleByDate(ad))
+
+      if (visibleAds.length > 0) {
+        const mapped: Listing[] = visibleAds.map((ad: any) => ({
           id: ad.id,
           event: ad.title,
           location: ad.location,
@@ -374,7 +377,7 @@ export function SkipperDashboard() {
         }
 
         // Pending számok lekérése az összes hirdetéshez
-        const adIds = adsData.map((ad: any) => ad.id)
+        const adIds = visibleAds.map((ad: any) => ad.id)
         const { data: pendingApps } = await supabase
           .from("applications")
           .select("ad_id")

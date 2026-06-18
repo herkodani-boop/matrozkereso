@@ -1,13 +1,15 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { LogOut, Sailboat, Bell } from "lucide-react"
+import { LogOut, Bell, User } from "lucide-react"
 import { type User } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
 import { AuthGateModal } from "@/components/auth-gate-modal"
 import { supabase } from "@/lib/supabase"
+import { isAdVisibleByDate } from "@/lib/ad-visibility"
 
 type UserProfile = {
   full_name: string
@@ -43,11 +45,11 @@ export function SiteNavbar() {
 
     const { data: ads } = await supabase
       .from("ads")
-      .select("id")
+      .select("id, commitment, start_date, end_date")
       .eq("boat_id", boats.id)
       .eq("is_active", true)
 
-    const adIds = (ads ?? []).map((a: any) => a.id)
+    const adIds = (ads ?? []).filter((a: any) => isAdVisibleByDate(a)).map((a: any) => a.id)
     if (adIds.length === 0) return
 
     const { count } = await supabase
@@ -121,8 +123,8 @@ export function SiteNavbar() {
       <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Sailboat className="h-5 w-5" aria-hidden="true" />
+            <span className="relative h-9 w-9 overflow-hidden rounded-lg">
+              <Image src="/logo-mark.png" alt="Matrózkereső logó" fill className="object-cover" sizes="36px" />
             </span>
             <span className="text-base font-semibold tracking-tight text-foreground">Matrózkereső</span>
           </Link>
@@ -170,6 +172,14 @@ export function SiteNavbar() {
                     {roleLabel(profile.role)}
                   </p>
                 </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-10 rounded-full px-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={() => router.push("/profil")}
+                >
+                  <User className="h-4 w-4" aria-hidden="true" />
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"

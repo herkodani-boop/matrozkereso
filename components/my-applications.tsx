@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { supabase } from "@/lib/supabase"
+import { isAdVisibleByDate } from "@/lib/ad-visibility"
 import type { User } from "@supabase/supabase-js"
 
 type ApplicationRow = {
@@ -18,6 +19,9 @@ type ApplicationRow = {
     title: string
     location: string
     date_text: string
+    commitment?: string | null
+    start_date?: string | null
+    end_date?: string | null
     boat: {
       name: string
       image_url: string | null
@@ -81,11 +85,11 @@ export function MyApplications() {
 
       const { data, error } = await supabase
         .from("applications")
-        .select("id, status, ad:ads!inner(id, title, location, date_text, is_active, boat:boats(name, image_url))")
+        .select("id, status, ad:ads!inner(id, title, location, date_text, is_active, commitment, start_date, end_date, boat:boats(name, image_url))")
         .eq("user_id", user.id)
         .eq("ad.is_active", true)
         .order("created_at", { ascending: false })
-        .limit(MAX_SHOWN)
+        .limit(20)
 
       if (error) {
         console.error("Jelentkezések lekérdezési hiba:", error)
@@ -94,7 +98,11 @@ export function MyApplications() {
         return
       }
 
-      setApplications((data ?? []) as ApplicationRow[])
+      const visibleApplications = ((data ?? []) as ApplicationRow[])
+        .filter((row) => (row.ad ? isAdVisibleByDate(row.ad) : false))
+        .slice(0, MAX_SHOWN)
+
+      setApplications(visibleApplications)
       setLoading(false)
     }
 

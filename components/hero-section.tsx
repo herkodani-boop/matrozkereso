@@ -23,7 +23,7 @@ export function HeroSection() {
             Találd meg a csapatod.
           </h1>
           <p className="mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-primary-foreground/80">
-            A magyar nagyhajós vitorlázó közösség dedikált legénységtoborzó platformja.
+            A magyar nagyhajós vitorlázó közösség dedikált legénységi toborzó platformja. Keress legénységet vagy vitorlázz másokkal!
           </p>
         </div>
       </div>

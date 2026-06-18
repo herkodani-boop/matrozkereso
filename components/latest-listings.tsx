@@ -7,6 +7,7 @@ import { CalendarDays, MapPin, ArrowRight, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { supabase } from "@/lib/supabase"
+import { isAdVisibleByDate } from "@/lib/ad-visibility"
 
 type ListingPreview = {
   id: string
@@ -29,10 +30,10 @@ export function LatestListings() {
     const fetchListings = async () => {
       const { data, error } = await supabase
         .from("ads")
-        .select("id, title, location, date_text, positions, boat:boats(name, image_url), applications(id)")
+        .select("id, title, location, date_text, positions, commitment, start_date, end_date, boat:boats(name, image_url), applications(id)")
         .eq("is_active", true)
         .order("created_at", { ascending: false })
-        .limit(4)
+        .limit(20)
 
       if (error) {
         console.error("Élő hirdetések lekérdezési hiba:", error)
@@ -40,7 +41,10 @@ export function LatestListings() {
         return
       }
 
-      const mapped: ListingPreview[] = (data ?? []).map((ad: any) => ({
+      const mapped: ListingPreview[] = (data ?? [])
+        .filter((ad: any) => isAdVisibleByDate(ad))
+        .slice(0, 4)
+        .map((ad: any) => ({
         id: ad.id,
         title: ad.title ?? "",
         location: ad.location ?? "",
@@ -92,7 +96,7 @@ export function LatestListings() {
         <div className="mb-8 flex items-end justify-between">
           <div>
             <h2 className="text-balance text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-              Nyitott szabad helyek
+              Aktuális lehetőségek
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Frissen feladott hirdetések — lehet, hogy a te helyeden vár egy hajó.
