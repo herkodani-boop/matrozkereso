@@ -1496,12 +1496,21 @@ function BoatRegistrationModal({
               ) : null}
             </div>
 
-            <Button type="submit" size="lg" disabled={isSaving} className="mt-2 h-11 bg-accent! text-accent-foreground! hover:bg-accent/90! disabled:cursor-not-allowed disabled:opacity-50">
-              {isSaving ? "Mentés folyamatban..." : "Hajó mentése és Tovább a hirdetéshez"}
+            <Button
+              type="submit"
+              size="lg"
+              disabled={isSaving || isOptimizingImage}
+              className="mt-2 h-11 bg-accent! text-accent-foreground! hover:bg-accent/90! disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isOptimizingImage
+                ? "Kép optimalizálása..."
+                : isSaving
+                  ? "Mentés folyamatban..."
+                  : "Hajó mentése és Tovább a hirdetéshez"}
             </Button>
           </form>
         </div>
       </DialogContent>
-              disabled={isSaving || isOptimizingImage}
+      </Dialog>
   )
-              {isOptimizingImage ? "Kép optimalizálása..." : isSaving ? "Mentés..." : "Hajó mentése"}
+    }
