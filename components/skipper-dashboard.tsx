@@ -244,6 +244,89 @@ const crewTypeOptions = [
   { value: "tura", label: "Túra / Hobbi vitorlázás" },
 ]
 
+const MAX_BOAT_IMAGE_DIMENSION = 1600
+const TARGET_BOAT_IMAGE_SIZE_BYTES = 900 * 1024
+const MAX_BOAT_IMAGE_UPLOAD_SIZE_BYTES = 12 * 1024 * 1024
+
+async function loadImageElement(file: File): Promise<{ image: HTMLImageElement; revoke: () => void }> {
+  const objectUrl = URL.createObjectURL(file)
+
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error("A kép betöltése sikertelen."))
+    img.src = objectUrl
+  })
+
+  return {
+    image,
+    revoke: () => URL.revokeObjectURL(objectUrl),
+  }
+}
+
+async function optimizeBoatImage(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) {
+    return file
+  }
+
+  const { image, revoke } = await loadImageElement(file)
+
+  try {
+    const width = image.naturalWidth || image.width
+    const height = image.naturalHeight || image.height
+
+    if (!width || !height) {
+      return file
+    }
+
+    const scale = Math.min(1, MAX_BOAT_IMAGE_DIMENSION / Math.max(width, height))
+    const targetWidth = Math.max(1, Math.round(width * scale))
+    const targetHeight = Math.max(1, Math.round(height * scale))
+
+    const canvas = document.createElement("canvas")
+    canvas.width = targetWidth
+    canvas.height = targetHeight
+
+    const ctx = canvas.getContext("2d")
+    if (!ctx) {
+      return file
+    }
+
+    ctx.drawImage(image, 0, 0, targetWidth, targetHeight)
+
+    const qualities = [0.82, 0.74, 0.66, 0.58]
+    let bestBlob: Blob | null = null
+
+    for (const quality of qualities) {
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/webp", quality)
+      })
+
+      if (!blob) {
+        continue
+      }
+
+      if (!bestBlob || blob.size < bestBlob.size) {
+        bestBlob = blob
+      }
+
+      if (blob.size <= TARGET_BOAT_IMAGE_SIZE_BYTES) {
+        bestBlob = blob
+        break
+      }
+    }
+
+    if (!bestBlob || bestBlob.size >= file.size) {
+      return file
+    }
+
+    const safeName = file.name.replace(/\.[^.]+$/, "") || "boat-photo"
+    return new File([bestBlob], `${safeName}.webp`, { type: "image/webp" })
+  } finally {
+    revoke()
+  }
+}
+
 export function SkipperDashboard() {
   const [listings, setListings] = useState<Listing[]>([])
   const [selectedId, setSelectedId] = useState<string>("")
@@ -1100,6 +1183,7 @@ function BoatRegistrationModal({
   const [crewType, setCrewType] = useState("")
   const [boatPhoto, setBoatPhoto] = useState<File | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [isOptimizingImage, setIsOptimizingImage] = useState(false)
   const [errors, setErrors] = useState<{
     name?: string
     type?: string
@@ -1140,6 +1224,10 @@ function BoatRegistrationModal({
       newErrors.boatPhoto = "Hajó fotó feltöltése kötelező."
     }
 
+    if (boatPhoto && boatPhoto.size > MAX_BOAT_IMAGE_UPLOAD_SIZE_BYTES) {
+      newErrors.boatPhoto = "A kép túl nagy. Maximum 12 MB méretű fájl tölthető fel."
+    }
+
     if (!user) {
       newErrors.submit = "Be kell jelentkezned, hogy el tudd menteni a hajót."
     }
@@ -1155,13 +1243,17 @@ function BoatRegistrationModal({
     try {
       let imageUrl: string | null = null
       if (boatPhoto) {
-        const fileExt = boatPhoto.name.split(".").pop() ?? "jpg"
+        setIsOptimizingImage(true)
+        const uploadFile = await optimizeBoatImage(boatPhoto)
+        setIsOptimizingImage(false)
+
+        const fileExt = uploadFile.name.split(".").pop() ?? "webp"
         const fileName = `${user?.id}-${Date.now()}.${fileExt}`
         const filePath = `boats/${fileName}`
 
         const { error: uploadError } = await supabase.storage
           .from("boats")
-          .upload(filePath, boatPhoto)
+          .upload(filePath, uploadFile)
 
         if (uploadError) {
           setErrors({ submit: uploadError.message })
@@ -1205,6 +1297,7 @@ function BoatRegistrationModal({
       onOpenChange(false)
       router.push("/kapitany-dashboard")
     } finally {
+      setIsOptimizingImage(false)
       setIsSaving(false)
     }
   }
@@ -1334,6 +1427,9 @@ function BoatRegistrationModal({
                 <span className="text-sm font-medium">
                   {boatPhoto ? boatPhoto.name : "Kép feltöltése a hajóról"}
                 </span>
+                <span className="text-xs text-muted-foreground">
+                  A feltöltött kép automatikusan optimalizálva lesz a gyors betöltéshez.
+                </span>
                 <input
                   id="boat-photo"
                   type="file"
@@ -1406,6 +1502,6 @@ function BoatRegistrationModal({
           </form>
         </div>
       </DialogContent>
-    </Dialog>
+              disabled={isSaving || isOptimizingImage}
   )
-}
+              {isOptimizingImage ? "Kép optimalizálása..." : isSaving ? "Mentés..." : "Hajó mentése"}
