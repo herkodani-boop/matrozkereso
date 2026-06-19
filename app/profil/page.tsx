@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { ArrowLeft, Save, RotateCcw, Trash2, UserRound, Camera } from "lucide-react"
+import { ArrowLeft, Save, RotateCcw, Trash2, UserRound, Camera, KeyRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -56,6 +56,9 @@ export default function ProfilPage() {
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteText, setDeleteText] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmNewPassword, setConfirmNewPassword] = useState("")
+  const [passwordSaving, setPasswordSaving] = useState(false)
 
   useEffect(() => {
     return () => {
@@ -267,6 +270,40 @@ export default function ProfilPage() {
     }
   }
 
+  async function handlePasswordUpdate(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setNotice(null)
+
+    if (!newPassword || newPassword.length < 8) {
+      setError("Az új jelszónak legalább 8 karakter hosszúnak kell lennie.")
+      return
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setError("A két új jelszó nem egyezik.")
+      return
+    }
+
+    setPasswordSaving(true)
+    try {
+      const { error: passwordError } = await supabase.auth.updateUser({
+        password: newPassword,
+      })
+
+      if (passwordError) {
+        setError(passwordError.message)
+        return
+      }
+
+      setNewPassword("")
+      setConfirmNewPassword("")
+      setNotice("Jelszó sikeresen módosítva.")
+    } finally {
+      setPasswordSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <main className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-3xl items-center px-4 py-10 sm:px-6">
@@ -376,6 +413,50 @@ export default function ProfilPage() {
               Módosítások elvetése
             </Button>
           </div>
+        </form>
+      </section>
+
+      <section className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
+        <header className="mb-4">
+          <h2 className="text-lg font-semibold text-foreground">Jelszó módosítása</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Állíts be új jelszót a fiókodhoz.</p>
+        </header>
+
+        <form onSubmit={handlePasswordUpdate} className="flex flex-col gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="profile-new-password">Új jelszó</Label>
+              <Input
+                id="profile-new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Legalább 8 karakter"
+                className="h-11"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="profile-confirm-new-password">Új jelszó megerősítése</Label>
+              <Input
+                id="profile-confirm-new-password"
+                type="password"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+                placeholder="Írd be újra az új jelszót"
+                className="h-11"
+              />
+            </div>
+          </div>
+
+          <Button
+            type="submit"
+            disabled={passwordSaving || !newPassword || !confirmNewPassword}
+            className="h-11 w-full bg-accent! text-accent-foreground! hover:bg-accent/90! sm:w-fit"
+          >
+            <KeyRound className="h-4 w-4" aria-hidden="true" />
+            {passwordSaving ? "Jelszó mentése..." : "Jelszó frissítése"}
+          </Button>
         </form>
       </section>
 

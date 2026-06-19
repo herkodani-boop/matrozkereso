@@ -55,6 +55,22 @@ const crewTypeOptions: { value: string; label: string }[] = [
   { value: "tura", label: "Túra / Hobbi vitorlázás" },
 ]
 
+function buildResetPasswordRedirectUrl() {
+  const configuredBaseUrl =
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim()
+
+  if (configuredBaseUrl) {
+    try {
+      return new URL("/reset-password", configuredBaseUrl).toString()
+    } catch {
+      // Hibás env esetén visszaesünk az aktuális originre.
+    }
+  }
+
+  return `${window.location.origin}/reset-password`
+}
+
 type View = "login" | "register" | "boat" | "listing" | "forgot"
 type Mode = "sailor" | "skipper"
 
@@ -183,7 +199,7 @@ export function AuthGateModal({
     setLoading(true)
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: buildResetPasswordRedirectUrl(),
       })
       if (error) {
         setFormError(error.message)
