@@ -252,7 +252,7 @@ async function loadImageElement(file: File): Promise<{ image: HTMLImageElement; 
   const objectUrl = URL.createObjectURL(file)
 
   const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image()
+    const img = new window.Image()
     img.onload = () => resolve(img)
     img.onerror = () => reject(new Error("A kép betöltése sikertelen."))
     img.src = objectUrl
@@ -1296,6 +1296,9 @@ function BoatRegistrationModal({
       onBoatSaved(insertedBoat)
       onOpenChange(false)
       router.push("/kapitany-dashboard")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Ismeretlen hiba történt a mentés közben."
+      setErrors({ submit: message })
     } finally {
       setIsOptimizingImage(false)
       setIsSaving(false)
