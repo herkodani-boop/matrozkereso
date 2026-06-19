@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Image from "next/image"
-import Link from "next/link"
-import { CalendarDays, MapPin, Anchor, ArrowRight, X } from "lucide-react"
+import { CalendarDays, MapPin, Anchor, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -160,7 +159,7 @@ export function MyApplications() {
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-      <div className="mb-6 flex items-end justify-between">
+      <div className="mb-6">
         <div>
           <h2 className="text-balance text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             Legutóbbi jelentkezéseim
@@ -169,13 +168,6 @@ export function MyApplications() {
             Az általad beküldött legutóbbi {MAX_SHOWN} jelentkezés állapota.
           </p>
         </div>
-        <Link
-          href="/bongeszes"
-          className="hidden items-center gap-1.5 text-sm font-medium text-accent underline-offset-4 hover:underline sm:flex"
-        >
-          Összes böngészése
-          <ArrowRight className="h-4 w-4" aria-hidden="true" />
-        </Link>
       </div>
 
       {fetchError ? (
@@ -253,13 +245,6 @@ export function MyApplications() {
         })}
       </div>
 
-      <Link
-        href="/bongeszes"
-        className="mt-4 flex items-center gap-1.5 text-sm font-medium text-accent underline-offset-4 hover:underline sm:hidden"
-      >
-        Összes böngészése
-        <ArrowRight className="h-4 w-4" aria-hidden="true" />
-      </Link>
     </section>
   )
 }

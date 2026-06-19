@@ -56,15 +56,27 @@ const crewTypeOptions: { value: string; label: string }[] = [
 ]
 
 function buildResetPasswordRedirectUrl() {
+  const runtimeOrigin = typeof window !== "undefined" ? window.location.origin : ""
+  const runtimeHost = runtimeOrigin ? new URL(runtimeOrigin).hostname.toLowerCase() : ""
+
+  if (runtimeOrigin && runtimeHost !== "localhost" && runtimeHost !== "127.0.0.1") {
+    return `${runtimeOrigin}/reset-password`
+  }
+
   const configuredBaseUrl =
     process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
     process.env.NEXT_PUBLIC_APP_URL?.trim()
 
   if (configuredBaseUrl) {
     try {
-      return new URL("/reset-password", configuredBaseUrl).toString()
+      const parsed = new URL(configuredBaseUrl)
+      const host = parsed.hostname.toLowerCase()
+
+      if (host !== "localhost" && host !== "127.0.0.1") {
+        return new URL("/reset-password", parsed).toString()
+      }
     } catch {
-      // Hibás env esetén visszaesünk az aktuális originre.
+      // Hibás env esetén az utolsó fallback ágra megyünk.
     }
   }
 
