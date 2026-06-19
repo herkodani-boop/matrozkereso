@@ -50,7 +50,7 @@ function DialogContent({
   return (
     <DialogPortal>
       <DialogOverlay />
-      <DialogPrimitive.Viewport className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-y-contain p-4 touch-pan-y [-webkit-overflow-scrolling:touch] sm:p-0">
+      <DialogPrimitive.Viewport className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-y-contain p-4 touch-pan-y [-webkit-overflow-scrolling:touch] sm:items-center sm:p-0">
         <DialogPrimitive.Popup
           data-slot="dialog-content"
           className={cn(
