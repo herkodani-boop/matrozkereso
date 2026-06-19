@@ -46,10 +46,15 @@ Ez az oldal egy magyar nagyhajós vitorlázó közösséghez készült crew-matc
 - Aktív hirdetések listázása.
 - Szűrés az alábbiak szerint:
   - elköteleződés típusa
-  - keresett pozíció
+  - keresett pozíció (multi-select dropdown)
   - tapasztalati szint
 - Hirdetések rendezése a legfrissebbek szerint.
-- Megjeleníti a hajó nevét, képét, helyszínt, dátumot és a jelentkezők számát.
+- Megjeleníti a hajó nevét, képét, helyszínt, dátumot, szükséges posztokat és a jelentkezők számát.
+- A "További részletek" gombbal kártyán belül megjeleníthető:
+  - kapitány neve
+  - kapitány profilképe
+  - hirdetéshez fűzött kapitányi megjegyzés
+- Egyszerre egy kártya részletei lehetnek nyitva.
 - Jelentkezés gombbal lehet csatlakozni a kiválasztott hirdetéshez.
 - Bejelentkezés nélkül auth modal nyílik meg.
 - Saját jelentkezés visszavonása.
@@ -74,6 +79,8 @@ Ez az oldal egy magyar nagyhajós vitorlázó közösséghez készült crew-matc
 - Aktív hirdetések kezelése.
 - Hirdetés lezárása.
 - Hirdetés törlése.
+- A lezárás és törlés ikonok mobilon is láthatók, nem csak hover állapotban.
+- A lezárás és törlés műveletekhez tooltip tartozik.
 - Hirdetésekhez érkező jelentkezők megtekintése.
 - Jelentkezők elfogadása vagy elutasítása.
 - Pending jelentkezések számának követése.
@@ -87,8 +94,15 @@ Ez az oldal egy magyar nagyhajós vitorlázó közösséghez készült crew-matc
   - kezdő dátum
   - végdátum vagy egynapos esemény
   - elköteleződés típusa
-  - keresett poszt
+  - keresett posztok (többes kiválasztás)
+    - Kormányos
+    - Taktikus
+    - Main Trim
+    - Jib trim
+    - Mast
+    - Fordeck
   - elvárt tapasztalati szint
+  - rövid, opcionális kapitányi megjegyzés
 - A rendszer ellenőrzi a kötelező mezőket.
 - A hirdetés mentése után megjelenik a böngészésben.
 
@@ -112,9 +126,19 @@ Ez az oldal egy magyar nagyhajós vitorlázó közösséghez készült crew-matc
 ## Navigáció és megjelenés
 
 - Rögzített felső navigációval rendelkezik.
-- Láblécben súgó, ÁSZF és kapcsolat linkek vannak.
+- Láblécben elérhető:
+  - Súgó oldal
+  - ÁSZF oldal
+  - Adatkezelési tájékoztató oldal
+  - kattintható kapcsolat e-mail cím
 - Reszponzív kialakítás mobilra és asztali nézetre.
 - Kártyás, vizuálisan kiemelt felületet használ a fontos funkciókhoz.
+
+## Jogi és tájékoztató oldalak
+
+- Külön ÁSZF oldal.
+- Külön Adatkezelési Tájékoztató oldal.
+- Külön Súgó oldal gyakori kérdésekkel és gyors induló leírással.
 
 ## Backend és adatok
 
@@ -128,4 +152,4 @@ Ez az oldal egy magyar nagyhajós vitorlázó közösséghez készült crew-matc
 
 ## Röviden
 
-Az oldal fő értéke, hogy egy helyen köti össze a hajókat kereső kapitányokat és a fedélzetre jelentkező vitorlázókat, miközben kezeli a regisztrációt, belépést, jelszó-visszaállítást, hirdetéskezelést és jelentkezéskezelést is.
+Az oldal fő értéke, hogy egy helyen köti össze a hajókat kereső kapitányokat és a fedélzetre jelentkező vitorlázókat, miközben kezeli a regisztrációt, belépést, jelszó-visszaállítást, hirdetéskezelést, jelentkezéskezelést és a jogi tájékoztatásokat is.

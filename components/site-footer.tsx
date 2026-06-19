@@ -2,9 +2,9 @@ import Link from "next/link"
 import Image from "next/image"
 
 const links = [
-  { label: "Súgó", href: "#sugo" },
-  { label: "ÁSZF", href: "#aszf" },
-  { label: "Kapcsolat", href: "#kapcsolat" },
+  { label: "Súgó", href: "/sugo" },
+  { label: "ÁSZF", href: "/aszf" },
+  { label: "Adatkezelés", href: "/adatkezelesi-tajekoztato" },
 ]
 
 export function SiteFooter() {
@@ -30,9 +30,12 @@ export function SiteFooter() {
           ))}
         </nav>
 
-        <p className="text-sm text-muted-foreground">
-          {"\u00A9"} {new Date().getFullYear()} Matrózkereső
-        </p>
+        <div className="flex flex-col items-center gap-1 text-sm text-muted-foreground sm:items-end">
+          <p>{"\u00A9"} {new Date().getFullYear()} Matrózkereső</p>
+          <Link href="mailto:matrozkereso@gmail.com" className="transition-colors hover:text-foreground">
+            matrozkereso@gmail.com
+          </Link>
+        </div>
       </div>
     </footer>
   )

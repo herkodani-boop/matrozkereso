@@ -35,11 +35,14 @@ const postOptions: Record<string, string> = {
   mindegy: "Mindegy / Súlynak jövök",
 }
 
-const listingPostOptions: Record<string, string> = {
-  mancsaft: "Mancsaft",
-  kormanyos: "Kormányos",
-  barmilyen: "Bármilyen",
-}
+const listingPostOptions: { value: string; label: string }[] = [
+  { value: "kormanyos", label: "Kormányos" },
+  { value: "taktikus", label: "Taktikus" },
+  { value: "main-trim", label: "Main Trim" },
+  { value: "jib-trim", label: "Jib trim" },
+  { value: "mast", label: "Mast" },
+  { value: "fordeck", label: "Fordeck" },
+]
 
 const commitmentOptions: Record<string, string> = {
   "egy-verseny": "Csak egy konkrét versenyre / hétvégére",
@@ -89,8 +92,9 @@ export function AuthGateModal({
   const [boatCrewSize, setBoatCrewSize] = useState("")
   const [crewType, setCrewType] = useState<string>("amator")
   const [listingCommitment, setListingCommitment] = useState<string>("egy-verseny")
-  const [listingPost, setListingPost] = useState<string>("mancsaft")
+  const [listingPosts, setListingPosts] = useState<string[]>([])
   const [listingLevel, setListingLevel] = useState<string>("kezdo")
+  const [listingNote, setListingNote] = useState("")
   const [listingTitle, setListingTitle] = useState("")
   const [listingLocation, setListingLocation] = useState("")
   const [listingStartDate, setListingStartDate] = useState("")
@@ -137,10 +141,24 @@ export function AuthGateModal({
     setListingEndDate("")
     setListingOneDay(false)
     setListingCommitment("egy-verseny")
-    setListingPost("mancsaft")
+    setListingPosts([])
     setListingLevel("kezdo")
+    setListingNote("")
     setListingErrors({})
     setIsListingSaving(false)
+  }
+
+  function toggleListingPost(value: string) {
+    setListingPosts((prev) => {
+      if (prev.includes(value)) {
+        return prev.filter((item) => item !== value)
+      }
+      return [...prev, value]
+    })
+
+    if (listingErrors.post) {
+      setListingErrors((prev) => ({ ...prev, post: undefined }))
+    }
   }
 
   // Megnyitáskor a kért nézetre ugrunk; skipper esetén alapból a regisztráció.
@@ -489,8 +507,8 @@ export function AuthGateModal({
       newErrors.date = "A végdátumnak nem lehet korábbi a kezdő dátumnál."
     }
 
-    if (!listingPost) {
-      newErrors.post = "Keresett poszt kiválasztása kötelező."
+    if (listingPosts.length === 0) {
+      newErrors.post = "Legalább egy keresett poszt kiválasztása kötelező."
     }
 
     if (!listingLevel) {
@@ -514,27 +532,46 @@ export function AuthGateModal({
     setIsListingSaving(true)
 
     try {
-      const positions = [listingPost]
+      const positions = listingPosts
       const dateText = formatDateText(listingStartDate, listingEndDate, listingOneDay)
-      const { error } = await supabase.from("ads").insert([
-        {
-          boat_id: boatId,
-          user_id: userId,
-          title: listingTitle.trim(),
-          date_text: dateText,
-          start_date: listingStartDate || null,
-          end_date: (!listingOneDay && listingEndDate) ? listingEndDate : null,
-          commitment: listingCommitment,
-          location: listingLocation.trim(),
-          positions,
-          experience_level: listingLevel,
-          created_at: new Date().toISOString(),
-        },
-      ])
+      const listingPayload = {
+        boat_id: boatId,
+        user_id: userId,
+        title: listingTitle.trim(),
+        date_text: dateText,
+        start_date: listingStartDate || null,
+        end_date: (!listingOneDay && listingEndDate) ? listingEndDate : null,
+        commitment: listingCommitment,
+        location: listingLocation.trim(),
+        positions,
+        experience_level: listingLevel,
+        captain_note: listingNote.trim() || null,
+        created_at: new Date().toISOString(),
+      }
+
+      const { error } = await supabase.from("ads").insert([listingPayload])
 
       if (error) {
-        setListingErrors({ submit: error.message })
-        return
+        // Backward compatibility: if captain_note column is not deployed yet, save without it.
+        const isUnknownColumn = String(error.code ?? "") === "42703"
+          || /column/i.test(error.message ?? "")
+
+        if (!isUnknownColumn) {
+          setListingErrors({ submit: error.message })
+          return
+        }
+
+        const { error: fallbackError } = await supabase.from("ads").insert([
+          {
+            ...listingPayload,
+            captain_note: undefined,
+          },
+        ])
+
+        if (fallbackError) {
+          setListingErrors({ submit: fallbackError.message })
+          return
+        }
       }
 
       onListingCreated?.()
@@ -1244,30 +1281,53 @@ export function AuthGateModal({
                   </div>
                 ) : null}
 
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="listing-post">Keresett poszt</Label>
-                  <Select value={listingPost} onValueChange={(v) => {
-                    setListingPost(v as string)
-                    if (listingErrors.post) {
-                      setListingErrors((prev) => ({ ...prev, post: undefined }))
-                    }
-                  }}>
-                    <SelectTrigger id="listing-post" className="h-11 w-full">
-                      <SelectValue>{(v: string) => listingPostOptions[v] ?? "Válassz"}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(listingPostOptions).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <Label htmlFor="listing-post">Keresett poszt(ok)</Label>
+                  <div id="listing-post" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {listingPostOptions.map((option) => {
+                      const checked = listingPosts.includes(option.value)
+                      return (
+                        <label
+                          key={option.value}
+                          className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-sm transition-colors hover:border-accent/50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleListingPost(option.value)}
+                            className="h-4 w-4 rounded border-border text-accent accent-accent"
+                          />
+                          <span className="font-medium text-foreground">{option.label}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                  {listingPosts.length > 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Kiválasztva: {listingPosts
+                        .map((value) => listingPostOptions.find((option) => option.value === value)?.label ?? value)
+                        .join(", ")}
+                    </p>
+                  ) : null}
                   {listingErrors.post ? (
                     <p className="text-sm text-destructive" role="alert">
                       {listingErrors.post}
                     </p>
                   ) : null}
+                </div>
+
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <Label htmlFor="listing-note">Megjegyzés a hirdetéshez (opcionális)</Label>
+                  <textarea
+                    id="listing-note"
+                    value={listingNote}
+                    onChange={(e) => setListingNote(e.target.value.slice(0, 300))}
+                    maxLength={300}
+                    rows={3}
+                    placeholder="Pl. összeszokott csapat vagyunk, versenytapasztalat előny, indulás péntek este..."
+                    className="min-h-[88px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  />
+                  <p className="text-xs text-muted-foreground">{listingNote.length}/300 karakter</p>
                 </div>
 
                 <div className="flex flex-col gap-1.5">

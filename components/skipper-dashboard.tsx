@@ -207,6 +207,11 @@ function formatPositionLabel(positionRaw: unknown) {
     .replace(/[\u0300-\u036f]/g, "")
 
   if (normalized === "kormanyos") return "Kormányos"
+  if (normalized === "taktikus") return "Taktikus"
+  if (normalized === "main-trim" || normalized === "main trim") return "Main Trim"
+  if (normalized === "jib-trim" || normalized === "jib trim") return "Jib trim"
+  if (normalized === "mast") return "Mast"
+  if (normalized === "fordeck" || normalized === "foredeck") return "Fordeck"
   if (normalized === "barmilyen" || normalized === "mindegy" || normalized === "egyeb") return "Bármilyen"
   if (normalized === "mancsaft" || normalized === "matroz" || normalized === "trimmer") return "Mancsaft"
   if (!normalized) return "Legénység"
@@ -263,7 +268,7 @@ export function SkipperDashboard() {
         return
       }
 
-      setUser(currentUser)
+      setUser((prev) => (prev?.id === currentUser.id ? prev : currentUser))
       const { data: profileData, error: profileError } = await supabase
         .from("users")
         .select("full_name, role, avatar_url")
@@ -369,12 +374,20 @@ export function SkipperDashboard() {
           applicants: [],
         }))
 
-        setListings(mapped)
-        if (mapped.length > 0 && mapped[0]?.id) {
-          setSelectedId(mapped[0].id)
-        } else {
-          setSelectedId("")
-        }
+        setListings((prev) => {
+          const previousById = new Map(prev.map((listing) => [listing.id, listing]))
+          return mapped.map((listing) => ({
+            ...listing,
+            applicants: previousById.get(listing.id)?.applicants ?? [],
+          }))
+        })
+
+        setSelectedId((prev) => {
+          if (prev && mapped.some((listing) => listing.id === prev)) {
+            return prev
+          }
+          return mapped[0]?.id ?? ""
+        })
 
         // Pending számok lekérése az összes hirdetéshez
         const adIds = visibleAds.map((ad: any) => ad.id)
@@ -735,24 +748,26 @@ export function SkipperDashboard() {
                         <button
                           type="button"
                           aria-label="Hirdetés lezárása"
+                          title="Hirdetés lezárása"
                           disabled={archivingId === listing.id}
                           onClick={(e) => {
                             e.stopPropagation()
                             setConfirmArchiveId(listing.id)
                           }}
-                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-100 transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <Archive className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
                         <button
                           type="button"
                           aria-label="Hirdetés törlése"
+                          title="Hirdetés törlése"
                           disabled={deletingId === listing.id}
                           onClick={(e) => {
                             e.stopPropagation()
                             setConfirmDeleteId(listing.id)
                           }}
-                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-100 transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>

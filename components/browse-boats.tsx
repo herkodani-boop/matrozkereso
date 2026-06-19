@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { User } from "@supabase/supabase-js"
 import Image from "next/image"
-import { Anchor, CalendarDays, MapPin, Users, Award, Sailboat } from "lucide-react"
+import { Anchor, CalendarDays, MapPin, Users, Award, Sailboat, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -20,7 +20,7 @@ import { supabase } from "@/lib/supabase"
 import type { Commitment, Level } from "@/lib/mock-data"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
 
-type ListingPost = "mancsaft" | "kormanyos" | "barmilyen"
+type ListingPost = "kormanyos" | "taktikus" | "main-trim" | "jib-trim" | "mast" | "fordeck" | "barmilyen"
 
 type ListingRow = {
   id: string
@@ -30,11 +30,14 @@ type ListingRow = {
   event: string
   location: string
   date: string
-  role: ListingPost
+  roles: ListingPost[]
   level: Level
   applied: boolean
   applicationId: string | null
   applicationCount: number
+  captainName: string
+  captainAvatar: string | null
+  captainNote: string | null
 }
 
 const commitmentLabels: Record<Commitment, string> = {
@@ -43,8 +46,12 @@ const commitmentLabels: Record<Commitment, string> = {
 }
 
 const roleLabels: Record<ListingPost, string> = {
-  mancsaft: "Mancsaft",
   kormanyos: "Kormányos",
+  taktikus: "Taktikus",
+  "main-trim": "Main Trim",
+  "jib-trim": "Jib trim",
+  mast: "Mast",
+  fordeck: "Fordeck",
   barmilyen: "Bármilyen",
 }
 
@@ -64,8 +71,12 @@ const commitmentFilterLabels: Record<string, string> = {
 
 const postFilterLabels: Record<string, string> = {
   [ALL]: "Összes",
-  mancsaft: "Mancsaft",
   kormanyos: "Kormányos",
+  taktikus: "Taktikus",
+  "main-trim": "Main Trim",
+  "jib-trim": "Jib trim",
+  mast: "Mast",
+  fordeck: "Fordeck",
 }
 
 const levelFilterLabels: Record<string, string> = {
@@ -81,41 +92,79 @@ function normalizePost(positionRaw: unknown): ListingPost {
     .replace(/[\u0300-\u036f]/g, "")
 
   if (normalized === "kormanyos") return "kormanyos"
+  if (normalized === "taktikus") return "taktikus"
+  if (normalized === "main-trim" || normalized === "main trim") return "main-trim"
+  if (normalized === "jib-trim" || normalized === "jib trim") return "jib-trim"
+  if (normalized === "mast") return "mast"
+  if (normalized === "fordeck" || normalized === "foredeck") return "fordeck"
   if (normalized === "barmilyen" || normalized === "mindegy" || normalized === "egyeb") return "barmilyen"
-  if (normalized === "mancsaft" || normalized === "matroz" || normalized === "trimmer") return "mancsaft"
-
-  return "mancsaft"
+  return "barmilyen"
 }
 
 export function BrowseBoats() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
+  const initialPosts = (searchParams.get("post") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value): value is ListingPost => value in roleLabels)
+
   const [commitment, setCommitmentState] = useState<string>(() => searchParams.get("commitment") ?? ALL)
-  const [post, setPostState] = useState<string>(() => searchParams.get("post") ?? ALL)
+  const [posts, setPostsState] = useState<ListingPost[]>(() => Array.from(new Set(initialPosts)))
   const [level, setLevelState] = useState<string>(() => searchParams.get("level") ?? ALL)
+  const [postDropdownOpen, setPostDropdownOpen] = useState(false)
+  const postDropdownRef = useRef<HTMLDivElement | null>(null)
 
   function setCommitment(v: string) {
     setCommitmentState(v)
-    updateUrl({ commitment: v, post, level })
-  }
-  function setPost(v: string) {
-    setPostState(v)
-    updateUrl({ commitment, post: v, level })
-  }
-  function setLevel(v: string) {
-    setLevelState(v)
-    updateUrl({ commitment, post, level: v })
+    updateUrl({ commitment: v, posts, level })
   }
 
-  function updateUrl(filters: { commitment: string; post: string; level: string }) {
+  function togglePost(v: ListingPost) {
+    const nextPosts = posts.includes(v)
+      ? posts.filter((item) => item !== v)
+      : [...posts, v]
+
+    setPostsState(nextPosts)
+    updateUrl({ commitment, posts: nextPosts, level })
+  }
+
+  function setLevel(v: string) {
+    setLevelState(v)
+    updateUrl({ commitment, posts, level: v })
+  }
+
+  function updateUrl(filters: { commitment: string; posts: ListingPost[]; level: string }) {
     const params = new URLSearchParams()
     if (filters.commitment !== ALL) params.set("commitment", filters.commitment)
-    if (filters.post !== ALL) params.set("post", filters.post)
+    if (filters.posts.length > 0) params.set("post", filters.posts.join(","))
     if (filters.level !== ALL) params.set("level", filters.level)
     const qs = params.toString()
     router.replace(qs ? `?${qs}` : "?", { scroll: false })
   }
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!postDropdownRef.current?.contains(event.target as Node)) {
+        setPostDropdownOpen(false)
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setPostDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("keydown", handleEscape)
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [])
   const [listingsData, setListingsData] = useState<ListingRow[]>([])
   const [authOpen, setAuthOpen] = useState(false)
   const [selectedBoat, setSelectedBoat] = useState<string | undefined>(undefined)
@@ -126,6 +175,7 @@ export function BrowseBoats() {
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadingAds, setLoadingAds] = useState(true)
+  const [openDetailsId, setOpenDetailsId] = useState<string | null>(null)
 
   function handleApply(listing: ListingRow) {
     if (!user) {
@@ -227,17 +277,61 @@ export function BrowseBoats() {
     async function fetchAds() {
       setLoadingAds(true)
       setLoadError(null)
-      const { data, error } = await supabase
+      const adsBaseSelect = "id, user_id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url), applications(id, user_id)"
+
+      let data: any[] | null = null
+      const { data: adsWithNote, error: adsWithNoteError } = await supabase
         .from("ads")
-        .select("id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url), applications(id, user_id)")
+        .select(`${adsBaseSelect}, captain_note`)
         .eq("is_active", true)
         .order("created_at", { ascending: false })
 
-      if (error) {
-        console.error("Hirdetések lekérdezési hiba:", error)
-        setLoadError("A hirdetések betöltése nem sikerült. Próbáld újra később.")
-        setLoadingAds(false)
-        return
+      if (adsWithNoteError) {
+        const noteColumnMissing = String(adsWithNoteError.code ?? "") === "42703" || /captain_note/i.test(adsWithNoteError.message ?? "")
+
+        if (!noteColumnMissing) {
+          console.error("Hirdetések lekérdezési hiba:", adsWithNoteError)
+          setLoadError("A hirdetések betöltése nem sikerült. Próbáld újra később.")
+          setLoadingAds(false)
+          return
+        }
+
+        const { data: adsWithoutNote, error: adsWithoutNoteError } = await supabase
+          .from("ads")
+          .select(adsBaseSelect)
+          .eq("is_active", true)
+          .order("created_at", { ascending: false })
+
+        if (adsWithoutNoteError) {
+          console.error("Hirdetések lekérdezési hiba:", adsWithoutNoteError)
+          setLoadError("A hirdetések betöltése nem sikerült. Próbáld újra később.")
+          setLoadingAds(false)
+          return
+        }
+
+        data = adsWithoutNote ?? []
+      } else {
+        data = adsWithNote ?? []
+      }
+
+      const userIds = Array.from(new Set((data ?? []).map((ad: any) => ad.user_id).filter(Boolean)))
+      const usersById = new Map<string, { full_name?: string; avatar_url?: string | null }>()
+
+      if (userIds.length > 0) {
+        const { data: usersData, error: usersError } = await supabase
+          .from("users")
+          .select("id, full_name, avatar_url")
+          .in("id", userIds)
+
+        if (usersError) {
+          console.error("Kapitány adatok lekérdezési hiba:", usersError)
+        } else {
+          ;(usersData ?? []).forEach((row: any) => {
+            if (row?.id) {
+              usersById.set(row.id, row)
+            }
+          })
+        }
       }
 
       const appliedAdIdMap = new Map<string, string>()
@@ -259,7 +353,10 @@ export function BrowseBoats() {
       const visibleAds = (data ?? []).filter((ad: any) => isAdVisibleByDate(ad))
 
       const mapped: ListingRow[] = visibleAds.map((ad: any) => {
-        const postValue = normalizePost(ad.positions?.[0])
+        const rawPositions = Array.isArray(ad.positions) ? ad.positions : []
+        const roles = Array.from(new Set(rawPositions.map((position: unknown) => normalizePost(position)))) as ListingPost[]
+        const normalizedRoles: ListingPost[] = roles.length > 0 ? roles : ["barmilyen"]
+        const captainData = usersById.get(ad.user_id)
 
         return {
           id: ad.id,
@@ -269,15 +366,19 @@ export function BrowseBoats() {
           event: ad.title ?? "",
           location: ad.location ?? "",
           date: ad.date_text ?? "",
-          role: postValue,
+          roles: normalizedRoles,
           level: (ad.experience_level ?? "halado") as Level,
           applied: appliedAdIdMap.has(ad.id),
           applicationId: appliedAdIdMap.get(ad.id) ?? null,
           applicationCount: ad.applications?.length ?? 0,
+          captainName: captainData?.full_name?.trim() || "Ismeretlen kapitány",
+          captainAvatar: captainData?.avatar_url ?? null,
+          captainNote: typeof ad.captain_note === "string" && ad.captain_note.trim() ? ad.captain_note.trim() : null,
         }
       })
 
       setListingsData(mapped)
+      setOpenDetailsId((prev) => (prev && mapped.some((listing) => listing.id === prev) ? prev : null))
       setLoadingAds(false)
     }
 
@@ -287,11 +388,19 @@ export function BrowseBoats() {
   const filtered = useMemo(() => {
     return listingsData.filter((l) => {
       if (commitment !== ALL && l.commitment !== commitment) return false
-      if (post !== ALL && l.role !== post) return false
+      if (posts.length > 0 && !l.roles.some((role) => posts.includes(role))) return false
       if (level !== ALL && l.level !== level) return false
       return true
     })
-  }, [commitment, post, level, listingsData])
+  }, [commitment, posts, level, listingsData])
+
+  const selectedPostsLabel = useMemo(() => {
+    if (posts.length === 0) return postFilterLabels[ALL]
+    if (posts.length === 1) return roleLabels[posts[0]]
+    return `${posts.length} kiválasztva`
+  }, [posts])
+
+  const filterTriggerClass = "h-8 w-full sm:w-56"
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
@@ -308,7 +417,7 @@ export function BrowseBoats() {
       <div className="mt-8 flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-end">
         <FilterField label="Elköteleződés típusa">
           <Select value={commitment} onValueChange={(v) => setCommitment(v as string)}>
-            <SelectTrigger className="h-10 w-full sm:w-56">
+            <SelectTrigger className={filterTriggerClass}>
               <SelectValue>{(v: string) => commitmentFilterLabels[v] ?? "Összes"}</SelectValue>
             </SelectTrigger>
             <SelectContent>
@@ -320,21 +429,61 @@ export function BrowseBoats() {
         </FilterField>
 
         <FilterField label="Keresett pozíció">
-          <Select value={post} onValueChange={(v) => setPost(v as string)}>
-            <SelectTrigger className="h-10 w-full sm:w-48">
-              <SelectValue>{(v: string) => postFilterLabels[v] ?? "Összes"}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Összes</SelectItem>
-              <SelectItem value="mancsaft">Mancsaft</SelectItem>
-              <SelectItem value="kormanyos">Kormányos</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="relative" ref={postDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setPostDropdownOpen((prev) => !prev)}
+              className="flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:w-56"
+              aria-haspopup="listbox"
+              aria-expanded={postDropdownOpen}
+            >
+              <span className="block flex-1 truncate text-left">{selectedPostsLabel}</span>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${postDropdownOpen ? "rotate-180" : "rotate-0"}`}
+                aria-hidden="true"
+              />
+            </button>
+
+            {postDropdownOpen ? (
+              <div className="absolute z-20 mt-1 w-full rounded-md border border-border bg-popover p-1 shadow-md sm:w-56">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPostsState([])
+                    updateUrl({ commitment, posts: [], level })
+                  }}
+                  className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent/10"
+                >
+                  <span>Összes</span>
+                  {posts.length === 0 ? <span className="text-accent">✓</span> : null}
+                </button>
+
+                {(Object.keys(roleLabels) as ListingPost[])
+                  .filter((value) => value !== "barmilyen")
+                  .map((value) => {
+                    const selected = posts.includes(value)
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => togglePost(value)}
+                        className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent/10"
+                        role="option"
+                        aria-selected={selected}
+                      >
+                        <span>{roleLabels[value]}</span>
+                        {selected ? <span className="text-accent">✓</span> : null}
+                      </button>
+                    )
+                  })}
+              </div>
+            ) : null}
+          </div>
         </FilterField>
 
         <FilterField label="Tapasztalati szint">
           <Select value={level} onValueChange={(v) => setLevel(v as string)}>
-            <SelectTrigger className="h-10 w-full sm:w-48">
+            <SelectTrigger className={filterTriggerClass}>
               <SelectValue>{(v: string) => levelFilterLabels[v] ?? "Mindegy"}</SelectValue>
             </SelectTrigger>
             <SelectContent>
@@ -381,7 +530,18 @@ export function BrowseBoats() {
       ) : filtered.length > 0 ? (
         <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((listing) => (
-            <BoatCard key={listing.id} listing={listing} onApply={handleApply} applyingId={applyingId} onCancel={cancelApplication} cancelingId={cancelingId} />
+            <BoatCard
+              key={listing.id}
+              listing={listing}
+              onApply={handleApply}
+              applyingId={applyingId}
+              onCancel={cancelApplication}
+              cancelingId={cancelingId}
+              detailsOpen={openDetailsId === listing.id}
+              onToggleDetails={() =>
+                setOpenDetailsId((prev) => (prev === listing.id ? null : listing.id))
+              }
+            />
           ))}
         </div>
       ) : (
@@ -406,7 +566,7 @@ export function BrowseBoats() {
 function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="whitespace-nowrap text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
       {children}
     </div>
   )
@@ -418,12 +578,16 @@ function BoatCard({
   applyingId,
   onCancel,
   cancelingId,
+  detailsOpen,
+  onToggleDetails,
 }: {
   listing: ListingRow
   onApply: (listing: ListingRow) => void
   applyingId: string | null
   onCancel: (adId: string, applicationId: string) => void
   cancelingId: string | null
+  detailsOpen: boolean
+  onToggleDetails: () => void
 }) {
   return (
     <article className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-accent">
@@ -462,7 +626,7 @@ function BoatCard({
             {listing.date}
           </DetailRow>
           <DetailRow icon={Users} label="Szükséges poszt">
-            {roleLabels[listing.role]}
+            {listing.roles.map((role) => roleLabels[role]).join(", ")}
           </DetailRow>
           <DetailRow icon={Award} label="Elvárt tapasztalat">
             {levelLabels[listing.level]}
@@ -479,6 +643,45 @@ function BoatCard({
             <Badge className="bg-accent text-accent-foreground">Már jelentkeztem</Badge>
           ) : null}
         </div>
+
+        <button
+          type="button"
+          onClick={onToggleDetails}
+          className="mt-4 inline-flex w-fit items-center gap-1.5 text-sm font-medium text-accent transition-colors hover:text-accent/80"
+          aria-expanded={detailsOpen}
+        >
+          {detailsOpen ? "Részletek elrejtése" : "További részletek"}
+          <ChevronDown
+            className={`h-4 w-4 transition-transform ${detailsOpen ? "rotate-180" : "rotate-0"}`}
+            aria-hidden="true"
+          />
+        </button>
+
+        {detailsOpen ? (
+          <div className="mt-3 rounded-xl border border-border/70 bg-secondary/40 p-3">
+            <div className="flex items-center gap-3">
+              <span className="relative h-10 w-10 overflow-hidden rounded-full ring-1 ring-border">
+                <Image
+                  src={listing.captainAvatar || "/placeholder.svg"}
+                  alt={`${listing.captainName} profilképe`}
+                  fill
+                  className="object-cover"
+                  sizes="40px"
+                />
+              </span>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Kapitány</p>
+                <p className="text-sm font-semibold text-foreground">{listing.captainName}</p>
+              </div>
+            </div>
+            <div className="mt-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Megjegyzés</p>
+              <p className="mt-1 text-sm leading-relaxed text-foreground">
+                {listing.captainNote ?? "Nem adott meg külön megjegyzést."}
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         {listing.applied && listing.applicationId ? (
           <Button
