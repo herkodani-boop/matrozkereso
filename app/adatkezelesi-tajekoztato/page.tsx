@@ -120,9 +120,6 @@ export default function PrivacyNoticePage() {
             </p>
           </section>
 
-          <p className="mt-10 text-xs text-muted-foreground">
-            Jelen dokumentum tájékoztató jellegű minta. Közzététel előtt javasolt jogi felülvizsgálat.
-          </p>
         </article>
       </main>
       <SiteFooter />

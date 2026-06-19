@@ -98,9 +98,6 @@ export default function AszfPage() {
             </p>
           </section>
 
-          <p className="mt-10 text-xs text-muted-foreground">
-            Jelen dokumentum tájékoztató jellegű minta. Közzététel előtt javasolt ügyvédi felülvizsgálat.
-          </p>
         </article>
       </main>
       <SiteFooter />

@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AuthGateModal } from "@/components/auth-gate-modal"
+import { SiteFooter } from "@/components/site-footer"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
 
 type ApplicantStatus = "pending" | "accepted" | "rejected"
@@ -617,8 +618,8 @@ export function SkipperDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-secondary/40">
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <div className="flex min-h-screen flex-col bg-secondary/40">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
         {hasBoat ? (
           <>
             <div className="mb-8">
@@ -1060,6 +1061,8 @@ export function SkipperDashboard() {
         userId={user?.id}
         onListingCreated={() => setListingsRefreshKey((prev) => prev + 1)}
       />
+
+      <SiteFooter />
     </div>
   )
 }
