@@ -49,6 +49,7 @@ type Listing = {
   event: string
   location: string
   date: string
+  isActive: boolean
   positions: string[]
   applicants: Applicant[]
 }
@@ -83,6 +84,7 @@ const INITIAL_LISTINGS: Listing[] = [
     event: "Kékszalag Erste Kör",
     location: "Balatonfüred",
     date: "2026. 06. 12.",
+    isActive: true,
     positions: ["Trimmer", "Mancsaft"],
     applicants: [
       {
@@ -122,6 +124,7 @@ const INITIAL_LISTINGS: Listing[] = [
     event: "Balatoni Bajnokság 4. forduló",
     location: "Balatonföldvár",
     date: "2026. 05. 09.",
+    isActive: true,
     positions: ["Kormányos"],
     applicants: [
       {
@@ -141,6 +144,7 @@ const INITIAL_LISTINGS: Listing[] = [
     event: "Hosszútávú szezoncsapat",
     location: "Balatonfüred",
     date: "2026-os szezon",
+    isActive: true,
     positions: ["Mancsaft", "Navigátor"],
     applicants: [
       {
@@ -345,7 +349,6 @@ export function SkipperDashboard() {
         .from("ads")
         .select("*")
         .eq("boat_id", boatId)
-        .eq("is_active", true)
         .order("created_at", { ascending: false })
 
       if (adsError) {
@@ -362,7 +365,7 @@ export function SkipperDashboard() {
         return
       }
 
-      const visibleAds = (adsData ?? []).filter((ad: any) => isAdVisibleByDate(ad))
+      const visibleAds = (adsData ?? []).filter((ad: any) => !ad.is_active || isAdVisibleByDate(ad))
 
       if (visibleAds.length > 0) {
         const mapped: Listing[] = visibleAds.map((ad: any) => ({
@@ -370,9 +373,12 @@ export function SkipperDashboard() {
           event: ad.title,
           location: ad.location,
           date: ad.date_text,
+          isActive: ad.is_active !== false,
           positions: (ad.positions ?? []).map((p: unknown) => formatPositionLabel(p)),
           applicants: [],
         }))
+
+        mapped.sort((a, b) => Number(b.isActive) - Number(a.isActive))
 
         setListings((prev) => {
           const previousById = new Map(prev.map((listing) => [listing.id, listing]))
@@ -386,7 +392,8 @@ export function SkipperDashboard() {
           if (prev && mapped.some((listing) => listing.id === prev)) {
             return prev
           }
-          return mapped[0]?.id ?? ""
+          const firstActive = mapped.find((listing) => listing.isActive)
+          return firstActive?.id ?? mapped[0]?.id ?? ""
         })
 
         // Pending számok lekérése az összes hirdetéshez
@@ -521,7 +528,7 @@ export function SkipperDashboard() {
     () =>
       listings.find((l) => l.id === selectedId) ??
       listings[0] ??
-      ({ id: "", event: "Nincs aktív hirdetés", location: "", date: "", positions: [], applicants: [] } as Listing),
+      ({ id: "", event: "Nincs hirdetés", location: "", date: "", isActive: true, positions: [], applicants: [] } as Listing),
     [listings, selectedId],
   )
 
@@ -577,9 +584,10 @@ export function SkipperDashboard() {
       return
     }
 
-    setListings((prev) => prev.filter((l) => l.id !== id))
-    setSelectedId((prev) => (prev === id ? "" : prev))
-    setActionNotice("A hirdetés lezárva. Már nem látható a böngészésben.")
+    setListings((prev) =>
+      prev.map((listing) => (listing.id === id ? { ...listing, isActive: false } : listing)),
+    )
+    setActionNotice("A hirdetés lezárva. Már nem látható a böngészésben, de itt visszanézhető.")
     setArchivingId(null)
     setConfirmArchiveId(null)
   }
@@ -682,10 +690,10 @@ export function SkipperDashboard() {
 
         {/* SECTION B + C */}
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-5">
-          {/* SECTION B: Active listings */}
+          {/* SECTION B: Listings */}
           <section className="lg:col-span-2" aria-labelledby="active-listings">
             <h2 id="active-listings" className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Aktív hirdetéseid
+              Hirdetéseid (aktív + archivált)
             </h2>
             <div className="flex flex-col gap-3">
               {loadingListings ? (
@@ -740,6 +748,11 @@ export function SkipperDashboard() {
                     <div className="flex items-start justify-between gap-3">
                       <h3 className="font-semibold text-foreground">{listing.event}</h3>
                       <div className="flex shrink-0 items-center gap-2">
+                        {!listing.isActive ? (
+                          <Badge className="bg-secondary text-secondary-foreground hover:bg-secondary">
+                            Archivált
+                          </Badge>
+                        ) : null}
                         {count > 0 && (
                           <Badge className="bg-accent text-accent-foreground hover:bg-accent">
                             {count} új jelentkező
@@ -749,7 +762,7 @@ export function SkipperDashboard() {
                           type="button"
                           aria-label="Hirdetés lezárása"
                           title="Hirdetés lezárása"
-                          disabled={archivingId === listing.id}
+                          disabled={archivingId === listing.id || !listing.isActive}
                           onClick={(e) => {
                             e.stopPropagation()
                             setConfirmArchiveId(listing.id)
