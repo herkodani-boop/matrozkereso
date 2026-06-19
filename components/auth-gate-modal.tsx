@@ -599,7 +599,7 @@ export function AuthGateModal({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton
-        className="max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] gap-0 overflow-y-auto rounded-2xl p-0 sm:max-w-lg"
+        className="max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] gap-0 overflow-y-auto overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch] rounded-2xl p-0 sm:max-w-lg"
       >
         {submitted ? (
           <div className="flex flex-col items-center gap-4 px-6 py-12 text-center sm:px-8">
