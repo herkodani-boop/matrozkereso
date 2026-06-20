@@ -141,7 +141,7 @@ export function BrowseBoats() {
     if (filters.posts.length > 0) params.set("post", filters.posts.join(","))
     if (filters.level !== ALL) params.set("level", filters.level)
     const qs = params.toString()
-    router.replace(qs ? `?${qs}` : "?", { scroll: false })
+    router.replace(qs ? `?${qs}` : ".", { scroll: false })
   }
 
   useEffect(() => {
@@ -496,7 +496,7 @@ export function BrowseBoats() {
         </FilterField>
 
         <p className="text-sm text-muted-foreground sm:ml-auto sm:pb-2.5">
-          {filtered.length} szabad hely
+          {loadingAds ? "…" : `${filtered.length} szabad hely`}
         </p>
       </div>
 
@@ -507,7 +507,7 @@ export function BrowseBoats() {
       ) : null}
 
       {actionNotice ? (
-        <div className="mt-6 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm text-accent-foreground">
+        <div className="mt-6 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-foreground">
           {actionNotice}
         </div>
       ) : null}
@@ -596,6 +596,7 @@ function BoatCard({
           src={listing.image || "/placeholder.svg"}
           alt={`${listing.boatName} vitorlás hajó a vízen`}
           fill
+          loading="eager"
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
           className="object-cover transition-transform duration-300 group-hover:scale-105"
         />

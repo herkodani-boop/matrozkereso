@@ -344,21 +344,22 @@ export function AuthGateModal({
           }
         }
 
-        const { error: insertError } = await supabase.from("users").insert([
+        const { error: insertError } = await supabase.from("users").upsert(
           {
             id: userId,
             email: email,
             full_name: fullName,
             phone: phone,
             birthdate: birthdate || null,
-            role: "kapitany",
+            role: "skipper",
             avatar_url: avatarUrl,
           },
-        ])
+          { onConflict: "id" }
+        )
 
         if (insertError) {
-          console.error("Adatbázis beszúrási hiba:", insertError)
-          setFormError(insertError.message)
+          console.error("Adatbázis hiba:", insertError)
+          setFormError("Profil mentése sikertelen. Próbáld újra.")
           return
         }
 
@@ -384,7 +385,6 @@ export function AuthGateModal({
             return
           }
         } else {
-          // Ha a signup már létrehozta a sessiont, hagyjuk, hogy az auth állapot frissüljön.
           await supabase.auth.setSession(session)
         }
 
@@ -448,7 +448,7 @@ export function AuthGateModal({
         }
       }
 
-      const { error: insertError } = await supabase.from("users").insert([
+      const { error: insertError } = await supabase.from("users").upsert(
         {
           id: userId,
           email: email,
@@ -458,11 +458,12 @@ export function AuthGateModal({
           role: "mancsaft",
           avatar_url: avatarUrl,
         },
-      ])
+        { onConflict: "id" }
+      )
 
       if (insertError) {
-        console.error("Adatbázis beszúrási hiba:", insertError)
-        setFormError(insertError.message)
+        console.error("Adatbázis hiba:", insertError)
+        setFormError("Profil mentése sikertelen. Próbáld újra.")
         return
       }
 
@@ -522,6 +523,8 @@ export function AuthGateModal({
 
     if (!listingStartDate) {
       newErrors.date = listingCommitment === "szezon" ? "Szezon kezdő dátuma kötelező." : "Kezdő dátum megadása kötelező."
+    } else if (listingStartDate < new Date().toISOString().slice(0, 10)) {
+      newErrors.date = "A kezdő dátum nem lehet múltbeli."
     }
 
     if (!listingOneDay && !listingEndDate) {

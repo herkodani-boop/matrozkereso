@@ -718,7 +718,7 @@ export function SkipperDashboard() {
                 </div>
               ) : null}
               {actionNotice ? (
-                <div className="mt-4 rounded-xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm text-accent-foreground">
+                <div className="mt-4 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-foreground">
                   {actionNotice}
                 </div>
               ) : null}

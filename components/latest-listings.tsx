@@ -112,7 +112,7 @@ export function LatestListings() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {listings.map((listing) => (
+          {listings.map((listing, index) => (
             <Link
               key={listing.id}
               href="/bongeszes"
@@ -123,6 +123,7 @@ export function LatestListings() {
                   src={listing.boat?.image_url ?? "/placeholder.svg"}
                   alt={listing.boat?.name ?? "Hajó"}
                   fill
+                  priority={index === 0}
                   className="object-cover transition-transform duration-300 group-hover:scale-105"
                   sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                 />

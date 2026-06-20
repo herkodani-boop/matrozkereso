@@ -11,10 +11,9 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Vitorlás Közösség — Crew-matching és versenynaptár',
+  title: 'Matrózkereső — Crew-matching vitorlázóknak',
   description:
     'A magyar nagyhajós vitorlázó közösség crew-matching és versenynaptár platformja. Találd meg a csapatod, vagy töltsd fel a hajód!',
-  generator: 'v0.app',
   icons: {
     icon: [
       {

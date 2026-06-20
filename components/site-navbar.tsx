@@ -62,7 +62,11 @@ export function SiteNavbar() {
   }
 
   async function signOut() {
-    await supabase.auth.signOut()
+    try {
+      await supabase.auth.signOut()
+    } catch {
+      // Hálózati hiba esetén is kijelentkeztetjük a felhasználót
+    }
     router.push("/")
   }
 
@@ -149,7 +153,7 @@ export function SiteNavbar() {
                     </button>
                   </div>
                 )}
-                <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-3 py-2">
+                <div className="flex items-center gap-1.5 rounded-2xl border border-border bg-card px-2 py-1.5 sm:gap-3 sm:px-3 sm:py-2">
                 {profile.avatar_url ? (
                   <img
                     src={profile.avatar_url}
