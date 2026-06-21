@@ -299,6 +299,16 @@ export function AuthGateModal({
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: email,
           password: password,
+          options: {
+            data: {
+              full_name: fullName || null,
+              phone: phone || null,
+              birthdate: birthdate || null,
+              role: "skipper",
+              level: level || null,
+              post: post || null,
+            },
+          },
         })
 
         if (signUpError) {
@@ -403,6 +413,16 @@ export function AuthGateModal({
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email,
         password: password,
+        options: {
+          data: {
+            full_name: fullName || null,
+            phone: phone || null,
+            birthdate: birthdate || null,
+            role: "mancsaft",
+            level: level || null,
+            post: post || null,
+          },
+        },
       })
 
       if (signUpError) {
