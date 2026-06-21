@@ -177,7 +177,7 @@ export function BrowseBoats() {
   const [loadingAds, setLoadingAds] = useState(true)
   const [openDetailsId, setOpenDetailsId] = useState<string | null>(null)
 
-  function handleApply(listing: ListingRow) {
+  function handleApply(listing: ListingRow, applicationMessage?: string) {
     if (!user) {
       setSelectedBoat(listing.boatName)
       setAuthOpen(true)
@@ -188,19 +188,43 @@ export function BrowseBoats() {
       return
     }
 
-    void submitApplication(listing.id)
+    void submitApplication(listing.id, applicationMessage)
   }
 
-  async function cancelApplication(adId: string, applicationId: string) {
+  async function cancelApplication(adId: string, applicationId: string | null) {
     setApplyError(null)
     setActionNotice(null)
     setCancelingId(adId)
 
     try {
+      let resolvedApplicationId = applicationId
+
+      if (!resolvedApplicationId && user) {
+        const { data: existingApplication, error: lookupError } = await supabase
+          .from("applications")
+          .select("id")
+          .eq("ad_id", adId)
+          .eq("user_id", user.id)
+          .maybeSingle()
+
+        if (lookupError) {
+          console.error("Jelentkezés azonosító lekérdezési hiba:", lookupError)
+          setApplyError(lookupError.message)
+          return
+        }
+
+        resolvedApplicationId = existingApplication?.id ?? null
+      }
+
+      if (!resolvedApplicationId) {
+        setApplyError("A jelentkezés nem található, kérlek frissítsd az oldalt és próbáld újra.")
+        return
+      }
+
       const { error } = await supabase
         .from("applications")
         .delete()
-        .eq("id", applicationId)
+        .eq("id", resolvedApplicationId)
 
       if (error) {
         console.error("Jelentkezés visszavonási hiba:", error)
@@ -221,18 +245,25 @@ export function BrowseBoats() {
     }
   }
 
-  async function submitApplication(adId: string) {
+  async function submitApplication(adId: string, applicationMessage?: string) {
     setApplyError(null)
     setActionNotice(null)
     setApplyingId(adId)
 
+    const normalizedMessage = applicationMessage?.trim() ?? ""
+
     try {
-      const { error } = await supabase.from("applications").insert([
-        {
-          ad_id: adId,
-          user_id: user?.id,
-        },
-      ])
+      const { data: insertedApplication, error } = await supabase
+        .from("applications")
+        .insert([
+          {
+            ad_id: adId,
+            user_id: user?.id,
+            message: normalizedMessage.length > 0 ? normalizedMessage : null,
+          },
+        ])
+        .select("id")
+        .single()
 
       if (error) {
         console.error("Jelentkezési hiba:", error)
@@ -243,7 +274,12 @@ export function BrowseBoats() {
       setListingsData((prev) =>
         prev.map((listing) =>
           listing.id === adId
-            ? { ...listing, applied: true, applicationCount: listing.applicationCount + 1 }
+            ? {
+                ...listing,
+                applied: true,
+                applicationId: insertedApplication?.id ?? listing.applicationId,
+                applicationCount: listing.applicationCount + 1,
+              }
             : listing,
         ),
       )
@@ -582,13 +618,16 @@ function BoatCard({
   onToggleDetails,
 }: {
   listing: ListingRow
-  onApply: (listing: ListingRow) => void
+  onApply: (listing: ListingRow, applicationMessage?: string) => void
   applyingId: string | null
-  onCancel: (adId: string, applicationId: string) => void
+  onCancel: (adId: string, applicationId: string | null) => void
   cancelingId: string | null
   detailsOpen: boolean
   onToggleDetails: () => void
 }) {
+  const [showMessageField, setShowMessageField] = useState(false)
+  const [applicationMessage, setApplicationMessage] = useState("")
+
   return (
     <article className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-accent">
       <div className="relative aspect-[4/3] overflow-hidden">
@@ -684,11 +723,48 @@ function BoatCard({
           </div>
         ) : null}
 
-        {listing.applied && listing.applicationId ? (
+        {!listing.applied ? (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => setShowMessageField((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-accent transition-colors hover:text-accent/80"
+              aria-expanded={showMessageField}
+              aria-controls={`application-message-wrap-${listing.id}`}
+            >
+              {showMessageField ? "Üzenetmező elrejtése" : "Üzenet a kapitánynak (opcionális)"}
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${showMessageField ? "rotate-180" : "rotate-0"}`}
+                aria-hidden="true"
+              />
+            </button>
+
+            {showMessageField ? (
+              <div id={`application-message-wrap-${listing.id}`} className="mt-2 space-y-1.5 rounded-xl border border-border/70 bg-secondary/30 p-3">
+                <label htmlFor={`application-message-${listing.id}`} className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Üzenet a kapitánynak
+                </label>
+                <textarea
+                  id={`application-message-${listing.id}`}
+                  name="applicationMessage"
+                  rows={3}
+                  maxLength={500}
+                  value={applicationMessage}
+                  onChange={(event) => setApplicationMessage(event.target.value)}
+                  placeholder="Pl.: Szia! Van tapasztalatom túra- és pályaversenyeken is, szívesen csatlakoznék a csapathoz."
+                  className="w-full resize-y rounded-xl border border-input bg-background px-3 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/80 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                />
+                <p className="text-xs text-muted-foreground">Maximum 500 karakter.</p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {listing.applied ? (
           <Button
             size="lg"
             variant="outline"
-            onClick={() => onCancel(listing.id, listing.applicationId!)}
+            onClick={() => onCancel(listing.id, listing.applicationId)}
             disabled={cancelingId === listing.id}
             className="mt-6 h-11 w-full text-base text-destructive! hover:bg-destructive/10! hover:text-destructive!"
           >
@@ -697,7 +773,7 @@ function BoatCard({
         ) : (
           <Button
             size="lg"
-            onClick={() => onApply(listing)}
+            onClick={() => onApply(listing, applicationMessage)}
             disabled={listing.applied || applyingId === listing.id}
             className="mt-6 h-11 w-full bg-accent! text-base text-accent-foreground! hover:bg-accent/90! disabled:cursor-not-allowed disabled:bg-muted"
           >

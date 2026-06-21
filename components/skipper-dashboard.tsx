@@ -43,6 +43,7 @@ type Applicant = {
   phone: string
   email: string
   avatar: string
+  applicationMessage: string | null
 }
 
 type Listing = {
@@ -519,11 +520,35 @@ export function SkipperDashboard() {
     let cancelled = false
 
     const fetchApplicants = async () => {
-      const { data, error } = await supabase
+      let data: any[] | null = null
+      let error: any = null
+
+      const withMessageQuery = await supabase
         .from("applications")
-        .select("id, user_id, status")
+        .select("id, user_id, status, message")
         .eq("ad_id", activeListingId)
         .order("created_at", { ascending: false })
+
+      if (withMessageQuery.error) {
+        const messageColumnMissing =
+          String(withMessageQuery.error.code ?? "") === "42703" ||
+          /message/i.test(withMessageQuery.error.message ?? "")
+
+        if (!messageColumnMissing) {
+          error = withMessageQuery.error
+        } else {
+          const withoutMessageQuery = await supabase
+            .from("applications")
+            .select("id, user_id, status")
+            .eq("ad_id", activeListingId)
+            .order("created_at", { ascending: false })
+
+          data = withoutMessageQuery.data ?? null
+          error = withoutMessageQuery.error
+        }
+      } else {
+        data = withMessageQuery.data ?? null
+      }
 
       if (error) {
         console.error("Jelentkezők lekérdezési hiba:", error)
@@ -534,7 +559,12 @@ export function SkipperDashboard() {
         return
       }
 
-      const applications = (data ?? []) as Array<{ id: string; user_id: string; status?: ApplicantStatus }>
+      const applications = (data ?? []) as Array<{
+        id: string
+        user_id: string
+        status?: ApplicantStatus
+        message?: string | null
+      }>
       const userIds = Array.from(new Set(applications.map((application) => application.user_id).filter(Boolean)))
 
       const profilesByUserId = new Map<string, any>()
@@ -575,6 +605,10 @@ export function SkipperDashboard() {
           phone: userData?.phone ?? "Nincs megadva",
           email: userData?.email ?? "Nincs megadva",
           avatar: resolveAvatarUrl(userData),
+          applicationMessage:
+            typeof application.message === "string" && application.message.trim().length > 0
+              ? application.message.trim()
+              : null,
         }
       })
 
@@ -998,6 +1032,15 @@ export function SkipperDashboard() {
                         </Badge>
                       </div>
                     )}
+                    </div>
+
+                    <div className="rounded-lg border border-border/70 bg-secondary/35 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Jelentkező üzenete
+                      </p>
+                      <p className="mt-1 text-sm leading-relaxed text-foreground">
+                        {applicant.applicationMessage ?? "Nem írt külön üzenetet a jelentkezéshez."}
+                      </p>
                     </div>
 
                     {status === "accepted" && (
