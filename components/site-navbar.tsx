@@ -2,11 +2,12 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useState, type FormEvent } from "react"
+import { usePathname, useRouter } from "next/navigation"
 import { LogOut, Bell, User } from "lucide-react"
 import { type User } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { AuthGateModal } from "@/components/auth-gate-modal"
 import { supabase } from "@/lib/supabase"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
@@ -29,10 +30,15 @@ function roleLabel(role?: string | null) {
 
 export function SiteNavbar() {
   const router = useRouter()
+  const pathname = usePathname()
   const [authOpen, setAuthOpen] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [pendingCount, setPendingCount] = useState(0)
+  const [feedbackText, setFeedbackText] = useState("")
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
+  const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null)
+  const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === "true"
 
   async function fetchPendingCount(userId: string) {
     const { data: boats } = await supabase
@@ -68,6 +74,53 @@ export function SiteNavbar() {
       // Hálózati hiba esetén is kijelentkeztetjük a felhasználót
     }
     router.push("/")
+  }
+
+  async function submitFeedback(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const message = feedbackText.trim()
+
+    if (message.length < 3) {
+      setFeedbackNotice("Minimum 3 karaktert adj meg.")
+      return
+    }
+
+    if (message.length > 1000) {
+      setFeedbackNotice("Maximum 1000 karakter kuldheto.")
+      return
+    }
+
+    setFeedbackSubmitting(true)
+    setFeedbackNotice(null)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ message, pagePath: pathname }),
+      })
+
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        setFeedbackNotice(payload.error ?? "Nem sikerult elkuldeni az eszrevetelt.")
+        return
+      }
+
+      setFeedbackText("")
+      setFeedbackNotice("Koszonjuk, rogzitettuk az eszrevetelt.")
+    } catch {
+      setFeedbackNotice("Halozati hiba tortent. Probald ujra.")
+    } finally {
+      setFeedbackSubmitting(false)
+    }
   }
 
   useEffect(() => {
@@ -125,15 +178,39 @@ export function SiteNavbar() {
   return (
     <>
       <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2.5">
+        <div className="mx-auto flex min-h-16 max-w-6xl flex-wrap items-center gap-2 px-4 py-2 sm:px-6">
+          <Link href="/" className="flex shrink-0 items-center gap-2.5">
             <span className="relative h-9 w-9 overflow-hidden rounded-lg">
               <Image src="/logo-mark.png" alt="Matrózkereső logó" fill className="object-cover" sizes="36px" />
             </span>
             <span className="text-base font-semibold tracking-tight text-foreground">Matrózkereső</span>
           </Link>
 
-          <nav className="flex items-center gap-1.5 sm:gap-3">
+          {isTestMode && (
+            <form
+              onSubmit={submitFeedback}
+              className="order-3 flex w-full items-center gap-2 sm:order-none sm:mx-auto sm:w-auto sm:min-w-[280px] sm:max-w-md sm:flex-1"
+            >
+              <Input
+                value={feedbackText}
+                onChange={(event) => setFeedbackText(event.target.value)}
+                placeholder="Teszt visszajelzés"
+                aria-label="Teszt visszajelzés"
+                maxLength={1000}
+                className="h-10 rounded-xl bg-card"
+              />
+              <Button type="submit" className="h-10 shrink-0 rounded-xl" disabled={feedbackSubmitting}>
+                {feedbackSubmitting ? "Küldés..." : "Beküldés"}
+              </Button>
+              {feedbackNotice && (
+                <span className="sr-only" aria-live="polite">
+                  {feedbackNotice}
+                </span>
+              )}
+            </form>
+          )}
+
+          <nav className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-3">
             {user && profile ? (
               <>
                 {isCaptainRole(profile.role) && (
