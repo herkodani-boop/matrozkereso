@@ -1,6 +1,8 @@
 import Image from "next/image"
 
 export function HeroSection() {
+  const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === "true"
+
   return (
     <section className="relative overflow-hidden border-b border-border bg-primary text-primary-foreground">
       <div className="absolute inset-0">
@@ -25,6 +27,16 @@ export function HeroSection() {
           <p className="mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-primary-foreground/80">
             A magyar nagyhajós vitorlázó közösség dedikált legénységi toborzó platformja. Keress legénységet vagy vitorlázz másokkal!
           </p>
+          {isTestMode && (
+            <div className="mt-8 max-w-2xl rounded-2xl border border-amber-300/60 bg-amber-100 px-4 py-3 text-sm leading-relaxed text-amber-950 shadow-lg shadow-black/10 sm:px-5 sm:py-4 sm:text-base">
+              <p className="font-semibold tracking-wide">Tesztüzem</p>
+              <p className="mt-1">
+                Az oldal jelenleg tesztüzemben működik, ezért a hirdetések csak minták, nem valós ajánlatok.
+                Ha észrevételed van, a fejlécben lévő mezőn keresztül néhány kattintással visszajelzést tudsz
+                küldeni nekünk.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </section>
