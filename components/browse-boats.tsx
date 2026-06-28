@@ -175,7 +175,7 @@ export function BrowseBoats() {
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadingAds, setLoadingAds] = useState(true)
-  const [openDetailsId, setOpenDetailsId] = useState<string | null>(null)
+  const [openDetailsIds, setOpenDetailsIds] = useState<string[]>([])
 
   function handleApply(listing: ListingRow, applicationMessage?: string) {
     if (!user) {
@@ -414,7 +414,7 @@ export function BrowseBoats() {
       })
 
       setListingsData(mapped)
-      setOpenDetailsId((prev) => (prev && mapped.some((listing) => listing.id === prev) ? prev : null))
+      setOpenDetailsIds((prev) => prev.filter((id) => mapped.some((listing) => listing.id === id)))
       setLoadingAds(false)
     }
 
@@ -573,9 +573,11 @@ export function BrowseBoats() {
               applyingId={applyingId}
               onCancel={cancelApplication}
               cancelingId={cancelingId}
-              detailsOpen={openDetailsId === listing.id}
+              detailsOpen={openDetailsIds.includes(listing.id)}
               onToggleDetails={() =>
-                setOpenDetailsId((prev) => (prev === listing.id ? null : listing.id))
+                setOpenDetailsIds((prev) =>
+                  prev.includes(listing.id) ? prev.filter((id) => id !== listing.id) : [...prev, listing.id],
+                )
               }
             />
           ))}
