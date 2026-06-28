@@ -175,7 +175,7 @@ export function BrowseBoats() {
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadingAds, setLoadingAds] = useState(true)
-  const [openDetailsId, setOpenDetailsId] = useState<string | null>(null)
+  const [openDetailsIds, setOpenDetailsIds] = useState<string[]>([])
 
   function handleApply(listing: ListingRow, applicationMessage?: string) {
     if (!user) {
@@ -414,7 +414,7 @@ export function BrowseBoats() {
       })
 
       setListingsData(mapped)
-      setOpenDetailsId((prev) => (prev && mapped.some((listing) => listing.id === prev) ? prev : null))
+      setOpenDetailsIds((prev) => prev.filter((id) => mapped.some((listing) => listing.id === id)))
       setLoadingAds(false)
     }
 
@@ -549,22 +549,21 @@ export function BrowseBoats() {
       ) : null}
 
       {loadingAds ? (
-        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           {[0, 1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="overflow-hidden rounded-2xl border border-border bg-card">
-              <Skeleton className="aspect-[4/3] w-full rounded-none" />
-              <div className="flex flex-col gap-3 p-5">
-                <Skeleton className="h-6 w-3/4" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-4 w-1/2" />
-                <Skeleton className="mt-2 h-11 w-full rounded-xl" />
+            <div key={i} className="overflow-hidden rounded-lg border border-border bg-card">
+              <Skeleton className="aspect-video w-full rounded-none" />
+              <div className="flex flex-col gap-2 p-2.5">
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-2/3" />
+                <Skeleton className="mt-1 h-9 w-full rounded-md" />
               </div>
             </div>
           ))}
         </div>
       ) : filtered.length > 0 ? (
-        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           {filtered.map((listing) => (
             <BoatCard
               key={listing.id}
@@ -573,9 +572,11 @@ export function BrowseBoats() {
               applyingId={applyingId}
               onCancel={cancelApplication}
               cancelingId={cancelingId}
-              detailsOpen={openDetailsId === listing.id}
+              detailsOpen={openDetailsIds.includes(listing.id)}
               onToggleDetails={() =>
-                setOpenDetailsId((prev) => (prev === listing.id ? null : listing.id))
+                setOpenDetailsIds((prev) =>
+                  prev.includes(listing.id) ? prev.filter((id) => id !== listing.id) : [...prev, listing.id],
+                )
               }
             />
           ))}
@@ -629,8 +630,8 @@ function BoatCard({
   const [applicationMessage, setApplicationMessage] = useState("")
 
   return (
-    <article className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-accent">
-      <div className="relative aspect-[4/3] overflow-hidden">
+    <article className="group flex flex-col overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-accent">
+      <div className="relative aspect-video overflow-hidden">
         <Image
           src={listing.image || "/placeholder.svg"}
           alt={`${listing.boatName} vitorlás hajó a vízen`}
@@ -652,53 +653,58 @@ function BoatCard({
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col p-5">
-        <h3 className="text-xl font-semibold tracking-tight text-card-foreground">{listing.boatName}</h3>
+      <div className="flex flex-1 flex-col p-2.5">
+        <h3 className="text-base font-semibold tracking-tight text-card-foreground line-clamp-1">{listing.boatName}</h3>
 
-        <dl className="mt-4 flex flex-1 flex-col gap-3 text-sm">
-          <DetailRow icon={Anchor} label="Esemény">
-            {listing.event}
-          </DetailRow>
-          <DetailRow icon={MapPin} label="Helyszín">
-            {listing.location}
-          </DetailRow>
-          <DetailRow icon={CalendarDays} label="Dátum">
-            {listing.date}
-          </DetailRow>
-          <DetailRow icon={Users} label="Szükséges poszt">
-            {listing.roles.map((role) => roleLabels[role]).join(", ")}
-          </DetailRow>
-          <DetailRow icon={Award} label="Elvárt tapasztalat">
-            {levelLabels[listing.level]}
-          </DetailRow>
+        <dl className="mt-1.5 flex flex-1 flex-col gap-1 text-xs">
+          <div className="flex items-start gap-1.5">
+            <Anchor className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
+            <span className="line-clamp-1 text-foreground">{listing.event}</span>
+          </div>
+          <div className="flex items-start gap-1.5">
+            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
+            <span className="line-clamp-1 text-foreground">{listing.location}</span>
+          </div>
+          <div className="flex items-start gap-1.5">
+            <CalendarDays className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
+            <span className="line-clamp-1 text-foreground">{listing.date}</span>
+          </div>
+          <div className="flex items-start gap-1.5">
+            <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
+            <span className="line-clamp-1 text-foreground">{listing.roles.map((role) => roleLabels[role]).join(", ")}</span>
+          </div>
+          <div className="flex items-start gap-1.5">
+            <Award className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
+            <span className="line-clamp-1 text-foreground">{levelLabels[listing.level]}</span>
+          </div>
         </dl>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
           {listing.applicationCount > 0 ? (
-            <Badge className="bg-secondary text-secondary-foreground">
-              {listing.applicationCount} jelentkezés
+            <Badge className="bg-secondary text-secondary-foreground text-xs px-1.5 py-0.5">
+              {listing.applicationCount}
             </Badge>
           ) : null}
           {listing.applied ? (
-            <Badge className="bg-accent text-accent-foreground">Már jelentkeztem</Badge>
+            <Badge className="bg-accent text-accent-foreground text-xs px-1.5 py-0.5">Jelentkeztem</Badge>
           ) : null}
         </div>
 
         <button
           type="button"
           onClick={onToggleDetails}
-          className="mt-4 inline-flex w-fit items-center gap-1.5 text-sm font-medium text-accent transition-colors hover:text-accent/80"
+          className="mt-1.5 inline-flex w-fit items-center gap-1 text-xs font-medium text-accent transition-colors hover:text-accent/80"
           aria-expanded={detailsOpen}
         >
-          {detailsOpen ? "Részletek elrejtése" : "További részletek"}
+          {detailsOpen ? "Elrejtés" : "Részletek"}
           <ChevronDown
-            className={`h-4 w-4 transition-transform ${detailsOpen ? "rotate-180" : "rotate-0"}`}
+            className={`h-3.5 w-3.5 transition-transform ${detailsOpen ? "rotate-180" : "rotate-0"}`}
             aria-hidden="true"
           />
         </button>
 
         {detailsOpen ? (
-          <div className="mt-3 rounded-xl border border-border/70 bg-secondary/40 p-3">
+          <div className="mt-1.5 rounded-md border border-border/70 bg-secondary/40 p-2">
             <div className="flex items-center gap-3">
               <span className="relative h-10 w-10 overflow-hidden rounded-full ring-1 ring-border">
                 <Image
@@ -724,37 +730,36 @@ function BoatCard({
         ) : null}
 
         {!listing.applied ? (
-          <div className="mt-4">
+          <div className="mt-1.5">
             <button
               type="button"
               onClick={() => setShowMessageField((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-accent transition-colors hover:text-accent/80"
+              className="inline-flex items-center gap-1 text-xs font-medium text-accent transition-colors hover:text-accent/80"
               aria-expanded={showMessageField}
               aria-controls={`application-message-wrap-${listing.id}`}
             >
-              {showMessageField ? "Üzenetmező elrejtése" : "Üzenet a kapitánynak (opcionális)"}
+              {showMessageField ? "Elrejtés" : "Üzenet (op.)"}
               <ChevronDown
-                className={`h-4 w-4 transition-transform ${showMessageField ? "rotate-180" : "rotate-0"}`}
+                className={`h-3.5 w-3.5 transition-transform ${showMessageField ? "rotate-180" : "rotate-0"}`}
                 aria-hidden="true"
               />
             </button>
 
             {showMessageField ? (
-              <div id={`application-message-wrap-${listing.id}`} className="mt-2 space-y-1.5 rounded-xl border border-border/70 bg-secondary/30 p-3">
-                <label htmlFor={`application-message-${listing.id}`} className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Üzenet a kapitánynak
+              <div id={`application-message-wrap-${listing.id}`} className="mt-1 space-y-1 rounded-md border border-border/70 bg-secondary/30 p-2">
+                <label htmlFor={`application-message-${listing.id}`} className="text-xs font-medium text-muted-foreground">
+                  Üzenet
                 </label>
                 <textarea
                   id={`application-message-${listing.id}`}
                   name="applicationMessage"
-                  rows={3}
-                  maxLength={500}
+                  rows={2}
+                  maxLength={300}
                   value={applicationMessage}
                   onChange={(event) => setApplicationMessage(event.target.value)}
-                  placeholder="Pl.: Szia! Van tapasztalatom túra- és pályaversenyeken is, szívesen csatlakoznék a csapathoz."
-                  className="w-full resize-y rounded-xl border border-input bg-background px-3 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/80 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  placeholder="Rövid üzenet..."
+                  className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs leading-tight text-foreground outline-none transition-colors placeholder:text-muted-foreground/80 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
                 />
-                <p className="text-xs text-muted-foreground">Maximum 500 karakter.</p>
               </div>
             ) : null}
           </div>
@@ -762,22 +767,22 @@ function BoatCard({
 
         {listing.applied ? (
           <Button
-            size="lg"
+            size="sm"
             variant="outline"
             onClick={() => onCancel(listing.id, listing.applicationId)}
             disabled={cancelingId === listing.id}
-            className="mt-6 h-11 w-full text-base text-destructive! hover:bg-destructive/10! hover:text-destructive!"
+            className="mt-2 h-8 w-full text-xs text-destructive! hover:bg-destructive/10! hover:text-destructive!"
           >
-            {cancelingId === listing.id ? "Visszavonás..." : "Jelentkezés visszavonása"}
+            {cancelingId === listing.id ? "Visszavonás..." : "Visszavonás"}
           </Button>
         ) : (
           <Button
-            size="lg"
+            size="sm"
             onClick={() => onApply(listing, applicationMessage)}
             disabled={listing.applied || applyingId === listing.id}
-            className="mt-6 h-11 w-full bg-accent! text-base text-accent-foreground! hover:bg-accent/90! disabled:cursor-not-allowed disabled:bg-muted"
+            className="mt-2 h-8 w-full bg-accent! text-xs text-accent-foreground! hover:bg-accent/90! disabled:cursor-not-allowed disabled:bg-muted"
           >
-            {applyingId === listing.id ? "Jelentkezés..." : "Jelentkezem a hajóra"}
+            {applyingId === listing.id ? "Jelentkezés..." : "Jelentkezem"}
           </Button>
         )}
       </div>
