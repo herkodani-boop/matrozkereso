@@ -899,9 +899,24 @@ export function SkipperDashboard() {
     setConfirmRemoveMemberId(id)
   }
 
-  function confirmRemoveTeamMember() {
+  async function confirmRemoveTeamMember() {
     const memberId = confirmRemoveMemberId
-    if (!memberId) return
+    if (!memberId || !boat?.id) return
+
+    setTeamError(null)
+
+    const { error } = await supabase
+      .from("boat_team_members")
+      .update({ status: "removed" })
+      .eq("id", memberId)
+      .eq("boat_id", boat.id)
+
+    if (error) {
+      console.error("Csapattag törlési hiba:", error)
+      setTeamError("A csapattag eltávolítása nem sikerült.")
+      setConfirmRemoveMemberId(null)
+      return
+    }
 
     setTeamMembers((prev) => prev.filter((member) => member.id !== memberId))
     setConfirmRemoveMemberId(null)
