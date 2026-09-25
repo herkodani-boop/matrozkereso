@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const resendApiKey = process.env.RESEND_API_KEY
   const senderEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev"
+  const senderName = process.env.RESEND_FROM_NAME || "Matrózkereső"
 
   if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
     return NextResponse.json({ error: "Hiányzó Supabase konfiguráció." }, { status: 500 })
@@ -98,19 +99,27 @@ export async function POST(request: NextRequest) {
   }
 
   const resend = new Resend(resendApiKey)
+  const fromAddress = `${senderName} <${senderEmail}>`
 
   const emailResult = await resend.emails.send({
-    from: senderEmail,
+    from: fromAddress,
     to: [email],
+    replyTo: senderEmail,
     subject: "Meghívás a hajó csapatába",
     html: `
-      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
-        <p>Sziasztok!</p>
-        <p>${user.email ?? "Valaki"} meghívott a csapatába.</p>
-        <p>Hajó: <strong>${ownerBoat.name}</strong></p>
-        <p>A csatlakozáshoz kattints a linkre:</p>
-        <p><a href="${inviteLink}">${inviteLink}</a></p>
-        <p>Ez a meghívás 7 napig érvényes.</p>
+      <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #111827; max-width: 600px; margin: 0 auto;">
+        <p style="margin: 0 0 16px;">Sziasztok!</p>
+        <p style="margin: 0 0 16px;">${user.email ?? "Valaki"} meghívott a csapatába.</p>
+        <p style="margin: 0 0 8px;"><strong>Hajó:</strong> ${ownerBoat.name}</p>
+        <p style="margin: 0 0 20px;">A csatlakozáshoz kattints az alábbi gombra:</p>
+        <p style="margin: 0 0 20px;">
+          <a href="${inviteLink}" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 999px; font-weight: 600;">
+            Csatlakozás a csapathoz
+          </a>
+        </p>
+        <p style="margin: 0 0 8px;">Ha a gomb nem nyílik meg, használhatod ezt a linket:</p>
+        <p style="margin: 0 0 16px; word-break: break-all;"><a href="${inviteLink}">${inviteLink}</a></p>
+        <p style="margin: 0; color: #374151;">Ez a meghívás 7 napig érvényes.</p>
       </div>
     `,
     text: `Sziasztok!\n\n${user.email ?? "Valaki"} meghívott a csapatába.\nHajó: ${ownerBoat.name}\n\nA csatlakozáshoz kattints erre a linkre:\n${inviteLink}\n\nEz a meghívás 7 napig érvényes.`,
