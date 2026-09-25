@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
   const tokenValue = invitation?.token ?? null
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
   const inviteLink = tokenValue ? `${baseUrl}/accept-team-invite?token=${tokenValue}` : null
+  const inviterDisplayName = user.user_metadata?.full_name || user.email?.split("@")[0] || "A hajós csapat"
 
   if (!inviteLink) {
     return NextResponse.json({ error: "A meghívó link generálása nem sikerült." }, { status: 500 })
@@ -107,22 +108,35 @@ export async function POST(request: NextRequest) {
     replyTo: senderEmail,
     subject: "Meghívás a hajó csapatába",
     html: `
-      <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #111827; max-width: 600px; margin: 0 auto;">
-        <p style="margin: 0 0 16px;">Sziasztok!</p>
-        <p style="margin: 0 0 16px;">${user.email ?? "Valaki"} meghívott a csapatába.</p>
-        <p style="margin: 0 0 8px;"><strong>Hajó:</strong> ${ownerBoat.name}</p>
-        <p style="margin: 0 0 20px;">A csatlakozáshoz kattints az alábbi gombra:</p>
-        <p style="margin: 0 0 20px;">
-          <a href="${inviteLink}" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 999px; font-weight: 600;">
+      <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #111827; max-width: 600px; margin: 0 auto; padding: 24px 20px;">
+        <div style="font-size: 14px; color: #475569; margin-bottom: 20px;">Matrózkereső</div>
+        <h2 style="margin: 0 0 18px; font-size: 28px; line-height: 1.2; color: #0f172a;">Meghívás a hajó csapatába</h2>
+
+        <p style="margin: 0 0 12px; font-size: 16px;">Sziasztok!</p>
+        <p style="margin: 0 0 18px; font-size: 16px;">
+          <strong>${inviterDisplayName}</strong> meghívott a csapatába.
+        </p>
+
+        <div style="margin: 0 0 18px; padding: 16px 18px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;">
+          <div style="font-size: 14px; color: #475569; margin-bottom: 6px;">Hajó</div>
+          <div style="font-size: 18px; font-weight: 700; color: #0f172a;">${ownerBoat.name}</div>
+        </div>
+
+        <p style="margin: 0 0 20px; font-size: 16px;">A csatlakozáshoz kattints az alábbi gombra:</p>
+
+        <p style="margin: 0 0 18px;">
+          <a href="${inviteLink}" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; padding: 14px 26px; border-radius: 999px; font-weight: 700; font-size: 16px;">
             Csatlakozás a csapathoz
           </a>
         </p>
-        <p style="margin: 0 0 8px;">Ha a gomb nem nyílik meg, használhatod ezt a linket:</p>
-        <p style="margin: 0 0 16px; word-break: break-all;"><a href="${inviteLink}">${inviteLink}</a></p>
-        <p style="margin: 0; color: #374151;">Ez a meghívás 7 napig érvényes.</p>
+
+        <p style="margin: 0 0 10px; font-size: 14px; color: #475569;">Ha a gomb nem nyílik meg, másold be ezt a linket a böngészőbe:</p>
+        <p style="margin: 0; font-size: 14px; word-break: break-all;"><a href="${inviteLink}" style="color: #2563eb;">${inviteLink}</a></p>
+
+        <p style="margin-top: 22px; font-size: 14px; color: #475569;">Ez a meghívás 7 napig érvényes.</p>
       </div>
     `,
-    text: `Sziasztok!\n\n${user.email ?? "Valaki"} meghívott a csapatába.\nHajó: ${ownerBoat.name}\n\nA csatlakozáshoz kattints erre a linkre:\n${inviteLink}\n\nEz a meghívás 7 napig érvényes.`,
+    text: `Sziasztok!\n\n${inviterDisplayName} meghívott a csapatába.\n\nHajó: ${ownerBoat.name}\n\nA csatlakozáshoz kattints erre a linkre:\n${inviteLink}\n\nEz a meghívás 7 napig érvényes.`,
   })
 
   if (emailResult.error) {
