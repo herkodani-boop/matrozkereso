@@ -1,12 +1,13 @@
 "use client"
 
 import { Suspense, useEffect, useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 
 function AcceptTeamInviteContent() {
   const searchParams = useSearchParams()
-  const [status, setStatus] = useState<"loading" | "signed-out" | "success" | "error">("loading")
+  const router = useRouter()
+  const [status, setStatus] = useState<"loading" | "success" | "error">("loading")
   const [message, setMessage] = useState("A meghívás feldolgozása folyamatban...")
 
   useEffect(() => {
@@ -23,8 +24,7 @@ function AcceptTeamInviteContent() {
       } = await supabase.auth.getSession()
 
       if (!session?.access_token) {
-        setStatus("signed-out")
-        setMessage("A csoporthoz való csatlakozáshoz be kell jelentkezned vagy regisztrálnod kell.")
+        router.replace("/?auth=login")
         return
       }
 
@@ -53,7 +53,7 @@ function AcceptTeamInviteContent() {
     }
 
     void acceptInvite()
-  }, [searchParams])
+  }, [searchParams, router])
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-secondary/40 px-4 py-12">
@@ -61,21 +61,11 @@ function AcceptTeamInviteContent() {
         <h1 className="text-2xl font-bold text-foreground">Csapat meghívás</h1>
         <p className="mt-3 text-sm text-muted-foreground">{message}</p>
 
-        {status === "signed-out" ? (
-          <button
-            type="button"
-            className="mt-6 inline-flex items-center justify-center rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/90"
-            onClick={() => window.location.href = "/"}
-          >
-            Vissza a főoldalra
-          </button>
-        ) : null}
-
         {status === "success" ? (
           <button
             type="button"
             className="mt-6 inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            onClick={() => window.location.href = "/kapitany-dashboard"}
+            onClick={() => router.push("/kapitany-dashboard")}
           >
             Vissza a dashboardra
           </button>
@@ -87,7 +77,15 @@ function AcceptTeamInviteContent() {
 
 export default function AcceptTeamInvitePage() {
   return (
-    <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-secondary/40 px-4 py-12"><div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm text-sm text-muted-foreground">Meghívás betöltése...</div></main>}>
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-secondary/40 px-4 py-12">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm text-sm text-muted-foreground">
+            Meghívás betöltése...
+          </div>
+        </main>
+      }
+    >
       <AcceptTeamInviteContent />
     </Suspense>
   )
