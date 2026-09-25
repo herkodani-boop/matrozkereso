@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AuthGateModal } from "@/components/auth-gate-modal"
 import { TeamInviteDialog } from "@/components/team-invite-dialog"
+import { supabase } from "@/lib/supabase"
 
 export function AuthGateModalTrigger() {
   const searchParams = useSearchParams()
@@ -17,6 +18,12 @@ export function AuthGateModalTrigger() {
     const authValue = searchParams.get("auth")
     const tokenValue = searchParams.get("token")
 
+    if (tokenValue) {
+      setInviteToken(tokenValue)
+    } else {
+      setInviteToken(null)
+    }
+
     if (authValue === "login" || authValue === "register") {
       setAuthView(authValue)
       setAuthOpen(true)
@@ -25,33 +32,73 @@ export function AuthGateModalTrigger() {
     }
 
     if (tokenValue) {
-      setInviteToken(tokenValue)
       setInviteOpen(true)
       setAuthOpen(false)
       return
     }
 
-    setInviteToken(null)
     setInviteOpen(false)
     setAuthOpen(false)
   }, [searchParams])
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && inviteToken && session?.access_token) {
+        setAuthOpen(false)
+        setInviteOpen(true)
+        router.replace(`/?token=${inviteToken}`, { scroll: false })
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [inviteToken, router])
+
+  const syncUrl = (nextAuth: "login" | "register" | null, nextToken: string | null) => {
+    const params = new URLSearchParams(window.location.search)
+
+    if (nextAuth) {
+      params.set("auth", nextAuth)
+    } else {
+      params.delete("auth")
+    }
+
+    if (nextToken) {
+      params.set("token", nextToken)
+    } else {
+      params.delete("token")
+    }
+
+    const query = params.toString()
+    router.replace(query ? `/?${query}` : "/", { scroll: false })
+  }
 
   const openLoginModal = () => {
     setInviteOpen(false)
     setAuthView("login")
     setAuthOpen(true)
-    router.replace("/?auth=login")
+    syncUrl("login", inviteToken)
   }
 
   return (
     <>
-      <AuthGateModal open={authOpen} onOpenChange={setAuthOpen} initialView={authView} />
+      <AuthGateModal
+        open={authOpen}
+        onOpenChange={(nextOpen) => {
+          setAuthOpen(nextOpen)
+          if (!nextOpen) {
+            syncUrl(null, inviteToken)
+          }
+        }}
+        initialView={authView}
+      />
       <TeamInviteDialog
         open={inviteOpen}
         onOpenChange={(nextOpen) => {
           setInviteOpen(nextOpen)
           if (!nextOpen) {
-            router.replace("/")
+            router.replace("/", { scroll: false })
           }
         }}
         token={inviteToken}

@@ -534,6 +534,7 @@ export function SkipperDashboard() {
       const mapped = memberRows.map((member: any) => {
         const profile = member.user_id ? profilesByUserId.get(member.user_id) : null
         const resolvedName = member.display_name || profile?.full_name || member.email?.split("@")[0] || "Csapattag"
+        const resolvedStatus: TeamMember["status"] = member.status === "active" ? "active" : "invited"
         const resolvedRole = member.status === "active" ? "Csapattag" : member.role === "Új tag" ? "Meghívott" : member.role || "Meghívott"
 
         return {
@@ -542,6 +543,7 @@ export function SkipperDashboard() {
           email: member.email || "",
           role: resolvedRole,
           avatar: profile?.avatar_url || "/placeholder.svg",
+          status: resolvedStatus,
         }
       })
 
