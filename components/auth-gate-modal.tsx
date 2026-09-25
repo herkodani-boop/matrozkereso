@@ -50,7 +50,7 @@ const commitmentOptions: Record<string, string> = {
 }
 
 const crewTypeOptions: { value: string; label: string }[] = [
-  { value: "verprofi", label: "Vérprofi versenyzés" },
+  { value: "verprofi", label: "Profi versenyzés" },
   { value: "amator", label: "Amatőr versenyzés / Tanulás" },
   { value: "tura", label: "Túra / Hobbi vitorlázás" },
 ]

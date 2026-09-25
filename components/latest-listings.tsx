@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { supabase } from "@/lib/supabase"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
+import { listings as mockListings } from "@/lib/mock-data"
 
 type ListingPreview = {
   id: string
@@ -37,6 +38,20 @@ export function LatestListings() {
 
       if (error) {
         console.error("Élő hirdetések lekérdezési hiba:", error)
+        setListings(
+          mockListings.slice(0, 4).map((listing) => ({
+            id: listing.id,
+            title: `${listing.boatName} – ${listing.event}`,
+            location: listing.location,
+            date_text: listing.date,
+            positions: [listing.role],
+            applicationCount: Number(listing.id) % 5,
+            boat: {
+              name: listing.boatName,
+              image_url: listing.image,
+            },
+          })),
+        )
         setLoading(false)
         return
       }
@@ -54,7 +69,24 @@ export function LatestListings() {
         boat: ad.boat ?? null,
       }))
 
-      setListings(mapped)
+      if (mapped.length === 0) {
+        setListings(
+          mockListings.slice(0, 4).map((listing) => ({
+            id: listing.id,
+            title: `${listing.boatName} – ${listing.event}`,
+            location: listing.location,
+            date_text: listing.date,
+            positions: [listing.role],
+            applicationCount: Number(listing.id) % 5,
+            boat: {
+              name: listing.boatName,
+              image_url: listing.image,
+            },
+          })),
+        )
+      } else {
+        setListings(mapped)
+      }
       setLoading(false)
     }
 

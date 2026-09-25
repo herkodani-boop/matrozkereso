@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import type { User } from "@supabase/supabase-js"
 import Image from "next/image"
 import { Anchor, CalendarDays, MapPin, Users, Award, Sailboat, ChevronDown } from "lucide-react"
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select"
 import { AuthGateModal } from "@/components/auth-gate-modal"
 import { supabase } from "@/lib/supabase"
-import type { Commitment, Level } from "@/lib/mock-data"
+import { listings as mockListings, type Commitment, type Level } from "@/lib/mock-data"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
 
 type ListingPost = "kormanyos" | "taktikus" | "main-trim" | "jib-trim" | "mast" | "fordeck" | "barmilyen"
@@ -104,6 +104,7 @@ function normalizePost(positionRaw: unknown): ListingPost {
 export function BrowseBoats() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const pathname = usePathname()
 
   const initialPosts = (searchParams.get("post") ?? "")
     .split(",")
@@ -140,8 +141,9 @@ export function BrowseBoats() {
     if (filters.commitment !== ALL) params.set("commitment", filters.commitment)
     if (filters.posts.length > 0) params.set("post", filters.posts.join(","))
     if (filters.level !== ALL) params.set("level", filters.level)
+
     const qs = params.toString()
-    router.replace(qs ? `?${qs}` : ".", { scroll: false })
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
 
   useEffect(() => {
@@ -413,8 +415,26 @@ export function BrowseBoats() {
         }
       })
 
-      setListingsData(mapped)
-      setOpenDetailsIds((prev) => prev.filter((id) => mapped.some((listing) => listing.id === id)))
+      const resolvedListings = mapped.length > 0 ? mapped : mockListings.map((listing) => ({
+        id: listing.id,
+        boatName: listing.boatName,
+        image: listing.image,
+        commitment: listing.commitment,
+        event: listing.event,
+        location: listing.location,
+        date: listing.date,
+        roles: ["barmilyen"],
+        level: listing.level,
+        applied: false,
+        applicationId: null,
+        applicationCount: Number(listing.id) % 4,
+        captainName: "Teszt kapitány",
+        captainAvatar: null,
+        captainNote: "Teszt hirdetés a design ellenőrzéshez.",
+      }))
+
+      setListingsData(resolvedListings)
+      setOpenDetailsIds((prev) => prev.filter((id) => resolvedListings.some((listing) => listing.id === id)))
       setLoadingAds(false)
     }
 

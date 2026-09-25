@@ -21,6 +21,7 @@ import {
   ImagePlus,
   Trash2,
   Archive,
+  PencilLine,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -173,6 +174,84 @@ const INITIAL_LISTINGS: Listing[] = [
   },
 ]
 
+type EventItem = {
+  id: string
+  title: string
+  date: string
+  location: string
+  type: "Verseny" | "Edzés" | "Túra" | "Kikötői találkozó"
+  details: string
+  participants: { name: string; avatar: string }[]
+}
+
+type TeamMember = {
+  id: string
+  name: string
+  email: string
+  role: string
+  avatar: string
+}
+
+const SAMPLE_TEAM: TeamMember[] = [
+  { id: "team-1", name: "Kovács Bálint", email: "kovacs.balint@example.hu", role: "Trimmer", avatar: "/avatars/applicant-1.png" },
+  { id: "team-2", name: "Tóth Eszter", email: "toth.eszter@example.hu", role: "Mancsaft", avatar: "/avatars/applicant-2.png" },
+  { id: "team-3", name: "Szabó Anna", email: "szabo.anna@example.hu", role: "Kormányos", avatar: "/avatars/applicant-4.png" },
+]
+
+const SAMPLE_EVENTS: EventItem[] = [
+  {
+    id: "event-1",
+    title: "Kékszalag Erste Kör",
+    date: "2026. június 12.",
+    location: "Balatonfüred",
+    type: "Verseny",
+    details: "A verseny rajtja 09:30-kor, a csapatok között rövid eligibilitási briefing lesz a parton. Várhatóan 1–2 óra vitorlázás a Kikötői pályán.",
+    participants: [
+      { name: "Kovács Bálint", avatar: "/avatars/applicant-1.png" },
+      { name: "Tóth Eszter", avatar: "/avatars/applicant-2.png" },
+      { name: "Nagy Gergő", avatar: "/avatars/applicant-3.png" },
+    ],
+  },
+  {
+    id: "event-2",
+    title: "Reggeli edzés",
+    date: "2026. június 16. 07:30",
+    location: "Siófok",
+    type: "Edzés",
+    details: "Korai, dinamikus edzés a hajókezelés és a manőverezés gyakorlására. A felkészüléshez könnyű frissítővel és hajókészítő ellenőrzéssel számoljunk.",
+    participants: [
+      { name: "Szabó Anna", avatar: "/avatars/applicant-4.png" },
+      { name: "Kovács Bálint", avatar: "/avatars/applicant-1.png" },
+    ],
+  },
+  {
+    id: "event-3",
+    title: "Balatoni körutazás",
+    date: "2026. július 02.",
+    location: "Badacsony – Tihany",
+    type: "Túra",
+    details: "Kis túra a Balaton környékén, különös hangsúllyal a szél és a kikötői környezet megismerésére. A csapat közösen tervezi a menetidőket.",
+    participants: [
+      { name: "Tóth Eszter", avatar: "/avatars/applicant-2.png" },
+      { name: "Nagy Gergő", avatar: "/avatars/applicant-3.png" },
+      { name: "Szabó Anna", avatar: "/avatars/applicant-4.png" },
+      { name: "Kovács Bálint", avatar: "/avatars/applicant-1.png" },
+    ],
+  },
+  {
+    id: "event-4",
+    title: "Kikötői csapatértekezlet",
+    date: "2026. július 09. 18:00",
+    location: "Balatonfüred, kikötő",
+    type: "Kikötői találkozó",
+    details: "A csapat összejövetelén átbeszéljük az idei szezon céljait, a feladatokat és a következő versenyre való felkészülést.",
+    participants: [
+      { name: "Kovács Bálint", avatar: "/avatars/applicant-1.png" },
+      { name: "Tóth Eszter", avatar: "/avatars/applicant-2.png" },
+    ],
+  },
+]
+
 const levelStyles: Record<Applicant["level"], string> = {
   Kezdő: "bg-secondary text-secondary-foreground",
   Haladó: "bg-accent/15 text-accent-foreground",
@@ -240,10 +319,15 @@ function resolveAvatarUrl(userData: any): string {
 }
 
 const crewTypeOptions = [
-  { value: "verprofi", label: "Vérprofi versenyzés" },
+  { value: "verprofi", label: "Profi versenyzés" },
   { value: "amator", label: "Amatőr versenyzés / Tanulás" },
   { value: "tura", label: "Túra / Hobbi vitorlázás" },
 ]
+
+function resolveCrewTypeLabel(value?: string | null) {
+  if (!value) return "Nincs megadva"
+  return crewTypeOptions.find((option) => option.value === value)?.label ?? value
+}
 
 const MAX_BOAT_IMAGE_DIMENSION = 1600
 const TARGET_BOAT_IMAGE_SIZE_BYTES = 900 * 1024
@@ -330,6 +414,13 @@ async function optimizeBoatImage(file: File): Promise<File> {
 
 export function SkipperDashboard() {
   const [listings, setListings] = useState<Listing[]>([])
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(SAMPLE_TEAM)
+  const [newTeamMemberEmail, setNewTeamMemberEmail] = useState("")
+  const [events, setEvents] = useState<EventItem[]>(SAMPLE_EVENTS)
+  const [editingEventId, setEditingEventId] = useState<string | null>(null)
+  const [eventDrafts, setEventDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(SAMPLE_EVENTS.map((event) => [event.id, event.details])),
+  )
   const [selectedId, setSelectedId] = useState<string>("")
   const [statuses, setStatuses] = useState<Record<string, ApplicantStatus>>({})
   const [statusSaving, setStatusSaving] = useState<Record<string, boolean>>({})
@@ -337,9 +428,13 @@ export function SkipperDashboard() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [boat, setBoat] = useState<Boat | null>(null)
   const [hasBoat, setHasBoat] = useState(false)
+  const [confirmRemoveMemberId, setConfirmRemoveMemberId] = useState<string | null>(null)
 
   const [loadingListings, setLoadingListings] = useState(false)
   const [pendingCountsMap, setPendingCountsMap] = useState<Record<string, number>>({})
+  const [teamLoading, setTeamLoading] = useState(false)
+  const [teamError, setTeamError] = useState<string | null>(null)
+  const [inviteSending, setInviteSending] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [modalView, setModalView] = useState<"boat" | "listing">("listing")
   const [nonce, setNonce] = useState(0)
@@ -398,7 +493,38 @@ export function SkipperDashboard() {
     if (!user) {
       setBoat(null)
       setHasBoat(false)
+      setTeamMembers([])
       return
+    }
+
+    const fetchTeamMembers = async (boatId: string) => {
+      setTeamLoading(true)
+      setTeamError(null)
+
+      const { data, error } = await supabase
+        .from("boat_team_members")
+        .select("*")
+        .eq("boat_id", boatId)
+        .in("status", ["active", "invited"])
+        .order("invited_at", { ascending: false })
+
+      if (error) {
+        console.error("Csapat tagok lekérdezési hiba:", error)
+        setTeamMembers([])
+        setTeamLoading(false)
+        return
+      }
+
+      const mapped = (data ?? []).map((member: any) => ({
+        id: String(member.id),
+        name: member.display_name || member.email?.split("@")[0] || "Új tag",
+        email: member.email || "",
+        role: member.role || (member.status === "active" ? "Csapattag" : "Meghívott"),
+        avatar: "/placeholder.svg",
+      }))
+
+      setTeamMembers(mapped)
+      setTeamLoading(false)
     }
 
     const fetchBoat = async () => {
@@ -418,10 +544,12 @@ export function SkipperDashboard() {
       if (boatData) {
         setBoat(boatData)
         setHasBoat(true)
+        await fetchTeamMembers(boatData.id)
         await fetchListings(boatData.id)
       } else {
         setBoat(null)
         setHasBoat(false)
+        setTeamMembers([])
         setListings([])
         setSelectedId("")
       }
@@ -641,6 +769,7 @@ export function SkipperDashboard() {
   }, [activeListingId])
 
   const [isBoatModalOpen, setIsBoatModalOpen] = useState(false)
+  const [boatModalMode, setBoatModalMode] = useState<"create" | "edit">("create")
 
   const selected = useMemo(
     () =>
@@ -658,6 +787,87 @@ export function SkipperDashboard() {
     setModalView(view)
     setNonce((n) => n + 1)
     setModalOpen(true)
+  }
+
+  async function handleInviteTeamMember() {
+    const trimmed = newTeamMemberEmail.trim()
+    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return
+    }
+
+    if (!boat?.id || !user) {
+      setTeamError("A meghíváshoz előbb a hajóadatoknak elkészülteknek kell lenniük.")
+      return
+    }
+
+    const localPart = trimmed.split("@")[0] ?? "Új tag"
+    const fallbackName = localPart
+      .replace(/[._-]+/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+
+    setInviteSending(true)
+    setTeamError(null)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        throw new Error("A meghívás elküldéséhez be kell jelentkezned.")
+      }
+
+      const response = await fetch("/api/boat-team/invite", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          boatId: boat.id,
+          email: trimmed,
+          invitedName: fallbackName,
+        }),
+      })
+
+      const payload = (await response.json()) as {
+        ok?: boolean
+        error?: string
+        sent?: boolean
+      }
+
+      if (!response.ok || !payload.ok || !payload.sent) {
+        throw new Error(payload.error || "A meghívás elküldése sikertelen.")
+      }
+
+      setTeamMembers((prev) => [
+        {
+          id: `pending-${Date.now()}`,
+          name: fallbackName,
+          email: trimmed,
+          role: "Meghívott",
+          avatar: "/placeholder.svg",
+        },
+        ...prev,
+      ])
+      setNewTeamMemberEmail("")
+    } catch (error) {
+      setTeamError(error instanceof Error ? error.message : "A meghívás elküldése sikertelen.")
+    } finally {
+      setInviteSending(false)
+    }
+  }
+
+  function handleRemoveTeamMember(id: string) {
+    setConfirmRemoveMemberId(id)
+  }
+
+  function confirmRemoveTeamMember() {
+    const memberId = confirmRemoveMemberId
+    if (!memberId) return
+
+    setTeamMembers((prev) => prev.filter((member) => member.id !== memberId))
+    setConfirmRemoveMemberId(null)
   }
 
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -790,19 +1000,271 @@ export function SkipperDashboard() {
                       <MapPin className="h-4 w-4 text-accent" aria-hidden="true" />
                       Bázis kikötő: {boat?.harbor ?? PRIMARY_BOAT.harbor}
                     </span>
+                    <span className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-accent" aria-hidden="true" />
+                      Max létszám: {boat?.max_crew_size ?? "—"} fő
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-accent" aria-hidden="true" />
+                      Csapat jellege: {resolveCrewTypeLabel(boat?.team_type)}
+                    </span>
                   </div>
                 </div>
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <Button
-                    onClick={() => openModal("listing")}
+                    onClick={() => {
+                      setBoatModalMode("edit")
+                      setIsBoatModalOpen(true)
+                    }}
                     className="h-11 bg-accent! text-accent-foreground! hover:bg-accent/90!"
                   >
-                    <Plus className="h-4 w-4" aria-hidden="true" />
-                    Új hirdetés feladása
+                    <PencilLine className="h-4 w-4" aria-hidden="true" />
+                    Hajó adatai szerkesztése
                   </Button>
                 </div>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="mb-10" aria-labelledby="team-section">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 id="team-section" className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Csapatom
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                A hajóhoz rendelt alapcsapat tagjai és a meghívások.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Input
+                type="email"
+                value={newTeamMemberEmail}
+                onChange={(event) => setNewTeamMemberEmail(event.target.value)}
+                placeholder="email@pelda.hu"
+                className="h-11 flex-1 border-border bg-background"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleInviteTeamMember()}
+                disabled={inviteSending}
+                className="h-11 border-border bg-background text-foreground hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                {inviteSending ? "Meghívás..." : "Meghívás"}
+              </Button>
+            </div>
+
+            {teamError ? (
+              <div className="mt-3 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {teamError}
+              </div>
+            ) : null}
+
+            {teamLoading ? (
+              <div className="mt-4 text-sm text-muted-foreground">Csapattagok betöltése...</div>
+            ) : null}
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {teamMembers.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border bg-secondary/20 p-4 text-sm text-muted-foreground sm:col-span-2 xl:col-span-3">
+                  Még nincs tag a csapatban.
+                </div>
+              ) : (
+                teamMembers.map((member) => (
+                  <div
+                    key={member.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border bg-secondary/20 p-3"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full border border-border bg-card">
+                        <Image
+                          src={member.avatar || "/placeholder.svg"}
+                          alt={member.name}
+                          fill
+                          className="object-cover"
+                          sizes="40px"
+                        />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">{member.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{member.email}</p>
+                        <p className="text-[11px] text-muted-foreground/90">{member.role}</p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      aria-label={`Eltávolítás: ${member.name}`}
+                      title="Eltávolítás"
+                      onClick={() => handleRemoveTeamMember(member.id)}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-10" aria-labelledby="events">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 id="events" className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Események
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Versenyek, edzések és egyéb hajóhoz kapcsolódó programok.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 border-dashed border-accent/50 bg-card text-accent hover:bg-accent/5"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Új esemény hozzáadása
+            </Button>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+            <div className="hidden grid-cols-[2.2fr_1.2fr_1.5fr_1fr_1.3fr] gap-0 border-b border-border bg-secondary/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:grid">
+              <span>Esemény</span>
+              <span>Időpont</span>
+              <span>Helyszín</span>
+              <span>Típus</span>
+              <span>Jelentkezők</span>
+            </div>
+
+            {events.map((event) => {
+              const isEditing = editingEventId === event.id
+              const currentDetails = eventDrafts[event.id] ?? event.details
+
+              return (
+                <div
+                  key={event.id}
+                  className="border-b border-border px-4 py-4 last:border-b-0"
+                >
+                  <div className="grid gap-3 md:grid-cols-[2.2fr_1.2fr_1.5fr_1fr_1.3fr_112px] md:items-center md:gap-0">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-semibold text-foreground">{event.title}</span>
+                      <span className="text-xs text-muted-foreground md:hidden">{event.type}</span>
+                    </div>
+                    <span className="text-sm text-muted-foreground">{event.date}</span>
+                    <span className="text-sm text-muted-foreground">{event.location}</span>
+                    <div className="md:flex md:justify-start">
+                      <Badge className="border-0 bg-accent text-accent-foreground shadow-sm">{event.type}</Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex -space-x-2">
+                        {event.participants.slice(0, 4).map((participant) => (
+                          <span
+                            key={`${event.id}-${participant.name}`}
+                            className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border-2 border-card bg-secondary"
+                            title={participant.name}
+                          >
+                            <Image
+                              src={participant.avatar || "/placeholder.svg"}
+                              alt={participant.name}
+                              width={32}
+                              height={32}
+                              className="object-cover"
+                            />
+                          </span>
+                        ))}
+                      </div>
+                      {event.participants.length > 4 ? (
+                        <span className="text-xs font-medium text-muted-foreground">+{event.participants.length - 4}</span>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        title="Szerkesztés"
+                        aria-label={`Esemény szerkesztése: ${event.title}`}
+                        onClick={() => setEditingEventId(event.id)}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-secondary/60 text-foreground transition-colors hover:border-accent hover:text-accent"
+                      >
+                        <PencilLine className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Hirdetés feladása ehhez az eseményhez"
+                        aria-label={`Hirdetés feladása az ${event.title} eseményhez`}
+                        onClick={() => openModal("listing")}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/40 bg-accent/10 text-accent transition-colors hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {isEditing ? (
+                    <div className="mt-3 rounded-xl border border-dashed border-border bg-secondary/30 p-3">
+                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Esemény részletei
+                      </label>
+                      <textarea
+                        value={currentDetails}
+                        onChange={(changeEvent) =>
+                          setEventDrafts((prev) => ({
+                            ...prev,
+                            [event.id]: changeEvent.target.value,
+                          }))
+                        }
+                        rows={3}
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-0 placeholder:text-muted-foreground focus:border-accent"
+                        placeholder="Írj ide részletes infót az eseményről..."
+                      />
+                      <div className="mt-3 flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditingEventId(null)
+                            setEventDrafts((prev) => ({
+                              ...prev,
+                              [event.id]: event.details,
+                            }))
+                          }}
+                        >
+                          Mégse
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="bg-accent! text-accent-foreground! hover:bg-accent/90!"
+                          onClick={() => {
+                            setEvents((prev) =>
+                              prev.map((item) =>
+                                item.id === event.id
+                                  ? { ...item, details: currentDetails }
+                                  : item,
+                              ),
+                            )
+                            setEditingEventId(null)
+                          }}
+                        >
+                          Mentés
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-lg border border-border/70 bg-secondary/30 px-3 py-2 text-sm leading-relaxed text-muted-foreground">
+                      {event.details}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </section>
 
@@ -811,7 +1273,7 @@ export function SkipperDashboard() {
           {/* SECTION B: Listings */}
           <section className="lg:col-span-2" aria-labelledby="active-listings">
             <h2 id="active-listings" className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Hirdetéseid (aktív + archivált)
+              Hirdetéseim
             </h2>
             <div className="flex flex-col gap-3">
               {loadingListings ? (
@@ -1105,7 +1567,14 @@ export function SkipperDashboard() {
 
       <BoatRegistrationModal
         open={isBoatModalOpen}
-        onOpenChange={setIsBoatModalOpen}
+        mode={boatModalMode}
+        existingBoat={boat}
+        onOpenChange={(open) => {
+          setIsBoatModalOpen(open)
+          if (!open) {
+            setBoatModalMode("create")
+          }
+        }}
         onBoatSaved={(savedBoat) => {
           setBoat(savedBoat)
           setHasBoat(true)
@@ -1177,6 +1646,41 @@ export function SkipperDashboard() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!confirmRemoveMemberId} onOpenChange={(open) => { if (!open) setConfirmRemoveMemberId(null) }}>
+        <DialogContent className="max-w-sm gap-0 rounded-2xl p-0">
+          <div className="flex flex-col gap-4 p-6">
+            <DialogHeader className="gap-2">
+              <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+                Tag eltávolítása
+              </DialogTitle>
+              <DialogDescription className="text-pretty leading-relaxed">
+                {(() => {
+                  const member = teamMembers.find((item) => item.id === confirmRemoveMemberId)
+                  return member
+                    ? `Biztosan törölni akarod a csapatból ezt a személyt: ${member.name}?`
+                    : "Biztosan törölni akarod ezt a személyt a csapatból?"
+                })()}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setConfirmRemoveMemberId(null)}
+              >
+                Mégse
+              </Button>
+              <Button
+                className="flex-1 bg-destructive! text-white! hover:bg-destructive/90!"
+                onClick={confirmRemoveTeamMember}
+              >
+                Igen, törlöm
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <AuthGateModal
         key={nonce}
         open={modalOpen}
@@ -1209,11 +1713,15 @@ CREATE TABLE boats (
 
 function BoatRegistrationModal({
   open,
+  mode,
+  existingBoat,
   onOpenChange,
   onBoatSaved,
   user,
 }: {
   open: boolean
+  mode: "create" | "edit"
+  existingBoat: Boat | null
   onOpenChange: (open: boolean) => void
   onBoatSaved: (boat: Boat) => void
   user: User | null
@@ -1236,6 +1744,29 @@ function BoatRegistrationModal({
     boatPhoto?: string
     submit?: string
   }>({})
+
+  useEffect(() => {
+    if (!open) return
+
+    if (mode === "edit" && existingBoat) {
+      setName(existingBoat.name ?? "")
+      setType(existingBoat.type ?? "")
+      setHarbor(existingBoat.harbor ?? "")
+      setCrewSize(existingBoat.max_crew_size ?? "")
+      setCrewType(existingBoat.team_type ?? "")
+      setBoatPhoto(null)
+      setErrors({})
+      return
+    }
+
+    setName("")
+    setType("")
+    setHarbor("")
+    setCrewSize("")
+    setCrewType("")
+    setBoatPhoto(null)
+    setErrors({})
+  }, [open, mode, existingBoat])
 
   async function handleBoatSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -1263,7 +1794,7 @@ function BoatRegistrationModal({
       newErrors.crewType = "Csapat jellegének kiválasztása kötelező."
     }
 
-    if (!boatPhoto) {
+    if (mode !== "edit" && !boatPhoto) {
       newErrors.boatPhoto = "Hajó fotó feltöltése kötelező."
     }
 
@@ -1284,7 +1815,7 @@ function BoatRegistrationModal({
     setIsSaving(true)
 
     try {
-      let imageUrl: string | null = null
+      let imageUrl: string | null = existingBoat?.image_url ?? null
       if (boatPhoto) {
         setIsOptimizingImage(true)
         const uploadFile = await optimizeBoatImage(boatPhoto)
@@ -1313,6 +1844,32 @@ function BoatRegistrationModal({
         }
 
         imageUrl = publicUrlData.publicUrl
+      }
+
+      if (mode === "edit" && existingBoat) {
+        const { data: updatedBoat, error: updateError } = await supabase
+          .from("boats")
+          .update({
+            name: name.trim(),
+            type: type.trim(),
+            harbor: harbor.trim(),
+            max_crew_size: parseInt(String(crewSizeValue), 10),
+            team_type: crewType,
+            image_url: imageUrl,
+          })
+          .eq("id", existingBoat.id)
+          .select()
+          .single()
+
+        if (updateError || !updatedBoat) {
+          setErrors({ submit: updateError?.message ?? "Hiba történt a hajó mentése közben." })
+          return
+        }
+
+        onBoatSaved(updatedBoat)
+        onOpenChange(false)
+        router.push("/kapitany-dashboard")
+        return
       }
 
       const { data: insertedBoat, error: insertError } = await supabase
@@ -1357,10 +1914,12 @@ function BoatRegistrationModal({
               <Ship className="h-5 w-5" aria-hidden="true" />
             </div>
             <DialogTitle className="text-balance text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-              Hajó regisztrációja
+              {mode === "edit" ? "Hajó adatok szerkesztése" : "Hajó regisztrációja"}
             </DialogTitle>
             <DialogDescription className="text-pretty leading-relaxed">
-              Add meg a hajód profilját, és folytasd egy szabad hely hirdetésével.
+              {mode === "edit"
+                ? "Frissítsd a hajó adatait a meglévő profilhoz igazítva."
+                : "Add meg a hajód profilját, és folytasd egy szabad hely hirdetésével."}
             </DialogDescription>
           </DialogHeader>
 
@@ -1552,7 +2111,9 @@ function BoatRegistrationModal({
                 ? "Kép optimalizálása..."
                 : isSaving
                   ? "Mentés folyamatban..."
-                  : "Hajó mentése és Tovább a hirdetéshez"}
+                  : mode === "edit"
+                    ? "Hajó adatok mentése"
+                    : "Hajó mentése és Tovább a hirdetéshez"}
             </Button>
           </form>
         </div>

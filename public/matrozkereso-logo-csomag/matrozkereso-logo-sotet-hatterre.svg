@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="76 76 322 322" role="img" aria-label="matrózkereső.hu"><title>matrózkereső.hu</title>
+<defs><clipPath id="l"><circle cx="210" cy="210" r="109"/></clipPath></defs>
+<line x1="298" y1="298" x2="378" y2="378" stroke="#E8833A" stroke-width="32" stroke-linecap="round"/>
+<path clip-path="url(#l)" d="M80 292 q 22 -10 44 0 t 44 0 t 44 0 t 44 0 t 44 0 t 44 0 V340 H80 Z" fill="#3E8FA8"/>
+<polygon points="216,126 216,264 282,264" fill="#FFFFFF"/>
+<polygon points="204,146 204,264 150,264" fill="#E8833A"/>
+<path d="M146 272 H290 L272 292 H164 Z" fill="#FFFFFF"/>
+<circle cx="210" cy="210" r="120" fill="none" stroke="#FFFFFF" stroke-width="22"/>
+</svg>

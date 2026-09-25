@@ -13,7 +13,7 @@ export function SiteFooter() {
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-4 py-10 sm:flex-row sm:px-6">
         <Link href="/" className="flex items-center gap-2.5">
           <span className="relative h-8 w-8 overflow-hidden rounded-lg">
-            <Image src="/logo-mark.png" alt="Matrózkereső logó" fill className="object-cover" sizes="32px" />
+            <Image src="/logo-mark.svg" alt="Matrózkereső logó" fill className="object-cover" sizes="32px" />
           </span>
           <span className="text-sm font-semibold tracking-tight text-foreground">Matrózkereső</span>
         </Link>

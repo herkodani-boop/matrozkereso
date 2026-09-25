@@ -181,7 +181,7 @@ export function SiteNavbar() {
         <div className="mx-auto flex min-h-16 max-w-6xl flex-wrap items-center gap-2 px-4 py-2 sm:px-6">
           <Link href="/" className="flex shrink-0 items-center gap-2.5">
             <span className="relative h-9 w-9 overflow-hidden rounded-lg">
-              <Image src="/logo-mark.png" alt="Matrózkereső logó" fill className="object-cover" sizes="36px" />
+              <Image src="/logo-mark.svg" alt="Matrózkereső logó" fill className="object-cover" sizes="36px" />
             </span>
             <span className="text-base font-semibold tracking-tight text-foreground">Matrózkereső</span>
           </Link>
