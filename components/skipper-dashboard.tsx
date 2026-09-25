@@ -190,12 +190,13 @@ type TeamMember = {
   email: string
   role: string
   avatar: string
+  status: "active" | "invited"
 }
 
 const SAMPLE_TEAM: TeamMember[] = [
-  { id: "team-1", name: "Kovács Bálint", email: "kovacs.balint@example.hu", role: "Trimmer", avatar: "/avatars/applicant-1.png" },
-  { id: "team-2", name: "Tóth Eszter", email: "toth.eszter@example.hu", role: "Mancsaft", avatar: "/avatars/applicant-2.png" },
-  { id: "team-3", name: "Szabó Anna", email: "szabo.anna@example.hu", role: "Kormányos", avatar: "/avatars/applicant-4.png" },
+  { id: "team-1", name: "Kovács Bálint", email: "kovacs.balint@example.hu", role: "Trimmer", avatar: "/avatars/applicant-1.png", status: "active" },
+  { id: "team-2", name: "Tóth Eszter", email: "toth.eszter@example.hu", role: "Mancsaft", avatar: "/avatars/applicant-2.png", status: "active" },
+  { id: "team-3", name: "Szabó Anna", email: "szabo.anna@example.hu", role: "Kormányos", avatar: "/avatars/applicant-4.png", status: "active" },
 ]
 
 const SAMPLE_EVENTS: EventItem[] = [
@@ -810,8 +811,8 @@ export function SkipperDashboard() {
     setModalOpen(true)
   }
 
-  async function handleInviteTeamMember() {
-    const trimmed = newTeamMemberEmail.trim()
+  async function handleInviteTeamMember(inviteEmailOverride?: string) {
+    const trimmed = (inviteEmailOverride ?? newTeamMemberEmail).trim()
     if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
       return
     }
@@ -821,7 +822,7 @@ export function SkipperDashboard() {
       return
     }
 
-    const localPart = trimmed.split("@")[0] ?? "Új tag"
+    const localPart = trimmed.split("@")[0] ?? "Csapattag"
     const fallbackName = localPart
       .replace(/[._-]+/g, " ")
       .replace(/\b\w/g, (char) => char.toUpperCase())
@@ -861,17 +862,32 @@ export function SkipperDashboard() {
         throw new Error(payload.error || "A meghívás elküldése sikertelen.")
       }
 
-      setTeamMembers((prev) => [
-        {
-          id: `pending-${Date.now()}`,
-          name: fallbackName,
-          email: trimmed,
-          role: "Meghívott",
-          avatar: "/placeholder.svg",
-        },
-        ...prev,
-      ])
-      setNewTeamMemberEmail("")
+      if (inviteEmailOverride) {
+        setTeamMembers((prev) =>
+          prev.map((member) =>
+            member.email.toLowerCase() === trimmed.toLowerCase()
+              ? {
+                  ...member,
+                  role: "Meghívott",
+                  status: "invited",
+                }
+              : member,
+          ),
+        )
+      } else {
+        setTeamMembers((prev) => [
+          {
+            id: `pending-${Date.now()}`,
+            name: fallbackName,
+            email: trimmed,
+            role: "Meghívott",
+            avatar: "/placeholder.svg",
+            status: "invited",
+          },
+          ...prev,
+        ])
+        setNewTeamMemberEmail("")
+      }
     } catch (error) {
       setTeamError(error instanceof Error ? error.message : "A meghívás elküldése sikertelen.")
     } finally {
@@ -1100,7 +1116,11 @@ export function SkipperDashboard() {
                 teamMembers.map((member) => (
                   <div
                     key={member.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-border bg-secondary/20 p-3"
+                    className={`flex items-center justify-between gap-3 rounded-xl border p-3 transition-all ${
+                      member.status === "active"
+                        ? "border-accent/50 bg-accent/5 shadow-sm ring-1 ring-accent/20"
+                        : "border-border bg-secondary/20"
+                    }`}
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       <span className="relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full border border-border bg-card">
@@ -1119,15 +1139,29 @@ export function SkipperDashboard() {
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      aria-label={`Eltávolítás: ${member.name}`}
-                      title="Eltávolítás"
-                      onClick={() => handleRemoveTeamMember(member.id)}
-                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
-                    >
-                      <X className="h-4 w-4" aria-hidden="true" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {member.status === "invited" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 border-dashed border-border bg-background px-2 text-[11px] text-foreground hover:bg-secondary/70"
+                          onClick={() => void handleInviteTeamMember(member.email)}
+                        >
+                          Újraküldés
+                        </Button>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        aria-label={`Eltávolítás: ${member.name}`}
+                        title="Eltávolítás"
+                        onClick={() => handleRemoveTeamMember(member.id)}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+                      >
+                        <X className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
