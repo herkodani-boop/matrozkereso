@@ -109,7 +109,7 @@ BEGIN
     'active',
     joined_user_name,
     now(),
-    'Új tag'
+    'Csapattag'
   )
   ON CONFLICT (boat_id, email)
   DO UPDATE SET
@@ -118,7 +118,7 @@ BEGIN
     display_name = COALESCE(boat_team_members.display_name, EXCLUDED.display_name),
     accepted_at = now(),
     invited_by = COALESCE(boat_team_members.invited_by, EXCLUDED.invited_by),
-    role = COALESCE(boat_team_members.role, EXCLUDED.role)
+    role = 'Csapattag'
   RETURNING *
   INTO member_record;
 
@@ -208,13 +208,13 @@ BEGIN
     p_inviter_id,
     'invited',
     NULL,
-    'Új tag'
+    'Meghívott'
   )
   ON CONFLICT (boat_id, email)
   DO UPDATE SET
     invited_by = EXCLUDED.invited_by,
     status = CASE WHEN boat_team_members.status = 'active' THEN 'active' ELSE 'invited' END,
-    role = COALESCE(boat_team_members.role, EXCLUDED.role);
+    role = CASE WHEN boat_team_members.status = 'active' THEN 'Csapattag' ELSE 'Meghívott' END;
 
   RETURN invite_record;
 END;

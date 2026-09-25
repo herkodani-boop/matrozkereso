@@ -515,13 +515,34 @@ export function SkipperDashboard() {
         return
       }
 
-      const mapped = (data ?? []).map((member: any) => ({
-        id: String(member.id),
-        name: member.display_name || member.email?.split("@")[0] || "Új tag",
-        email: member.email || "",
-        role: member.role || (member.status === "active" ? "Csapattag" : "Meghívott"),
-        avatar: "/placeholder.svg",
-      }))
+      const memberRows = data ?? []
+      const userIds = Array.from(new Set(memberRows.map((member: any) => member.user_id).filter(Boolean)))
+      let profilesByUserId = new Map<string, any>()
+
+      if (userIds.length > 0) {
+        const { data: profilesData } = await supabase
+          .from("users")
+          .select("id, full_name, avatar_url")
+          .in("id", userIds)
+
+        ;(profilesData ?? []).forEach((profile: any) => {
+          profilesByUserId.set(profile.id, profile)
+        })
+      }
+
+      const mapped = memberRows.map((member: any) => {
+        const profile = member.user_id ? profilesByUserId.get(member.user_id) : null
+        const resolvedName = member.display_name || profile?.full_name || member.email?.split("@")[0] || "Csapattag"
+        const resolvedRole = member.status === "active" ? "Csapattag" : member.role === "Új tag" ? "Meghívott" : member.role || "Meghívott"
+
+        return {
+          id: String(member.id),
+          name: resolvedName,
+          email: member.email || "",
+          role: resolvedRole,
+          avatar: profile?.avatar_url || "/placeholder.svg",
+        }
+      })
 
       setTeamMembers(mapped)
       setTeamLoading(false)
