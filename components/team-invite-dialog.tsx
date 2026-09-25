@@ -18,11 +18,13 @@ export function TeamInviteDialog({
   onOpenChange,
   token,
   onRequestLogin,
+  onAccepted,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   token: string | null
   onRequestLogin: () => void
+  onAccepted?: () => void
 }) {
   const router = useRouter()
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "signed-out" | "error">("idle")
@@ -65,6 +67,7 @@ export function TeamInviteDialog({
 
         setStatus("success")
         setMessage("Sikeresen csatlakoztál a csapathoz.")
+        onAccepted?.()
       } catch (error) {
         setStatus("error")
         setMessage(error instanceof Error ? error.message : "A meghívás elfogadása nem sikerült.")
@@ -75,10 +78,14 @@ export function TeamInviteDialog({
   }, [open, token])
 
   const handleClose = () => {
-    onOpenChange(false)
     if (status === "success") {
+      onAccepted?.()
+      onOpenChange(false)
       router.push("/kapitany-dashboard")
+      return
     }
+
+    onOpenChange(false)
   }
 
   return (

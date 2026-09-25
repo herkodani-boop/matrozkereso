@@ -87,8 +87,8 @@ export function AuthGateModalTrigger() {
         open={authOpen}
         onOpenChange={(nextOpen) => {
           setAuthOpen(nextOpen)
-          if (!nextOpen) {
-            syncUrl(null, inviteToken)
+          if (!nextOpen && !inviteToken) {
+            syncUrl(null, null)
           }
         }}
         initialView={authView}
@@ -98,11 +98,17 @@ export function AuthGateModalTrigger() {
         onOpenChange={(nextOpen) => {
           setInviteOpen(nextOpen)
           if (!nextOpen) {
+            setInviteToken(null)
             router.replace("/", { scroll: false })
           }
         }}
         token={inviteToken}
         onRequestLogin={openLoginModal}
+        onAccepted={() => {
+          setInviteToken(null)
+          setInviteOpen(false)
+          router.replace("/", { scroll: false })
+        }}
       />
     </>
   )
