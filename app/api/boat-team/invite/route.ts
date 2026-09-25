@@ -106,27 +106,28 @@ export async function POST(request: NextRequest) {
     from: fromAddress,
     to: [email],
     replyTo: senderEmail,
-    subject: "Meghívás a hajó csapatába",
+    subject: "Meghívás csapatba a Matrózkeresőn",
     html: `
-      <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #111827; max-width: 600px; margin: 0 auto; padding: 24px 20px;">
+      <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #111827; max-width: 620px; margin: 0 auto; padding: 28px 24px; background: #ffffff;">
         <div style="font-size: 14px; color: #475569; margin-bottom: 20px;">Matrózkereső</div>
-        <h2 style="margin: 0 0 18px; font-size: 28px; line-height: 1.2; color: #0f172a;">Meghívás a hajó csapatába</h2>
 
-        <p style="margin: 0 0 12px; font-size: 16px;">Sziasztok!</p>
+        <h2 style="margin: 0 0 18px; font-size: 30px; line-height: 1.2; color: #0f172a;">Meghívás csapatba a Matrózkeresőn</h2>
+
+        <p style="margin: 0 0 10px; font-size: 16px;">Kedves Címzett!</p>
         <p style="margin: 0 0 18px; font-size: 16px;">
-          <strong>${inviterDisplayName}</strong> meghívott a csapatába.
+          <strong>${inviterDisplayName}</strong> meghívott a csapatába, melyet az alábbi linken tudsz elfogadni bejelentkezés vagy regisztrációt követően.
         </p>
 
-        <div style="margin: 0 0 18px; padding: 16px 18px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;">
+        <div style="margin: 0 0 18px; padding: 18px 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;">
           <div style="font-size: 14px; color: #475569; margin-bottom: 6px;">Hajó</div>
-          <div style="font-size: 18px; font-weight: 700; color: #0f172a;">${ownerBoat.name}</div>
+          <div style="font-size: 20px; font-weight: 700; color: #0f172a;">${ownerBoat.name}</div>
         </div>
 
-        <p style="margin: 0 0 20px; font-size: 16px;">A csatlakozáshoz kattints az alábbi gombra:</p>
+        <p style="margin: 0 0 18px; font-size: 16px;">A meghívás elfogadásához kattints az alábbi gombra:</p>
 
-        <p style="margin: 0 0 18px;">
-          <a href="${inviteLink}" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; padding: 14px 26px; border-radius: 999px; font-weight: 700; font-size: 16px;">
-            Csatlakozás a csapathoz
+        <p style="margin: 0 0 20px;">
+          <a href="${inviteLink}" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 999px; font-weight: 700; font-size: 16px;">
+            Elfogadom a meghívást
           </a>
         </p>
 
@@ -136,7 +137,7 @@ export async function POST(request: NextRequest) {
         <p style="margin-top: 22px; font-size: 14px; color: #475569;">Ez a meghívás 7 napig érvényes.</p>
       </div>
     `,
-    text: `Sziasztok!\n\n${inviterDisplayName} meghívott a csapatába.\n\nHajó: ${ownerBoat.name}\n\nA csatlakozáshoz kattints erre a linkre:\n${inviteLink}\n\nEz a meghívás 7 napig érvényes.`,
+    text: `Meghívás csapatba a Matrózkeresőn\n\nKedves Címzett!\n\n${inviterDisplayName} meghívott a csapatába, melyet az alábbi linken tudsz elfogadni bejelentkezés vagy regisztrációt követően.\n\nHajó: ${ownerBoat.name}\n\nElfogadási link:\n${inviteLink}\n\nEz a meghívás 7 napig érvényes.`,
   })
 
   if (emailResult.error) {
