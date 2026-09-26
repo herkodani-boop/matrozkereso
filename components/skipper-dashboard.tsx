@@ -1329,22 +1329,26 @@ export function SkipperDashboard() {
     setArchivingId(id)
 
     try {
-      const { data, error } = await supabase
-        .from("ads")
-        .update({ is_active: false })
-        .eq("id", id)
-        .select("id")
-        .maybeSingle()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-      if (error) {
-        console.error("Hirdetés lezárási hiba:", error)
-        setActionError("A hirdetés lezárása nem sikerült.")
-        return
+      if (!session?.access_token) {
+        throw new Error("A lezáráshoz be kell jelentkezned.")
       }
 
-      if (!data) {
-        setActionError("A hirdetés nem található, vagy nincs jogosultságod a lezárásához.")
-        return
+      const response = await fetch("/api/listings/archive", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ listingId: id }),
+      })
+      const result = (await response.json()) as { id?: string; error?: string }
+
+      if (!response.ok || !result.id) {
+        throw new Error(result.error || "A hirdetés lezárása nem sikerült.")
       }
 
       setListings((prev) =>
@@ -1354,7 +1358,11 @@ export function SkipperDashboard() {
       setConfirmArchiveId(null)
     } catch (error) {
       console.error("Hirdetés lezárási hiba:", error)
-      setActionError("A hirdetés lezárása nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "A hirdetés lezárása nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.",
+      )
     } finally {
       setArchivingId(null)
     }
