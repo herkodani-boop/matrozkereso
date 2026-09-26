@@ -914,13 +914,35 @@ export function SkipperDashboard() {
     }
 
     const memberEmail = member.email?.trim().toLowerCase()
+    if (!memberEmail) {
+      setConfirmRemoveMemberId(null)
+      setTeamError("A csapattag eltávolítása nem sikerült.")
+      return
+    }
+
+    const { data: memberRows, error: lookupError } = await supabase
+      .from("boat_team_members")
+      .select("id")
+      .eq("boat_id", boat.id)
+      .eq("email", memberEmail)
+      .in("status", ["invited", "active"])
+      .limit(20)
+
+    if (lookupError) {
+      console.error("Csapattag keresési hiba:", lookupError)
+      setTeamError("A csapattag eltávolítása nem sikerült.")
+      setConfirmRemoveMemberId(null)
+      return
+    }
+
+    const matchedMemberId = memberRows?.[0]?.id ?? memberId
 
     const { error } = await supabase
       .from("boat_team_members")
       .update({ status: "removed" })
+      .eq("id", matchedMemberId)
       .eq("boat_id", boat.id)
       .in("status", ["invited", "active"])
-      .or(memberEmail ? `email.eq.${memberEmail},id.eq.${memberId}` : `id.eq.${memberId}`)
 
     if (error) {
       console.error("Csapattag törlési hiba:", error)
@@ -929,16 +951,14 @@ export function SkipperDashboard() {
       return
     }
 
-    if (memberEmail) {
-      await supabase
-        .from("boat_team_invitations")
-        .update({ status: "cancelled" })
-        .eq("boat_id", boat.id)
-        .eq("invitee_email", memberEmail)
-        .in("status", ["pending"])
-    }
+    await supabase
+      .from("boat_team_invitations")
+      .update({ status: "cancelled" })
+      .eq("boat_id", boat.id)
+      .eq("invitee_email", memberEmail)
+      .in("status", ["pending"])
 
-    setTeamMembers((prev) => prev.filter((item) => item.id !== memberId))
+    setTeamMembers((prev) => prev.filter((item) => item.email.toLowerCase() !== memberEmail && item.id !== memberId))
     setConfirmRemoveMemberId(null)
   }
 
