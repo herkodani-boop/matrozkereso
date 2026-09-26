@@ -339,20 +339,6 @@ export function SkipperDashboard() {
 
   useEffect(() => {
     if (!user) {
-      router.replace("/")
-      setBoat(null)
-      setHasBoat(false)
-      setTeamMembers([])
-      return
-    }
-  }, [user, router])
-
-  if (!user) {
-    return null
-  }
-
-  useEffect(() => {
-    if (!user) {
       setBoat(null)
       setHasBoat(false)
       setTeamMembers([])

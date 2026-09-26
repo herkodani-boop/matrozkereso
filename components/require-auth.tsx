@@ -13,13 +13,25 @@ export function RequireAuth({ children, redirectTo = "/" }: { children: ReactNod
 
     async function verify() {
       const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+
+      if (!isMounted) return
+
+      if (sessionError || !session?.user) {
+        router.replace(redirectTo)
+        return
+      }
+
+      const {
         data: { user },
-        error,
+        error: userError,
       } = await supabase.auth.getUser()
 
       if (!isMounted) return
 
-      if (error || !user) {
+      if (userError || !user) {
         router.replace(redirectTo)
         return
       }
@@ -31,11 +43,16 @@ export function RequireAuth({ children, redirectTo = "/" }: { children: ReactNod
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session?.user) {
-        router.replace(redirectTo)
-      } else if (isMounted) {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return
+
+      if (session?.user) {
         setChecking(false)
+        return
+      }
+
+      if (event === "SIGNED_OUT") {
+        router.replace(redirectTo)
       }
     })
 
