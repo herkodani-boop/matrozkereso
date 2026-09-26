@@ -4,8 +4,8 @@ import Link from "next/link"
 import Image from "next/image"
 import { useEffect, useState, type FormEvent } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { LogOut, Bell, User } from "lucide-react"
-import { type User } from "@supabase/supabase-js"
+import { LogOut, Bell, User as UserIcon } from "lucide-react"
+import { type User as SupabaseUser } from "@supabase/supabase-js"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { AuthGateModal } from "@/components/auth-gate-modal"
@@ -32,7 +32,7 @@ export function SiteNavbar() {
   const router = useRouter()
   const pathname = usePathname()
   const [authOpen, setAuthOpen] = useState(false)
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<SupabaseUser | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [pendingCount, setPendingCount] = useState(0)
   const [feedbackText, setFeedbackText] = useState("")
@@ -256,7 +256,7 @@ export function SiteNavbar() {
                   className="h-10 rounded-full px-2 text-muted-foreground hover:bg-muted hover:text-foreground"
                   onClick={() => router.push("/profil")}
                 >
-                  <User className="h-4 w-4" aria-hidden="true" />
+                  <UserIcon className="h-4 w-4" aria-hidden="true" />
                 </Button>
                 <Button
                   type="button"

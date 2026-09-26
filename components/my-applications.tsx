@@ -34,6 +34,16 @@ type ApplicationRow = {
   } | null
 }
 
+type ApplicationBoat = NonNullable<NonNullable<ApplicationRow["ad"]>["boat"]>
+type ApplicationAd = NonNullable<ApplicationRow["ad"]>
+type ApplicationQueryRow = Omit<ApplicationRow, "ad"> & {
+  ad: (Omit<ApplicationAd, "boat"> & {
+    boat: ApplicationBoat | ApplicationBoat[] | null
+  }) | (Omit<ApplicationAd, "boat"> & {
+    boat: ApplicationBoat | ApplicationBoat[] | null
+  })[] | null
+}
+
 const statusConfig = {
   pending: {
     label: "Elbírálás alatt",
@@ -102,7 +112,21 @@ export function MyApplications() {
         return
       }
 
-      const visibleApplications = ((data ?? []) as ApplicationRow[])
+      const normalizedApplications = ((data ?? []) as unknown as ApplicationQueryRow[]).map((row) => {
+        const relatedAd = Array.isArray(row.ad) ? row.ad[0] ?? null : row.ad
+        const relatedBoat = relatedAd
+          ? Array.isArray(relatedAd.boat)
+            ? relatedAd.boat[0] ?? null
+            : relatedAd.boat
+          : null
+
+        return {
+          ...row,
+          ad: relatedAd ? { ...relatedAd, boat: relatedBoat } : null,
+        } satisfies ApplicationRow
+      })
+
+      const visibleApplications = normalizedApplications
         .filter((row) => (row.ad ? !row.ad.is_active || isAdVisibleByDate(row.ad) : false))
         .slice(0, MAX_SHOWN)
 

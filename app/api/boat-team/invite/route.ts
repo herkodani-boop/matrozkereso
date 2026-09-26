@@ -16,7 +16,7 @@ function isPlaceholderDomain(value: string | undefined) {
 function getSenderEmail() {
   const senderEmail = process.env.RESEND_FROM_EMAIL?.trim()
 
-  if (isPlaceholderDomain(senderEmail)) {
+  if (!senderEmail || isPlaceholderDomain(senderEmail)) {
     throw new Error(
       "A RESEND_FROM_EMAIL mezőnek egy tényleges, ellenőrzött domainre kell mutatnia, például: no-reply@matrozkereso.com",
     )

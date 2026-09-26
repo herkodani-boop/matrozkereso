@@ -416,7 +416,7 @@ export function BrowseBoats() {
       })
 
       setListingsData(mapped)
-      setOpenDetailsIds((prev) => prev.filter((id) => resolvedListings.some((listing) => listing.id === id)))
+      setOpenDetailsIds((prev) => prev.filter((id) => mapped.some((listing) => listing.id === id)))
       setLoadingAds(false)
     }
 

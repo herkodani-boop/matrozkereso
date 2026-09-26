@@ -106,6 +106,7 @@ export function AuthGateModal({
   userId?: string
   onListingCreated?: () => void
   prefill?: {
+    eventId?: string
     title?: string
     location?: string
     startDate?: string
@@ -128,6 +129,7 @@ export function AuthGateModal({
   const [boatCrewSize, setBoatCrewSize] = useState("")
   const [crewType, setCrewType] = useState<string>("amator")
   const [listingCommitment, setListingCommitment] = useState<string>("egy-verseny")
+  const [listingEventId, setListingEventId] = useState<string | null>(null)
   const [isEventPrefilledListing, setIsEventPrefilledListing] = useState(false)
   const [listingPosts, setListingPosts] = useState<string[]>([])
   const [listingLevel, setListingLevel] = useState<string>("kezdo")
@@ -173,6 +175,7 @@ export function AuthGateModal({
     setBoatCrewSize("")
     setCrewType("amator")
     setListingTitle("")
+    setListingEventId(null)
     setListingLocation("")
     setListingStartDate("")
     setListingEndDate("")
@@ -208,6 +211,7 @@ export function AuthGateModal({
     setView(initialView ?? (mode === "skipper" ? "register" : "login"))
 
     if (prefill) {
+      setListingEventId(prefill.eventId ?? null)
       setListingTitle(prefill.title ?? "")
       setListingLocation(prefill.location ?? "")
       setListingStartDate(prefill.startDate ?? "")
@@ -610,6 +614,7 @@ export function AuthGateModal({
       const dateText = formatDateText(listingStartDate, listingEndDate, listingOneDay)
       const listingPayload = {
         boat_id: boatId,
+        event_id: listingEventId,
         user_id: userId,
         title: listingTitle.trim(),
         date_text: dateText,

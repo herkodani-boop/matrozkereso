@@ -53,6 +53,7 @@ type Applicant = {
 
 type Listing = {
   id: string
+  eventId: string | null
   event: string
   location: string
   date: string
@@ -192,6 +193,10 @@ function normalizeMatchText(value: string | null | undefined) {
 function isMatchingListingToEvent(listing: Listing | undefined, event: EventItem | undefined) {
   if (!listing || !event) {
     return false
+  }
+
+  if (listing.eventId) {
+    return listing.eventId === event.id
   }
 
   const titleMatches = normalizeMatchText(listing.event) === normalizeMatchText(event.title)
@@ -356,6 +361,8 @@ export function SkipperDashboard() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [boat, setBoat] = useState<Boat | null>(null)
   const [hasBoat, setHasBoat] = useState(false)
+  const [boatLoading, setBoatLoading] = useState(true)
+  const [boatLoadError, setBoatLoadError] = useState<string | null>(null)
   const [confirmRemoveMemberId, setConfirmRemoveMemberId] = useState<string | null>(null)
 
   const [loadingListings, setLoadingListings] = useState(false)
@@ -367,6 +374,7 @@ export function SkipperDashboard() {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalView, setModalView] = useState<"boat" | "listing">("listing")
   const [listingPrefill, setListingPrefill] = useState<{
+    eventId?: string
     title?: string
     location?: string
     startDate?: string
@@ -491,31 +499,40 @@ export function SkipperDashboard() {
     }
 
     const fetchBoat = async () => {
-      const { data: boatData, error } = await supabase
-        .from("boats")
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle()
+      setBoatLoading(true)
+      setBoatLoadError(null)
 
-      if (error) {
+      try {
+        const { data: boatData, error } = await supabase
+          .from("boats")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle()
+
+        if (error) {
+          throw error
+        }
+
+        if (boatData) {
+          setBoat(boatData)
+          setHasBoat(true)
+          await fetchTeamMembers(boatData.id)
+          await fetchListings(boatData.id)
+          await fetchBoatEvents(boatData.id)
+        } else {
+          setBoat(null)
+          setHasBoat(false)
+          setTeamMembers([])
+          setListings([])
+          setSelectedId("")
+        }
+      } catch (error) {
         console.error("Hajó lekérdezési hiba:", error)
         setBoat(null)
         setHasBoat(false)
-        return
-      }
-
-      if (boatData) {
-        setBoat(boatData)
-        setHasBoat(true)
-        await fetchTeamMembers(boatData.id)
-        await fetchListings(boatData.id)
-        await fetchBoatEvents(boatData.id)
-      } else {
-        setBoat(null)
-        setHasBoat(false)
-        setTeamMembers([])
-        setListings([])
-        setSelectedId("")
+        setBoatLoadError("A hajó adatait nem sikerült betölteni. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+      } finally {
+        setBoatLoading(false)
       }
     }
 
@@ -637,6 +654,7 @@ export function SkipperDashboard() {
       if (allAds.length > 0) {
         const mapped: Listing[] = allAds.map((ad: any) => ({
           id: ad.id,
+          eventId: ad.event_id ? String(ad.event_id) : null,
           event: ad.title,
           location: ad.location,
           date: ad.date_text,
@@ -833,7 +851,7 @@ export function SkipperDashboard() {
   const selected = useMemo(
     () =>
       listings.find((l) => l.id === selectedId) ??
-      ({ id: "", event: "Válassz hirdetést", location: "", date: "", isActive: true, isDeleted: false, isHistorical: false, positions: [], applicants: [] } as Listing),
+      ({ id: "", eventId: null, event: "Válassz hirdetést", location: "", date: "", isActive: true, isDeleted: false, isHistorical: false, positions: [], applicants: [] } as Listing),
     [listings, selectedId],
   )
   const previousListingsCount = listings.filter((listing) => listing.isHistorical).length
@@ -853,6 +871,7 @@ export function SkipperDashboard() {
 
   function openListingModalFromEvent(event: EventItem) {
     setListingPrefill({
+      eventId: event.id,
       title: event.title,
       location: event.location,
       startDate: event.startDate,
@@ -1049,6 +1068,7 @@ export function SkipperDashboard() {
 
   async function handleCreateEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setActionError(null)
 
     if (!boat?.id) {
       setActionError("Előbb hozzá kell adni a hajót, mielőtt eseményt mentesz.")
@@ -1124,6 +1144,7 @@ export function SkipperDashboard() {
 
   async function handleUpdateEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setActionError(null)
 
     if (!editingEventId) {
       return
@@ -1556,7 +1577,18 @@ export function SkipperDashboard() {
   return (
     <div className="flex min-h-screen flex-col bg-secondary/40">
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
-        {hasBoat ? (
+        {boatLoading ? (
+          <div className="flex min-h-[60vh] items-center justify-center text-sm text-muted-foreground">
+            Hajóadatok betöltése...
+          </div>
+        ) : boatLoadError ? (
+          <div className="mx-auto flex min-h-[60vh] max-w-lg flex-col items-center justify-center gap-4 text-center">
+            <p role="alert" className="text-sm text-destructive">{boatLoadError}</p>
+            <Button type="button" variant="outline" onClick={() => setListingsRefreshKey((key) => key + 1)}>
+              Újrapróbálás
+            </Button>
+          </div>
+        ) : hasBoat ? (
           <>
             <div className="mb-8">
               <h1 className="text-balance text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
@@ -2617,6 +2649,11 @@ export function SkipperDashboard() {
             </div>
 
             <div className="grid gap-5 px-6 py-6 md:grid-cols-2">
+              {actionError ? (
+                <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive md:col-span-2">
+                  {actionError}
+                </div>
+              ) : null}
               <div className="space-y-1.5 md:col-span-2">
                 <Label htmlFor="event-type">Esemény típusa</Label>
                 <select
@@ -2749,6 +2786,11 @@ export function SkipperDashboard() {
             </div>
 
             <div className="grid gap-5 px-6 py-6 md:grid-cols-2">
+              {actionError ? (
+                <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive md:col-span-2">
+                  {actionError}
+                </div>
+              ) : null}
               <div className="space-y-1.5 md:col-span-2">
                 <Label htmlFor="edit-event-type">Esemény típusa</Label>
                 <select
