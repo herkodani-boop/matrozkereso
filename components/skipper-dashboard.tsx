@@ -58,6 +58,7 @@ type Listing = {
   date: string
   isActive: boolean
   isDeleted: boolean
+  isHistorical: boolean
   positions: string[]
   applicants: Applicant[]
 }
@@ -348,6 +349,7 @@ export function SkipperDashboard() {
     notes: "",
   })
   const [selectedId, setSelectedId] = useState<string>("")
+  const [showPreviousListings, setShowPreviousListings] = useState(false)
   const [statuses, setStatuses] = useState<Record<string, ApplicantStatus>>({})
   const [statusSaving, setStatusSaving] = useState<Record<string, boolean>>({})
   const [user, setUser] = useState<User | null>(null)
@@ -360,6 +362,7 @@ export function SkipperDashboard() {
   const [pendingCountsMap, setPendingCountsMap] = useState<Record<string, number>>({})
   const [teamLoading, setTeamLoading] = useState(false)
   const [teamError, setTeamError] = useState<string | null>(null)
+  const [teamLoadError, setTeamLoadError] = useState<string | null>(null)
   const [inviteSending, setInviteSending] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [modalView, setModalView] = useState<"boat" | "listing">("listing")
@@ -434,6 +437,7 @@ export function SkipperDashboard() {
     const fetchTeamMembers = async (boatId: string) => {
       setTeamLoading(true)
       setTeamError(null)
+      setTeamLoadError(null)
 
       const { data, error } = await supabase
         .from("boat_team_members")
@@ -445,6 +449,7 @@ export function SkipperDashboard() {
       if (error) {
         console.error("Csapat tagok lekérdezési hiba:", error)
         setTeamMembers([])
+        setTeamLoadError("A csapattagok betöltése nem sikerült. Próbáld újra később.")
         setTeamLoading(false)
         return
       }
@@ -627,21 +632,22 @@ export function SkipperDashboard() {
         return
       }
 
-      const visibleAds = (adsData ?? []).filter((ad: any) => !ad.is_active || isAdVisibleByDate(ad))
+      const allAds = adsData ?? []
 
-      if (visibleAds.length > 0) {
-        const mapped: Listing[] = visibleAds.map((ad: any) => ({
+      if (allAds.length > 0) {
+        const mapped: Listing[] = allAds.map((ad: any) => ({
           id: ad.id,
           event: ad.title,
           location: ad.location,
           date: ad.date_text,
           isActive: ad.is_active !== false,
           isDeleted: ad.is_deleted === true,
+          isHistorical: ad.is_deleted === true || ad.is_active === false || !isAdVisibleByDate(ad),
           positions: (ad.positions ?? []).map((p: unknown) => formatPositionLabel(p)),
           applicants: [],
         }))
 
-        mapped.sort((a, b) => Number(b.isActive) - Number(a.isActive))
+        mapped.sort((a, b) => Number(a.isHistorical) - Number(b.isHistorical))
 
         setListings((prev) => {
           const previousById = new Map(prev.map((listing) => [listing.id, listing]))
@@ -652,15 +658,15 @@ export function SkipperDashboard() {
         })
 
         setSelectedId((prev) => {
-          if (prev && mapped.some((listing) => listing.id === prev)) {
+          if (prev && mapped.some((listing) => listing.id === prev && !listing.isHistorical)) {
             return prev
           }
-          const firstActive = mapped.find((listing) => listing.isActive)
-          return firstActive?.id ?? mapped[0]?.id ?? ""
+          const firstCurrent = mapped.find((listing) => !listing.isHistorical)
+          return firstCurrent?.id ?? ""
         })
 
         // Pending számok lekérése az összes hirdetéshez
-        const adIds = visibleAds.map((ad: any) => ad.id)
+        const adIds = allAds.map((ad: any) => ad.id)
         const { data: pendingApps } = await supabase
           .from("applications")
           .select("ad_id")
@@ -688,7 +694,7 @@ export function SkipperDashboard() {
     [pendingCountsMap],
   )
 
-  const activeListingId = useMemo(() => selectedId || listings[0]?.id || "", [selectedId, listings])
+  const activeListingId = selectedId
 
   useEffect(() => {
     if (!activeListingId) {
@@ -827,10 +833,13 @@ export function SkipperDashboard() {
   const selected = useMemo(
     () =>
       listings.find((l) => l.id === selectedId) ??
-      listings[0] ??
-      ({ id: "", event: "Nincs hirdetés", location: "", date: "", isActive: true, isDeleted: false, positions: [], applicants: [] } as Listing),
+      ({ id: "", event: "Válassz hirdetést", location: "", date: "", isActive: true, isDeleted: false, isHistorical: false, positions: [], applicants: [] } as Listing),
     [listings, selectedId],
   )
+  const previousListingsCount = listings.filter((listing) => listing.isHistorical).length
+  const displayedListings = showPreviousListings
+    ? listings
+    : listings.filter((listing) => !listing.isHistorical)
 
   function pendingCount(listing: Listing) {
     return listing.applicants.filter((a) => (statuses[a.id] ?? "pending") === "pending").length
@@ -920,6 +929,7 @@ export function SkipperDashboard() {
         setTeamMembers((prev) => [
           {
             id: `pending-${Date.now()}`,
+            userId: "",
             name: fallbackName,
             email: trimmed,
             role: "Meghívott",
@@ -1339,7 +1349,9 @@ export function SkipperDashboard() {
 
       setListings((prev) =>
         prev.map((listing) =>
-          listing.id === id ? { ...listing, isActive: false, isDeleted: true } : listing,
+          listing.id === id
+            ? { ...listing, isActive: false, isDeleted: true, isHistorical: true }
+            : listing,
         ),
       )
       setActionNotice("A hirdetés visszavonva. A hozzá tartozó jelentkezések megmaradtak.")
@@ -1381,7 +1393,9 @@ export function SkipperDashboard() {
       }
 
       setListings((prev) =>
-        prev.map((listing) => (listing.id === id ? { ...listing, isActive: false } : listing)),
+        prev.map((listing) =>
+          listing.id === id ? { ...listing, isActive: false, isHistorical: true } : listing,
+        ),
       )
       setActionNotice("A hirdetés lezárva. Már nem látható a böngészésben, de itt visszanézhető.")
       setConfirmArchiveId(null)
@@ -1661,12 +1675,19 @@ export function SkipperDashboard() {
               </div>
             ) : null}
 
-            {teamLoading ? (
-              <div className="mt-4 text-sm text-muted-foreground">Csapattagok betöltése...</div>
-            ) : null}
-
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {teamMembers.length === 0 ? (
+              {teamLoading ? (
+                <div className="text-sm text-muted-foreground sm:col-span-2 xl:col-span-3">
+                  Csapattagok betöltése...
+                </div>
+              ) : teamLoadError ? (
+                <div
+                  role="alert"
+                  className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive sm:col-span-2 xl:col-span-3"
+                >
+                  {teamLoadError}
+                </div>
+              ) : teamMembers.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border bg-secondary/20 p-4 text-sm text-muted-foreground sm:col-span-2 xl:col-span-3">
                   Még nincs tag a csapatban.
                 </div>
@@ -2067,7 +2088,8 @@ export function SkipperDashboard() {
             <h2 id="active-listings" className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Hirdetéseim
             </h2>
-            <div className="flex flex-col gap-3">
+            <div className="max-h-[70vh] overflow-y-auto overscroll-y-contain pr-1">
+              <div className="flex flex-col gap-3">
               {loadingListings ? (
                 <>
                   {[0, 1, 2].map((i) => (
@@ -2100,8 +2122,12 @@ export function SkipperDashboard() {
                     Hirdetés feladása
                   </Button>
                 </div>
+              ) : displayedListings.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">
+                  Nincs aktuális hirdetésed. A korábbi hirdetéseidet az alábbi gombbal töltheted be.
+                </div>
               ) : (
-                listings.map((listing) => {
+                displayedListings.map((listing) => {
                 const isActive = listing.id === selected.id
                 const count = pendingCountsMap[listing.id] ?? pendingCount(listing)
                 return (
@@ -2127,6 +2153,10 @@ export function SkipperDashboard() {
                         ) : !listing.isActive ? (
                           <Badge className="bg-secondary text-secondary-foreground hover:bg-secondary">
                             Archivált
+                          </Badge>
+                        ) : listing.isHistorical ? (
+                          <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
+                            Lejárt
                           </Badge>
                         ) : null}
                         {count > 0 && (
@@ -2192,6 +2222,24 @@ export function SkipperDashboard() {
                 )
               })
               )}
+              </div>
+              {previousListingsCount > 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-3 w-full"
+                  onClick={() => {
+                    if (showPreviousListings && selected.isHistorical) {
+                      setSelectedId(listings.find((listing) => !listing.isHistorical)?.id ?? "")
+                    }
+                    setShowPreviousListings((previous) => !previous)
+                  }}
+                >
+                  {showPreviousListings
+                    ? "Korábbi hirdetések elrejtése"
+                    : `Korábbi hirdetések betöltése (${previousListingsCount})`}
+                </Button>
+              ) : null}
             </div>
           </section>
 
@@ -2203,12 +2251,13 @@ export function SkipperDashboard() {
               </h2>
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Users className="h-3.5 w-3.5" aria-hidden="true" />
-                {selected.event}
+                {selected.id ? selected.event : "Nincs kiválasztott hirdetés"}
               </span>
             </div>
 
-            <div className="flex flex-col gap-3">
-              {selected.applicants.map((applicant) => {
+            <div className="max-h-[70vh] overflow-y-auto overscroll-y-contain pr-1">
+              <div className="flex flex-col gap-3">
+              {selected.id ? selected.applicants.map((applicant) => {
                 const status = statuses[applicant.id] ?? "pending"
                 const isSaving = statusSaving[applicant.id] ?? false
                 return (
@@ -2302,62 +2351,71 @@ export function SkipperDashboard() {
                     </div>
 
                     {status === "accepted" && (
-                      <div className="flex flex-col gap-3 rounded-lg border border-emerald-600/20 bg-emerald-50 p-3">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-6">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                            Elérhetőségek
+                      <div className="overflow-hidden rounded-lg border border-emerald-700/15 bg-emerald-50">
+                        <div className="p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                            Kapcsolatfelvétel
                           </p>
-                          <a
-                            href={`tel:${applicant.phone.replace(/\s/g, "")}`}
-                            className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors hover:text-emerald-700"
-                          >
-                            <Phone className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-                            {applicant.phone}
-                          </a>
-                          <a
-                            href={`mailto:${applicant.email}`}
-                            className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors hover:text-emerald-700"
-                          >
-                            <Mail className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-                            {applicant.email}
-                          </a>
+                          <div className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                            <a
+                              href={`tel:${applicant.phone.replace(/\s/g, "")}`}
+                              className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground transition-colors hover:text-emerald-700"
+                            >
+                              <Phone className="h-4 w-4 shrink-0 text-emerald-700" aria-hidden="true" />
+                              <span className="truncate">{applicant.phone}</span>
+                            </a>
+                            <a
+                              href={`mailto:${applicant.email}`}
+                              className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground transition-colors hover:text-emerald-700"
+                            >
+                              <Mail className="h-4 w-4 shrink-0 text-emerald-700" aria-hidden="true" />
+                              <span className="break-all">{applicant.email}</span>
+                            </a>
+                          </div>
                         </div>
 
-                        <div className="flex flex-col justify-end gap-2 sm:flex-row sm:flex-wrap">
+                        <div className="grid gap-2 border-t border-emerald-700/15 bg-white/50 p-3 sm:grid-cols-2">
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => void shareCaptainContact(applicant.id)}
                             disabled={applicant.contactShared || contactSharingId === applicant.id}
-                            className="h-9"
+                            className="h-auto min-h-10 w-full justify-start whitespace-normal px-3 py-2 text-left leading-snug"
                           >
-                            <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
+                            <Share2 className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
                             {contactSharingId === applicant.id
                               ? "Megosztás..."
                               : applicant.contactShared
                                 ? "Elérhetőségek megosztva"
                                 : "Elérhetőségeim megosztása a jelentkezővel"}
                           </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => void addAcceptedApplicantToEvent(applicant.id)}
-                            className="h-9 bg-emerald-600 text-white hover:bg-emerald-700"
-                          >
-                            <Users className="mr-2 h-4 w-4" aria-hidden="true" />
-                            Jelentkező hozzáadása az eseményhez
-                          </Button>
+                          {events.some((event) => isMatchingListingToEvent(selected, event)) ? (
+                            <Button
+                              size="sm"
+                              onClick={() => void addAcceptedApplicantToEvent(applicant.id)}
+                              className="h-auto min-h-10 w-full justify-start whitespace-normal bg-emerald-700! px-3 py-2 text-left leading-snug text-white! hover:bg-emerald-800!"
+                            >
+                              <Users className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+                              Jelentkező hozzáadása az eseményhez
+                            </Button>
+                          ) : null}
                         </div>
                       </div>
                     )}
                   </div>
                 )
-              })}
+              }) : (
+                <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
+                  <p className="text-sm text-muted-foreground">Válassz ki egy hirdetést a jelentkezők megtekintéséhez.</p>
+                </div>
+              )}
 
-              {selected.applicants.length === 0 && (
+              {selected.id && selected.applicants.length === 0 && (
                 <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
                   <p className="text-sm text-muted-foreground">Erre a hirdetésre még nincs jelentkező.</p>
                 </div>
               )}
+              </div>
             </div>
           </section>
         </div>
@@ -3044,7 +3102,7 @@ function BoatRegistrationModal({
             <DialogDescription className="text-pretty leading-relaxed">
               {mode === "edit"
                 ? "Frissítsd a hajó adatait a meglévő profilhoz igazítva."
-                : "Add meg a hajód profilját, és folytasd egy szabad hely hirdetésével."}
+                : "Add meg a hajód adatait. Mentés után visszatérsz a kapitányi felületre, ahol külön adhatod fel az első hirdetést."}
             </DialogDescription>
           </DialogHeader>
 
@@ -3238,7 +3296,7 @@ function BoatRegistrationModal({
                   ? "Mentés folyamatban..."
                   : mode === "edit"
                     ? "Hajó adatok mentése"
-                    : "Hajó mentése és Tovább a hirdetéshez"}
+                    : "Hajó mentése"}
             </Button>
           </form>
         </div>
