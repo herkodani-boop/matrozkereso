@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
   if (!listingId) {
     return NextResponse.json({ error: "Hiányzó hirdetésazonosító." }, { status: 400 })
   }
+  const isDeleted = body.isDeleted === true
 
   const userClient = createClient(supabaseUrl, supabaseAnonKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
 
   const { data, error } = await userClient
     .from("ads")
-    .update({ is_active: false })
+    .update({ is_active: false, ...(isDeleted ? { is_deleted: true } : {}) })
     .eq("id", listingId)
     .select("id")
     .maybeSingle()

@@ -18,6 +18,8 @@ type ApplicationRow = {
     title: string
     location: string
     date_text: string
+    is_active: boolean
+    is_deleted: boolean
     commitment?: string | null
     start_date?: string | null
     end_date?: string | null
@@ -84,9 +86,8 @@ export function MyApplications() {
 
       const { data, error } = await supabase
         .from("applications")
-        .select("id, status, ad:ads!inner(id, title, location, date_text, is_active, commitment, start_date, end_date, boat:boats(name, image_url))")
+        .select("id, status, ad:ads!inner(id, title, location, date_text, is_active, is_deleted, commitment, start_date, end_date, boat:boats(name, image_url))")
         .eq("user_id", user.id)
-        .eq("ad.is_active", true)
         .order("created_at", { ascending: false })
         .limit(20)
 
@@ -98,7 +99,7 @@ export function MyApplications() {
       }
 
       const visibleApplications = ((data ?? []) as ApplicationRow[])
-        .filter((row) => (row.ad ? isAdVisibleByDate(row.ad) : false))
+        .filter((row) => (row.ad ? !row.ad.is_active || isAdVisibleByDate(row.ad) : false))
         .slice(0, MAX_SHOWN)
 
       setApplications(visibleApplications)
@@ -204,6 +205,11 @@ export function MyApplications() {
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-semibold text-foreground truncate">{ad?.title ?? "Ismeretlen hirdetés"}</h3>
                   <Badge className={`shrink-0 border-0 ${config.className}`}>{config.label}</Badge>
+                  {ad?.is_deleted ? (
+                    <Badge className="shrink-0 border-0 bg-muted text-muted-foreground">Hirdetés visszavonva</Badge>
+                  ) : ad?.is_active === false ? (
+                    <Badge className="shrink-0 border-0 bg-muted text-muted-foreground">Hirdetés lezárva</Badge>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">

@@ -55,6 +55,7 @@ type Listing = {
   location: string
   date: string
   isActive: boolean
+  isDeleted: boolean
   positions: string[]
   applicants: Applicant[]
 }
@@ -633,6 +634,7 @@ export function SkipperDashboard() {
           location: ad.location,
           date: ad.date_text,
           isActive: ad.is_active !== false,
+          isDeleted: ad.is_deleted === true,
           positions: (ad.positions ?? []).map((p: unknown) => formatPositionLabel(p)),
           applicants: [],
         }))
@@ -822,7 +824,7 @@ export function SkipperDashboard() {
     () =>
       listings.find((l) => l.id === selectedId) ??
       listings[0] ??
-      ({ id: "", event: "Nincs hirdetés", location: "", date: "", isActive: true, positions: [], applicants: [] } as Listing),
+      ({ id: "", event: "Nincs hirdetés", location: "", date: "", isActive: true, isDeleted: false, positions: [], applicants: [] } as Listing),
     [listings, selectedId],
   )
 
@@ -1307,20 +1309,42 @@ export function SkipperDashboard() {
     setActionNotice(null)
     setDeletingId(id)
 
-    const { error } = await supabase.from("ads").delete().eq("id", id)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-    if (error) {
-      console.error("Hirdetés törlési hiba:", error)
-      setActionError("A hirdetés törlése nem sikerült.")
+      if (!session?.access_token) {
+        throw new Error("A hirdetés visszavonásához be kell jelentkezned.")
+      }
+
+      const response = await fetch("/api/listings/archive", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ listingId: id, isDeleted: true }),
+      })
+      const result = (await response.json()) as { id?: string; error?: string }
+
+      if (!response.ok || !result.id) {
+        throw new Error(result.error || "A hirdetés visszavonása nem sikerült.")
+      }
+
+      setListings((prev) =>
+        prev.map((listing) =>
+          listing.id === id ? { ...listing, isActive: false, isDeleted: true } : listing,
+        ),
+      )
+      setActionNotice("A hirdetés visszavonva. A hozzá tartozó jelentkezések megmaradtak.")
+      setConfirmDeleteId(null)
+    } catch (error) {
+      console.error("Hirdetés visszavonási hiba:", error)
+      setActionError(error instanceof Error ? error.message : "A hirdetés visszavonása nem sikerült.")
+    } finally {
       setDeletingId(null)
-      return
     }
-
-    setListings((prev) => prev.filter((l) => l.id !== id))
-    setSelectedId((prev) => (prev === id ? "" : prev))
-    setActionNotice("A hirdetés törölve lett.")
-    setDeletingId(null)
-    setConfirmDeleteId(null)
   }
 
   async function archiveListing(id: string) {
@@ -2037,7 +2061,11 @@ export function SkipperDashboard() {
                     <div className="flex items-start justify-between gap-3">
                       <h3 className="font-semibold text-foreground">{listing.event}</h3>
                       <div className="flex shrink-0 items-center gap-2">
-                        {!listing.isActive ? (
+                        {listing.isDeleted ? (
+                          <Badge className="bg-muted text-muted-foreground hover:bg-muted">
+                            Visszavonva
+                          </Badge>
+                        ) : !listing.isActive ? (
                           <Badge className="bg-secondary text-secondary-foreground hover:bg-secondary">
                             Archivált
                           </Badge>
@@ -2063,8 +2091,8 @@ export function SkipperDashboard() {
                         <button
                           type="button"
                           aria-label="Hirdetés törlése"
-                          title="Hirdetés törlése"
-                          disabled={deletingId === listing.id}
+                          title="Hirdetés visszavonása"
+                          disabled={deletingId === listing.id || listing.isDeleted}
                           onClick={(e) => {
                             e.stopPropagation()
                             setConfirmDeleteId(listing.id)
@@ -2379,7 +2407,7 @@ export function SkipperDashboard() {
                 Hirdetés visszavonása
               </DialogTitle>
               <DialogDescription className="text-pretty leading-relaxed">
-                Biztosan visszavonod ezt a hirdetést? A jelentkezők adatai is törlődnek.
+                Biztosan visszavonod ezt a hirdetést? A hirdetés és a hozzá tartozó jelentkezések megmaradnak a kapitányi felületen.
               </DialogDescription>
             </DialogHeader>
             <div className="flex gap-3 pt-2">
