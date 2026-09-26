@@ -146,6 +146,17 @@ export async function POST(request: NextRequest) {
     ownerBoat?.image_url && /^https?:\/\//.test(ownerBoat.image_url)
       ? ownerBoat.image_url
       : "https://www.matrozkereso.com/placeholder.svg"
+  const safeBoatImageMarkup = `
+    <div style="width: 100%; max-width: 600px; height: 180px; overflow: hidden; background: #e2e8f0; border-radius: 12px 12px 0 0;">
+      <img
+        src="${boatImageUrl}"
+        alt="Hajó kép"
+        width="600"
+        height="180"
+        style="display: block; width: 100%; height: 180px; object-fit: cover; border: 0; background-color: #e2e8f0;"
+      />
+    </div>
+  `
 
   const emailResult = await resend.emails.send({
     from: fromAddress,
@@ -168,13 +179,11 @@ export async function POST(request: NextRequest) {
 
             <p style="margin: 0 0 10px; font-size: 16px; color: #334155;">Kedves Címzett!</p>
             <p style="margin: 0 0 22px; font-size: 16px; color: #334155; line-height: 1.7;">
-              <strong>${inviterDisplayName}</strong> meghívott a csapatába, amelyet a lenti gomb megnyomásával tud elfogadni.
+              <strong>${inviterDisplayName}</strong> meghívott a csapatába, amelyet a lenti gomb megnyomásával tudsz elfogadni.
             </p>
 
             <div style="margin: 0 0 20px; display: block; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
-              <div style="padding: 0;">
-                <img src="${boatImageUrl}" alt="Hajó kép" width="600" height="180" style="display: block; width: 100%; height: 180px; object-fit: cover; background: #e2e8f0;" />
-              </div>
+              ${safeBoatImageMarkup}
               <div style="padding: 18px 18px 12px;">
                 <div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 6px;">Hajó</div>
                 <div style="font-size: 22px; font-weight: 700; color: #0f172a;">${ownerBoat.name}</div>
