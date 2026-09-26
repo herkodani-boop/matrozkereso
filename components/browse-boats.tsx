@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select"
 import { AuthGateModal } from "@/components/auth-gate-modal"
 import { supabase } from "@/lib/supabase"
-import { listings as mockListings, type Commitment, type Level } from "@/lib/mock-data"
+import { type Commitment, type Level } from "@/lib/mock-data"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
 
 type ListingPost = "kormanyos" | "taktikus" | "main-trim" | "jib-trim" | "mast" | "fordeck" | "barmilyen"
@@ -415,25 +415,7 @@ export function BrowseBoats() {
         }
       })
 
-      const resolvedListings = mapped.length > 0 ? mapped : mockListings.map((listing) => ({
-        id: listing.id,
-        boatName: listing.boatName,
-        image: listing.image,
-        commitment: listing.commitment,
-        event: listing.event,
-        location: listing.location,
-        date: listing.date,
-        roles: ["barmilyen"],
-        level: listing.level,
-        applied: false,
-        applicationId: null,
-        applicationCount: Number(listing.id) % 4,
-        captainName: "Teszt kapitány",
-        captainAvatar: null,
-        captainNote: "Teszt hirdetés a design ellenőrzéshez.",
-      }))
-
-      setListingsData(resolvedListings)
+      setListingsData(mapped)
       setOpenDetailsIds((prev) => prev.filter((id) => resolvedListings.some((listing) => listing.id === id)))
       setLoadingAds(false)
     }
