@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Image from "next/image"
-import { CalendarDays, MapPin, Anchor, X } from "lucide-react"
+import { CalendarDays, MapPin, Anchor, X, Mail, Phone } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -13,6 +13,10 @@ import type { User } from "@supabase/supabase-js"
 type ApplicationRow = {
   id: string
   status: "pending" | "accepted" | "rejected"
+  captain_contact_shared_at: string | null
+  captain_contact_name: string | null
+  captain_contact_email: string | null
+  captain_contact_phone: string | null
   ad: {
     id: string
     title: string
@@ -86,7 +90,7 @@ export function MyApplications() {
 
       const { data, error } = await supabase
         .from("applications")
-        .select("id, status, ad:ads!inner(id, title, location, date_text, is_active, is_deleted, commitment, start_date, end_date, boat:boats(name, image_url))")
+        .select("id, status, captain_contact_shared_at, captain_contact_name, captain_contact_email, captain_contact_phone, ad:ads!inner(id, title, location, date_text, is_active, is_deleted, commitment, start_date, end_date, boat:boats(name, image_url))")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(20)
@@ -232,6 +236,35 @@ export function MyApplications() {
                     </span>
                   )}
                 </div>
+
+                {application.captain_contact_shared_at ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm">
+                    <span className="basis-full text-xs font-semibold text-emerald-800">
+                      A kapitány megosztotta az elérhetőségeit
+                    </span>
+                    {application.captain_contact_name ? (
+                      <span className="font-medium text-foreground">{application.captain_contact_name}</span>
+                    ) : null}
+                    {application.captain_contact_phone ? (
+                      <a
+                        href={`tel:${application.captain_contact_phone.replace(/\s/g, "")}`}
+                        className="flex items-center gap-1.5 text-foreground hover:text-emerald-700"
+                      >
+                        <Phone className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
+                        {application.captain_contact_phone}
+                      </a>
+                    ) : null}
+                    {application.captain_contact_email ? (
+                      <a
+                        href={`mailto:${application.captain_contact_email}`}
+                        className="flex items-center gap-1.5 text-foreground hover:text-emerald-700"
+                      >
+                        <Mail className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
+                        {application.captain_contact_email}
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               {application.status === "pending" && (

@@ -15,6 +15,7 @@ import {
   Users,
   Check,
   X,
+  Share2,
   ChevronRight,
   Phone,
   Mail,
@@ -47,6 +48,7 @@ type Applicant = {
   email: string
   avatar: string
   applicationMessage: string | null
+  contactShared: boolean
 }
 
 type Listing = {
@@ -701,7 +703,7 @@ export function SkipperDashboard() {
 
       const withMessageQuery = await supabase
         .from("applications")
-        .select("id, user_id, status, message")
+        .select("id, user_id, status, message, captain_contact_shared_at")
         .eq("ad_id", activeListingId)
         .order("created_at", { ascending: false })
 
@@ -740,6 +742,7 @@ export function SkipperDashboard() {
         user_id: string
         status?: ApplicantStatus
         message?: string | null
+        captain_contact_shared_at?: string | null
       }>
       const userIds = Array.from(new Set(applications.map((application) => application.user_id).filter(Boolean)))
 
@@ -782,6 +785,7 @@ export function SkipperDashboard() {
           phone: userData?.phone ?? "Nincs megadva",
           email: userData?.email ?? "Nincs megadva",
           avatar: resolveAvatarUrl(userData),
+          contactShared: Boolean(application.captain_contact_shared_at),
           applicationMessage:
             typeof application.message === "string" && application.message.trim().length > 0
               ? application.message.trim()
@@ -1003,6 +1007,7 @@ export function SkipperDashboard() {
   const [confirmEventDeleteId, setConfirmEventDeleteId] = useState<string | null>(null)
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null)
   const [archivingId, setArchivingId] = useState<string | null>(null)
+  const [contactSharingId, setContactSharingId] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -1415,6 +1420,60 @@ export function SkipperDashboard() {
 
     setActionNotice(status === "accepted" ? "Jelentkezés elfogadva." : "Jelentkezés elutasítva.")
     setStatusSaving((prev) => ({ ...prev, [id]: false }))
+  }
+
+  async function shareCaptainContact(applicantId: string) {
+    const applicant = selected.applicants.find((item) => item.id === applicantId)
+    if (!applicant || applicant.contactShared) {
+      return
+    }
+
+    setActionError(null)
+    setActionNotice(null)
+    setContactSharingId(applicantId)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        throw new Error("Az elérhetőségek megosztásához be kell jelentkezned.")
+      }
+
+      const response = await fetch("/api/applications/share-contact", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ applicationId: applicant.id }),
+      })
+      const result = (await response.json()) as { ok?: boolean; error?: string }
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || "Az elérhetőségek megosztása nem sikerült.")
+      }
+
+      setListings((prev) =>
+        prev.map((listing) =>
+          listing.id === selected.id
+            ? {
+                ...listing,
+                applicants: listing.applicants.map((item) =>
+                  item.id === applicantId ? { ...item, contactShared: true } : item,
+                ),
+              }
+            : listing,
+        ),
+      )
+      setActionNotice(`Az elérhetőségeid megosztva ${applicant.name} jelentkezővel.`)
+    } catch (error) {
+      console.error("Kapitányi elérhetőségek megosztási hiba:", error)
+      setActionError(error instanceof Error ? error.message : "Az elérhetőségek megosztása nem sikerült.")
+    } finally {
+      setContactSharingId(null)
+    }
   }
 
   async function addAcceptedApplicantToEvent(applicantId: string) {
@@ -2264,7 +2323,21 @@ export function SkipperDashboard() {
                           </a>
                         </div>
 
-                        <div className="flex items-center justify-end">
+                        <div className="flex flex-col justify-end gap-2 sm:flex-row sm:flex-wrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void shareCaptainContact(applicant.id)}
+                            disabled={applicant.contactShared || contactSharingId === applicant.id}
+                            className="h-9"
+                          >
+                            <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
+                            {contactSharingId === applicant.id
+                              ? "Megosztás..."
+                              : applicant.contactShared
+                                ? "Elérhetőségek megosztva"
+                                : "Elérhetőségeim megosztása a jelentkezővel"}
+                          </Button>
                           <Button
                             size="sm"
                             onClick={() => void addAcceptedApplicantToEvent(applicant.id)}
