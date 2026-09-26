@@ -141,7 +141,11 @@ export async function POST(request: NextRequest) {
 
   const resend = new Resend(resendApiKey)
   const fromAddress = `${senderName} <${senderEmail}>`
-  const boatImageUrl = ownerBoat?.image_url || "https://www.matrozkereso.com/placeholder.svg"
+  const logoImageUrl = "https://www.matrozkereso.com/matrozkereso-logo-csomag/png/matrozkereso-logo-512.png"
+  const boatImageUrl =
+    ownerBoat?.image_url && /^https?:\/\//.test(ownerBoat.image_url)
+      ? ownerBoat.image_url
+      : "https://www.matrozkereso.com/placeholder.svg"
 
   const emailResult = await resend.emails.send({
     from: fromAddress,
@@ -155,7 +159,7 @@ export async function POST(request: NextRequest) {
       <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #111827; max-width: 660px; margin: 0 auto; background: #f8fafc; padding: 24px;">
         <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);">
           <div style="padding: 22px 28px 14px; border-bottom: 1px solid #e2e8f0; background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);">
-            <img src="https://www.matrozkereso.com/logo-mark.png" alt="Matrózkereső logo" style="display: block; width: 44px; height: 44px; border-radius: 12px;" />
+            <img src="${logoImageUrl}" alt="Matrózkereső logo" width="44" height="44" style="display: block; width: 44px; height: 44px; border-radius: 12px;" />
           </div>
 
           <div style="padding: 28px 28px 20px; background: #ffffff;">
@@ -164,12 +168,12 @@ export async function POST(request: NextRequest) {
 
             <p style="margin: 0 0 10px; font-size: 16px; color: #334155;">Kedves Címzett!</p>
             <p style="margin: 0 0 22px; font-size: 16px; color: #334155; line-height: 1.7;">
-              <strong>${inviterDisplayName}</strong> meghívott a csapatába, mielőtt az alábbi linkre kattintva elfogadhatja a meghívást.
+              <strong>${inviterDisplayName}</strong> meghívott a csapatába, amelyet a lenti gomb megnyomásával tud elfogadni.
             </p>
 
             <div style="margin: 0 0 20px; display: block; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
               <div style="padding: 0;">
-                <img src="${boatImageUrl}" alt="Hajó kép" style="display: block; width: 100%; height: 180px; object-fit: cover; background: #e2e8f0;" />
+                <img src="${boatImageUrl}" alt="Hajó kép" width="600" height="180" style="display: block; width: 100%; height: 180px; object-fit: cover; background: #e2e8f0;" />
               </div>
               <div style="padding: 18px 18px 12px;">
                 <div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 6px;">Hajó</div>
