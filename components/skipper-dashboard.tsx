@@ -1328,21 +1328,36 @@ export function SkipperDashboard() {
     setActionNotice(null)
     setArchivingId(id)
 
-    const { error } = await supabase.from("ads").update({ is_active: false }).eq("id", id)
+    try {
+      const { data, error } = await supabase
+        .from("ads")
+        .update({ is_active: false })
+        .eq("id", id)
+        .select("id")
+        .maybeSingle()
 
-    if (error) {
+      if (error) {
+        console.error("Hirdetés lezárási hiba:", error)
+        setActionError("A hirdetés lezárása nem sikerült.")
+        return
+      }
+
+      if (!data) {
+        setActionError("A hirdetés nem található, vagy nincs jogosultságod a lezárásához.")
+        return
+      }
+
+      setListings((prev) =>
+        prev.map((listing) => (listing.id === id ? { ...listing, isActive: false } : listing)),
+      )
+      setActionNotice("A hirdetés lezárva. Már nem látható a böngészésben, de itt visszanézhető.")
+      setConfirmArchiveId(null)
+    } catch (error) {
       console.error("Hirdetés lezárási hiba:", error)
-      setActionError("A hirdetés lezárása nem sikerült.")
+      setActionError("A hirdetés lezárása nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+    } finally {
       setArchivingId(null)
-      return
     }
-
-    setListings((prev) =>
-      prev.map((listing) => (listing.id === id ? { ...listing, isActive: false } : listing)),
-    )
-    setActionNotice("A hirdetés lezárva. Már nem látható a böngészésben, de itt visszanézhető.")
-    setArchivingId(null)
-    setConfirmArchiveId(null)
   }
 
   async function decide(id: string, status: ApplicantStatus) {
@@ -2323,6 +2338,9 @@ export function SkipperDashboard() {
                 Biztosan lezárod ezt a hirdetést? Nem jelenik meg többé a böngészésben és a kezdőlapon.
               </DialogDescription>
             </DialogHeader>
+            {actionError ? (
+              <p role="alert" className="text-sm text-destructive">{actionError}</p>
+            ) : null}
             <div className="flex gap-3 pt-2">
               <Button
                 variant="outline"
@@ -2333,6 +2351,7 @@ export function SkipperDashboard() {
                 Mégse
               </Button>
               <Button
+                type="button"
                 className="flex-1 bg-accent! text-accent-foreground! hover:bg-accent/90!"
                 disabled={!!archivingId}
                 onClick={() => confirmArchiveId && void archiveListing(confirmArchiveId)}
