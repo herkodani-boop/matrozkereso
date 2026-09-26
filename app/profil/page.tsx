@@ -7,6 +7,7 @@ import { ArrowLeft, Save, RotateCcw, Trash2, UserRound, Camera, KeyRound } from 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { RequireAuth } from "@/components/require-auth"
 import { supabase } from "@/lib/supabase"
 
 type UserRole = "mancsaft" | "sailor" | "kapitany" | "skipper" | string
@@ -306,20 +307,23 @@ export default function ProfilPage() {
 
   if (loading) {
     return (
-      <main className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-3xl items-center px-4 py-10 sm:px-6">
-        <p className="text-sm text-muted-foreground">Profil betöltése...</p>
-      </main>
+      <RequireAuth>
+        <main className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-3xl items-center px-4 py-10 sm:px-6">
+          <p className="text-sm text-muted-foreground">Profil betöltése...</p>
+        </main>
+      </RequireAuth>
     )
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-      <Button variant="ghost" className="mb-4" onClick={() => router.back()}>
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        Vissza
-      </Button>
+    <RequireAuth>
+      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+        <Button variant="ghost" className="mb-4" onClick={() => router.back()}>
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Vissza
+        </Button>
 
-      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
+        <section className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
         <header className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Profil szerkesztése</h1>
           <p className="mt-1 text-sm text-muted-foreground">Itt módosíthatod az adataidat, vagy törölheted a fiókodat.</p>
@@ -504,7 +508,8 @@ export default function ProfilPage() {
             </div>
           </div>
         )}
-      </section>
-    </main>
+        </section>
+      </main>
+    </RequireAuth>
   )
 }

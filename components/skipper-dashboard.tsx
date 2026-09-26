@@ -261,6 +261,7 @@ async function optimizeBoatImage(file: File): Promise<File> {
 }
 
 export function SkipperDashboard() {
+  const router = useRouter()
   const [listings, setListings] = useState<Listing[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [newTeamMemberEmail, setNewTeamMemberEmail] = useState("")
@@ -295,6 +296,7 @@ export function SkipperDashboard() {
       if (!currentUser) {
         setUser(null)
         setProfile(null)
+        router.replace("/")
         return
       }
 
@@ -334,6 +336,20 @@ export function SkipperDashboard() {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!user) {
+      router.replace("/")
+      setBoat(null)
+      setHasBoat(false)
+      setTeamMembers([])
+      return
+    }
+  }, [user, router])
+
+  if (!user) {
+    return null
+  }
 
   useEffect(() => {
     if (!user) {
