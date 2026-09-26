@@ -193,66 +193,6 @@ type TeamMember = {
   status: "active" | "invited"
 }
 
-const SAMPLE_TEAM: TeamMember[] = [
-  { id: "team-1", name: "Kovács Bálint", email: "kovacs.balint@example.hu", role: "Trimmer", avatar: "/avatars/applicant-1.png", status: "active" },
-  { id: "team-2", name: "Tóth Eszter", email: "toth.eszter@example.hu", role: "Mancsaft", avatar: "/avatars/applicant-2.png", status: "active" },
-  { id: "team-3", name: "Szabó Anna", email: "szabo.anna@example.hu", role: "Kormányos", avatar: "/avatars/applicant-4.png", status: "active" },
-]
-
-const SAMPLE_EVENTS: EventItem[] = [
-  {
-    id: "event-1",
-    title: "Kékszalag Erste Kör",
-    date: "2026. június 12.",
-    location: "Balatonfüred",
-    type: "Verseny",
-    details: "A verseny rajtja 09:30-kor, a csapatok között rövid eligibilitási briefing lesz a parton. Várhatóan 1–2 óra vitorlázás a Kikötői pályán.",
-    participants: [
-      { name: "Kovács Bálint", avatar: "/avatars/applicant-1.png" },
-      { name: "Tóth Eszter", avatar: "/avatars/applicant-2.png" },
-      { name: "Nagy Gergő", avatar: "/avatars/applicant-3.png" },
-    ],
-  },
-  {
-    id: "event-2",
-    title: "Reggeli edzés",
-    date: "2026. június 16. 07:30",
-    location: "Siófok",
-    type: "Edzés",
-    details: "Korai, dinamikus edzés a hajókezelés és a manőverezés gyakorlására. A felkészüléshez könnyű frissítővel és hajókészítő ellenőrzéssel számoljunk.",
-    participants: [
-      { name: "Szabó Anna", avatar: "/avatars/applicant-4.png" },
-      { name: "Kovács Bálint", avatar: "/avatars/applicant-1.png" },
-    ],
-  },
-  {
-    id: "event-3",
-    title: "Balatoni körutazás",
-    date: "2026. július 02.",
-    location: "Badacsony – Tihany",
-    type: "Túra",
-    details: "Kis túra a Balaton környékén, különös hangsúllyal a szél és a kikötői környezet megismerésére. A csapat közösen tervezi a menetidőket.",
-    participants: [
-      { name: "Tóth Eszter", avatar: "/avatars/applicant-2.png" },
-      { name: "Nagy Gergő", avatar: "/avatars/applicant-3.png" },
-      { name: "Szabó Anna", avatar: "/avatars/applicant-4.png" },
-      { name: "Kovács Bálint", avatar: "/avatars/applicant-1.png" },
-    ],
-  },
-  {
-    id: "event-4",
-    title: "Kikötői csapatértekezlet",
-    date: "2026. július 09. 18:00",
-    location: "Balatonfüred, kikötő",
-    type: "Kikötői találkozó",
-    details: "A csapat összejövetelén átbeszéljük az idei szezon céljait, a feladatokat és a következő versenyre való felkészülést.",
-    participants: [
-      { name: "Kovács Bálint", avatar: "/avatars/applicant-1.png" },
-      { name: "Tóth Eszter", avatar: "/avatars/applicant-2.png" },
-    ],
-  },
-]
-
 const levelStyles: Record<Applicant["level"], string> = {
   Kezdő: "bg-secondary text-secondary-foreground",
   Haladó: "bg-accent/15 text-accent-foreground",
@@ -415,13 +355,11 @@ async function optimizeBoatImage(file: File): Promise<File> {
 
 export function SkipperDashboard() {
   const [listings, setListings] = useState<Listing[]>([])
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(SAMPLE_TEAM)
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [newTeamMemberEmail, setNewTeamMemberEmail] = useState("")
-  const [events, setEvents] = useState<EventItem[]>(SAMPLE_EVENTS)
+  const [events, setEvents] = useState<EventItem[]>([])
   const [editingEventId, setEditingEventId] = useState<string | null>(null)
-  const [eventDrafts, setEventDrafts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(SAMPLE_EVENTS.map((event) => [event.id, event.details])),
-  )
+  const [eventDrafts, setEventDrafts] = useState<Record<string, string>>({})
   const [selectedId, setSelectedId] = useState<string>("")
   const [statuses, setStatuses] = useState<Record<string, ApplicantStatus>>({})
   const [statusSaving, setStatusSaving] = useState<Record<string, boolean>>({})

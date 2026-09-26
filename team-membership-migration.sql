@@ -105,36 +105,70 @@ BEGIN
     joined_user_name := 'Új csapattag';
   END IF;
 
-  INSERT INTO boat_team_members (
-    boat_id,
-    user_id,
-    email,
-    invited_by,
-    status,
-    display_name,
-    accepted_at,
-    role
+  WITH keep_latest AS (
+    SELECT id
+    FROM boat_team_members
+    WHERE boat_id = invitation_record.boat_id
+      AND user_id = p_user_id
+    ORDER BY accepted_at DESC NULLS LAST, invited_at DESC
+    LIMIT 1
   )
-  VALUES (
-    invitation_record.boat_id,
-    p_user_id,
-    invitation_record.invitee_email,
-    invitation_record.inviter_id,
-    'active',
-    joined_user_name,
-    now(),
-    'Csapattag'
-  )
-  ON CONFLICT (boat_id, email)
-  DO UPDATE SET
-    user_id = EXCLUDED.user_id,
-    status = 'active',
-    display_name = COALESCE(boat_team_members.display_name, EXCLUDED.display_name),
-    accepted_at = now(),
-    invited_by = COALESCE(boat_team_members.invited_by, EXCLUDED.invited_by),
-    role = 'Csapattag'
+  DELETE FROM boat_team_members
+  WHERE boat_id = invitation_record.boat_id
+    AND user_id = p_user_id
+    AND id NOT IN (SELECT id FROM keep_latest);
+
+  UPDATE boat_team_members
+  SET user_id = p_user_id,
+      email = invitation_record.invitee_email,
+      status = 'active',
+      display_name = COALESCE(display_name, joined_user_name),
+      accepted_at = now(),
+      invited_by = COALESCE(invited_by, invitation_record.inviter_id),
+      role = 'Csapattag'
+  WHERE boat_id = invitation_record.boat_id
+    AND user_id = p_user_id
   RETURNING *
   INTO member_record;
+
+  IF member_record.id IS NULL THEN
+    UPDATE boat_team_members
+    SET user_id = p_user_id,
+        status = 'active',
+        display_name = COALESCE(display_name, joined_user_name),
+        accepted_at = now(),
+        invited_by = COALESCE(invited_by, invitation_record.inviter_id),
+        role = 'Csapattag'
+    WHERE boat_id = invitation_record.boat_id
+      AND email = invitation_record.invitee_email
+    RETURNING *
+    INTO member_record;
+  END IF;
+
+  IF member_record.id IS NULL THEN
+    INSERT INTO boat_team_members (
+      boat_id,
+      user_id,
+      email,
+      invited_by,
+      status,
+      display_name,
+      accepted_at,
+      role
+    )
+    VALUES (
+      invitation_record.boat_id,
+      p_user_id,
+      invitation_record.invitee_email,
+      invitation_record.inviter_id,
+      'active',
+      joined_user_name,
+      now(),
+      'Csapattag'
+    )
+    RETURNING *
+    INTO member_record;
+  END IF;
 
   UPDATE boat_team_invitations
   SET status = 'accepted',
@@ -221,12 +255,13 @@ BEGIN
     normalized_email,
     p_inviter_id,
     'invited',
-    NULL,
+    COALESCE(p_invited_name, NULL),
     'Meghívott'
   )
   ON CONFLICT (boat_id, email)
   DO UPDATE SET
     invited_by = EXCLUDED.invited_by,
+    display_name = COALESCE(boat_team_members.display_name, EXCLUDED.display_name),
     status = CASE WHEN boat_team_members.status = 'active' THEN 'active' ELSE 'invited' END,
     role = CASE WHEN boat_team_members.status = 'active' THEN 'Csapattag' ELSE 'Meghívott' END;
 
