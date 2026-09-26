@@ -74,6 +74,20 @@ BEGIN
     RAISE EXCEPTION 'A meghívás már feldolgozásra került.' USING ERRCODE = 'P0001';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM boat_team_members
+    WHERE boat_id = invitation_record.boat_id
+      AND email = invitation_record.invitee_email
+      AND status = 'removed'
+  ) THEN
+    UPDATE boat_team_invitations
+    SET status = 'cancelled'
+    WHERE id = invitation_record.id;
+
+    RAISE EXCEPTION 'A meghívás törölve lett, ezért nem fogadható el.' USING ERRCODE = 'P0001';
+  END IF;
+
   IF invitation_record.expires_at < now() THEN
     UPDATE boat_team_invitations
     SET status = 'expired'
