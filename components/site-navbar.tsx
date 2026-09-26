@@ -247,11 +247,8 @@ export function SiteNavbar() {
                       .toUpperCase()}
                   </div>
                 )}
-                <div className="hidden min-w-0 flex-col gap-0.5 sm:flex">
+                <div className="hidden min-w-0 sm:flex">
                   <p className="truncate text-sm font-semibold text-foreground">{profile.full_name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {roleLabel(profile.role)}
-                  </p>
                 </div>
                 <Button
                   type="button"

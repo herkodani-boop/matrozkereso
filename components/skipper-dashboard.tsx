@@ -22,6 +22,7 @@ import {
   Trash2,
   Archive,
   PencilLine,
+  Megaphone,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -37,6 +38,7 @@ type ApplicantStatus = "pending" | "accepted" | "rejected"
 
 type Applicant = {
   id: string
+  userId: string
   name: string
   age?: number
   level: "Kezdő" | "Haladó" | "Profi / Versenyző"
@@ -86,13 +88,36 @@ type EventItem = {
   title: string
   date: string
   location: string
-  type: "Verseny" | "Edzés" | "Túra" | "Kikötői találkozó"
+  type: "Verseny" | "Edzés" | "Egyéb"
   details: string
-  participants: { name: string; avatar: string }[]
+  startDate: string
+  endDate: string
+  oneDay: boolean
+  participants: {
+    userId: string
+    name: string
+    avatar: string
+    status: "confirmed" | "pending" | "declined"
+    source?: "team" | "listing"
+  }[]
+}
+
+function getEventTypeBadgeClass(type: EventItem["type"]) {
+  switch (type) {
+    case "Verseny":
+      return "border-0 bg-cyan-500 text-white shadow-sm"
+    case "Edzés":
+      return "border-0 bg-emerald-500 text-white shadow-sm"
+    case "Egyéb":
+      return "border-0 bg-amber-500 text-white shadow-sm"
+    default:
+      return "border-0 bg-slate-500 text-white shadow-sm"
+  }
 }
 
 type TeamMember = {
   id: string
+  userId: string
   name: string
   email: string
   role: string
@@ -151,6 +176,28 @@ function formatPositionLabel(positionRaw: unknown) {
   return String(positionRaw)
 }
 
+function normalizeMatchText(value: string | null | undefined) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+}
+
+function isMatchingListingToEvent(listing: Listing | undefined, event: EventItem | undefined) {
+  if (!listing || !event) {
+    return false
+  }
+
+  const titleMatches = normalizeMatchText(listing.event) === normalizeMatchText(event.title)
+  const locationMatches = normalizeMatchText(listing.location) === normalizeMatchText(event.location)
+  const dateMatches =
+    !listing.date || !event.date || normalizeMatchText(listing.date) === normalizeMatchText(event.date)
+
+  return titleMatches && locationMatches && dateMatches
+}
+
 function resolveAvatarUrl(userData: any): string {
   const directAvatar =
     userData?.avatar_url ??
@@ -175,6 +222,15 @@ const crewTypeOptions = [
 function resolveCrewTypeLabel(value?: string | null) {
   if (!value) return "Nincs megadva"
   return crewTypeOptions.find((option) => option.value === value)?.label ?? value
+}
+
+function formatEventDate(dateValue: string | null | undefined) {
+  if (!dateValue) return "—"
+
+  const parsed = new Date(`${dateValue}T12:00:00`)
+  if (Number.isNaN(parsed.getTime())) return dateValue
+
+  return `${parsed.getFullYear()}. ${String(parsed.getMonth() + 1).padStart(2, "0")}. ${String(parsed.getDate()).padStart(2, "0")}.`
 }
 
 const MAX_BOAT_IMAGE_DIMENSION = 1600
@@ -266,8 +322,28 @@ export function SkipperDashboard() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [newTeamMemberEmail, setNewTeamMemberEmail] = useState("")
   const [events, setEvents] = useState<EventItem[]>([])
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null)
+  const [isNewEventModalOpen, setIsNewEventModalOpen] = useState(false)
+  const [isEditEventModalOpen, setIsEditEventModalOpen] = useState(false)
   const [editingEventId, setEditingEventId] = useState<string | null>(null)
-  const [eventDrafts, setEventDrafts] = useState<Record<string, string>>({})
+  const [newEventForm, setNewEventForm] = useState({
+    type: "Verseny" as EventItem["type"],
+    title: "",
+    startDate: "",
+    endDate: "",
+    oneDay: false,
+    location: "",
+    notes: "",
+  })
+  const [editEventForm, setEditEventForm] = useState({
+    type: "Verseny" as EventItem["type"],
+    title: "",
+    startDate: "",
+    endDate: "",
+    oneDay: false,
+    location: "",
+    notes: "",
+  })
   const [selectedId, setSelectedId] = useState<string>("")
   const [statuses, setStatuses] = useState<Record<string, ApplicantStatus>>({})
   const [statusSaving, setStatusSaving] = useState<Record<string, boolean>>({})
@@ -284,6 +360,13 @@ export function SkipperDashboard() {
   const [inviteSending, setInviteSending] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [modalView, setModalView] = useState<"boat" | "listing">("listing")
+  const [listingPrefill, setListingPrefill] = useState<{
+    title?: string
+    location?: string
+    startDate?: string
+    endDate?: string
+    oneDay?: boolean
+  } | null>(null)
   const [nonce, setNonce] = useState(0)
   const [listingsRefreshKey, setListingsRefreshKey] = useState(0)
 
@@ -386,6 +469,7 @@ export function SkipperDashboard() {
 
         return {
           id: String(member.id),
+          userId: member.user_id ? String(member.user_id) : "",
           name: resolvedName,
           email: member.email || "",
           role: resolvedRole,
@@ -417,6 +501,7 @@ export function SkipperDashboard() {
         setHasBoat(true)
         await fetchTeamMembers(boatData.id)
         await fetchListings(boatData.id)
+        await fetchBoatEvents(boatData.id)
       } else {
         setBoat(null)
         setHasBoat(false)
@@ -424,6 +509,96 @@ export function SkipperDashboard() {
         setListings([])
         setSelectedId("")
       }
+    }
+
+    const fetchBoatEvents = async (boatId: string) => {
+      const { data: eventRows, error: eventError } = await supabase
+        .from("boat_events")
+        .select("*")
+        .eq("boat_id", boatId)
+        .order("start_date", { ascending: false })
+
+      if (eventError) {
+        console.error("Események lekérdezési hiba:", eventError)
+        setEvents([])
+        return
+      }
+
+      const mappedEvents: EventItem[] = (eventRows ?? []).map((row: any) => {
+        const type = row.type === "Edzés" || row.type === "Verseny" || row.type === "Egyéb" ? row.type : "Egyéb"
+        const startDate = row.start_date ? String(row.start_date) : ""
+        const endDate = row.end_date ? String(row.end_date) : ""
+        const oneDay = Boolean(row.is_one_day)
+        const dateValue = oneDay ? formatEventDate(startDate) : `${formatEventDate(startDate)} – ${formatEventDate(endDate)}`
+
+        return {
+          id: String(row.id),
+          title: row.title,
+          date: dateValue,
+          location: row.location,
+          type,
+          details: row.notes || "Nincs megjegyzés.",
+          startDate,
+          endDate,
+          oneDay,
+          participants: [],
+        }
+      })
+
+      const eventIds = mappedEvents.map((event) => event.id)
+      if (eventIds.length === 0) {
+        setEvents([])
+        return
+      }
+
+      const { data: attendeeRows, error: attendeeError } = await supabase
+        .from("boat_event_attendees")
+        .select("event_id, user_id, status")
+        .in("event_id", eventIds)
+
+      if (attendeeError) {
+        console.error("Esemény résztvevők lekérdezési hiba:", attendeeError)
+        setEvents(mappedEvents)
+        return
+      }
+
+      const userIds = Array.from(new Set((attendeeRows ?? []).map((row: any) => row.user_id).filter(Boolean)))
+      const profilesByUserId = new Map<string, any>()
+
+      if (userIds.length > 0) {
+        const { data: profileRows } = await supabase
+          .from("users")
+          .select("id, full_name, avatar_url")
+          .in("id", userIds)
+
+        ;(profileRows ?? []).forEach((profile: any) => {
+          if (profile?.id) {
+            profilesByUserId.set(profile.id, profile)
+          }
+        })
+      }
+
+      const attendeesByEventId = new Map<string, { userId: string; name: string; avatar: string; status: "confirmed" | "pending" | "declined" }[]>()
+      ;(attendeeRows ?? []).forEach((row: any) => {
+        const profile = row.user_id ? profilesByUserId.get(row.user_id) : null
+        const status = row.status === "pending" || row.status === "declined" || row.status === "confirmed" ? row.status : "confirmed"
+        const attendee = {
+          userId: row.user_id ? String(row.user_id) : "",
+          name: profile?.full_name || "Résztvevő",
+          avatar: resolveAvatarUrl(profile),
+          status,
+        }
+
+        const current = attendeesByEventId.get(String(row.event_id)) ?? []
+        attendeesByEventId.set(String(row.event_id), [...current, attendee])
+      })
+
+      const nextEvents = mappedEvents.map((event) => ({
+        ...event,
+        participants: attendeesByEventId.get(event.id) ?? [],
+      }))
+
+      setEvents(nextEvents)
     }
 
     const fetchListings = async (boatId: string) => {
@@ -599,6 +774,7 @@ export function SkipperDashboard() {
 
         return {
           id: String(application.id),
+          userId: String(application.user_id),
           name: userData?.full_name ?? "Ismeretlen jelentkező",
           age: birthdateValue ? calculateAge(String(birthdateValue)) : undefined,
           phone: userData?.phone ?? "Nincs megadva",
@@ -658,6 +834,17 @@ export function SkipperDashboard() {
     setModalView(view)
     setNonce((n) => n + 1)
     setModalOpen(true)
+  }
+
+  function openListingModalFromEvent(event: EventItem) {
+    setListingPrefill({
+      title: event.title,
+      location: event.location,
+      startDate: event.startDate,
+      endDate: event.endDate,
+      oneDay: event.oneDay,
+    })
+    openModal("listing")
   }
 
   async function handleInviteTeamMember(inviteEmailOverride?: string) {
@@ -811,10 +998,309 @@ export function SkipperDashboard() {
 
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [confirmEventDeleteId, setConfirmEventDeleteId] = useState<string | null>(null)
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null)
   const [archivingId, setArchivingId] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  function resetNewEventForm() {
+    setNewEventForm({
+      type: "Verseny",
+      title: "",
+      startDate: "",
+      endDate: "",
+      oneDay: false,
+      location: "",
+      notes: "",
+    })
+  }
+
+  function openEditEventModal(event: EventItem) {
+    setEditingEventId(event.id)
+    setEditEventForm({
+      type: event.type,
+      title: event.title,
+      startDate: event.startDate,
+      endDate: event.endDate,
+      oneDay: event.oneDay,
+      location: event.location,
+      notes: event.details === "Nincs megjegyzés." ? "" : event.details,
+    })
+    setIsEditEventModalOpen(true)
+  }
+
+  async function handleCreateEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!boat?.id) {
+      setActionError("Előbb hozzá kell adni a hajót, mielőtt eseményt mentesz.")
+      return
+    }
+
+    if (!newEventForm.title.trim()) {
+      setActionError("Az esemény megnevezése kötelező.")
+      return
+    }
+
+    if (!newEventForm.startDate) {
+      setActionError("Az esemény kezdő időpontja kötelező.")
+      return
+    }
+
+    if (!newEventForm.oneDay && !newEventForm.endDate) {
+      setActionError("Az esemény végdátuma kötelező, ha nem egy napos esemény.")
+      return
+    }
+
+    if (!newEventForm.oneDay && newEventForm.endDate && newEventForm.endDate < newEventForm.startDate) {
+      setActionError("A végdátum nem lehet korábbi, mint a kezdő dátum.")
+      return
+    }
+
+    if (!newEventForm.location.trim()) {
+      setActionError("A helyszín megadása kötelező.")
+      return
+    }
+
+    const payload = {
+      boat_id: boat.id,
+      title: newEventForm.title.trim(),
+      type: newEventForm.type,
+      start_date: newEventForm.startDate,
+      end_date: newEventForm.oneDay ? null : newEventForm.endDate || null,
+      is_one_day: newEventForm.oneDay,
+      location: newEventForm.location.trim(),
+      notes: newEventForm.notes.trim() || "Nincs megjegyzés.",
+    }
+
+    const { data, error } = await supabase.from("boat_events").insert(payload).select().single()
+
+    if (error) {
+      console.error("Esemény mentési hiba:", error)
+      setActionError("Az esemény mentése nem sikerült.")
+      return
+    }
+
+    const formattedDate = payload.is_one_day
+      ? formatEventDate(payload.start_date)
+      : `${formatEventDate(payload.start_date)} – ${formatEventDate(payload.end_date)}`
+
+    const createdItem: EventItem = {
+      id: String(data?.id ?? `event-${Date.now()}`),
+      title: data?.title ?? payload.title,
+      date: formattedDate,
+      location: data?.location ?? payload.location,
+      type: (data?.type === "Verseny" || data?.type === "Edzés" || data?.type === "Egyéb") ? data.type : payload.type,
+      details: data?.notes || payload.notes,
+      startDate: String(data?.start_date ?? payload.start_date),
+      endDate: data?.end_date ? String(data.end_date) : (payload.end_date ? String(payload.end_date) : ""),
+      oneDay: Boolean(data?.is_one_day ?? payload.is_one_day),
+      participants: [],
+    }
+
+    setEvents((prev) => [createdItem, ...prev])
+    setActionNotice("Az új esemény hozzáadva.")
+    setIsNewEventModalOpen(false)
+    resetNewEventForm()
+  }
+
+  async function handleUpdateEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!editingEventId) {
+      return
+    }
+
+    if (!editEventForm.title.trim()) {
+      setActionError("Az esemény megnevezése kötelező.")
+      return
+    }
+
+    if (!editEventForm.startDate) {
+      setActionError("Az esemény kezdő időpontja kötelező.")
+      return
+    }
+
+    if (!editEventForm.oneDay && !editEventForm.endDate) {
+      setActionError("Az esemény végdátuma kötelező, ha nem egy napos esemény.")
+      return
+    }
+
+    if (!editEventForm.oneDay && editEventForm.endDate && editEventForm.endDate < editEventForm.startDate) {
+      setActionError("A végdátum nem lehet korábbi, mint a kezdő dátum.")
+      return
+    }
+
+    if (!editEventForm.location.trim()) {
+      setActionError("A helyszín megadása kötelező.")
+      return
+    }
+
+    const payload = {
+      title: editEventForm.title.trim(),
+      type: editEventForm.type,
+      start_date: editEventForm.startDate,
+      end_date: editEventForm.oneDay ? null : editEventForm.endDate || null,
+      is_one_day: editEventForm.oneDay,
+      location: editEventForm.location.trim(),
+      notes: editEventForm.notes.trim() || "Nincs megjegyzés.",
+    }
+
+    const { data, error } = await supabase
+      .from("boat_events")
+      .update(payload)
+      .eq("id", editingEventId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("Esemény frissítési hiba:", error)
+      setActionError("Az esemény frissítése nem sikerült.")
+      return
+    }
+
+    const nextDate = payload.is_one_day
+      ? formatEventDate(payload.start_date)
+      : `${formatEventDate(payload.start_date)} – ${formatEventDate(payload.end_date)}`
+
+    setEvents((prev) =>
+      prev.map((item) =>
+        item.id === editingEventId
+          ? {
+              ...item,
+              title: payload.title,
+              date: nextDate,
+              location: payload.location,
+              type: payload.type,
+              details: payload.notes,
+              startDate: String(payload.start_date),
+              endDate: payload.end_date ? String(payload.end_date) : "",
+              oneDay: payload.is_one_day,
+            }
+          : item,
+      ),
+    )
+
+    setActionNotice("Az esemény frissítve.")
+    setIsEditEventModalOpen(false)
+    setEditingEventId(null)
+    setEditEventForm({
+      type: "Verseny",
+      title: "",
+      startDate: "",
+      endDate: "",
+      oneDay: false,
+      location: "",
+      notes: "",
+    })
+  }
+
+  async function deleteEvent(id: string) {
+    setActionError(null)
+    setActionNotice(null)
+
+    const { error } = await supabase.from("boat_events").delete().eq("id", id)
+
+    if (error) {
+      console.error("Esemény törlési hiba:", error)
+      setActionError("Az esemény törlése nem sikerült.")
+      return
+    }
+
+    setEvents((prev) => prev.filter((event) => event.id !== id))
+    setActionNotice("Az esemény törölve.")
+    setConfirmEventDeleteId(null)
+    setIsEditEventModalOpen(false)
+    setEditingEventId(null)
+    setEditEventForm({
+      type: "Verseny",
+      title: "",
+      startDate: "",
+      endDate: "",
+      oneDay: false,
+      location: "",
+      notes: "",
+    })
+  }
+
+  async function toggleEventParticipant(eventId: string, userId: string) {
+    if (!userId) {
+      return
+    }
+
+    const event = events.find((item) => item.id === eventId)
+    const currentParticipant = event?.participants.find((participant) => participant.userId === userId)
+    const currentStatus = currentParticipant?.status ?? "confirmed"
+    const nextStatusSequence: Array<"confirmed" | "pending" | "declined"> = ["confirmed", "pending", "declined"]
+    const statusIndex = nextStatusSequence.indexOf(currentStatus)
+    const nextStatus = statusIndex === -1 ? "confirmed" : nextStatusSequence[(statusIndex + 1) % nextStatusSequence.length]
+    const matchingMember = teamMembers.find((member) => member.userId === userId)
+
+    if (!currentParticipant) {
+      const { error } = await supabase.from("boat_event_attendees").upsert(
+        {
+          event_id: eventId,
+          user_id: userId,
+          status: nextStatus,
+        },
+        { onConflict: "event_id,user_id" },
+      )
+
+      if (error) {
+        console.error("Esemény résztvevő hozzáadási hiba:", error)
+        setActionError("A résztvevő hozzáadása nem sikerült.")
+        return
+      }
+
+      setEvents((prev) =>
+        prev.map((item) => {
+          if (item.id !== eventId) {
+            return item
+          }
+
+          return {
+            ...item,
+            participants: [...item.participants, {
+              userId,
+              name: matchingMember?.name || "Résztvevő",
+              avatar: matchingMember?.avatar || "/placeholder.svg",
+              status: nextStatus,
+              source: matchingMember ? "team" : "listing",
+            }],
+          }
+        }),
+      )
+      setActionNotice("A résztvevő hozzáadva az eseményhez.")
+      return
+    }
+
+    const { error } = await supabase
+      .from("boat_event_attendees")
+      .update({ status: nextStatus })
+      .eq("event_id", eventId)
+      .eq("user_id", userId)
+
+    if (error) {
+      console.error("Esemény résztvevő státusz frissítési hiba:", error)
+      setActionError("A résztvevő státuszának frissítése nem sikerült.")
+      return
+    }
+
+    setEvents((prev) =>
+      prev.map((item) =>
+        item.id === eventId
+          ? {
+              ...item,
+              participants: item.participants.map((participant) =>
+                participant.userId === userId ? { ...participant, status: nextStatus } : participant,
+              ),
+            }
+          : item,
+      ),
+    )
+    setActionNotice("A résztvevő státusza frissítve.")
+  }
 
   async function deleteListing(id: string) {
     setActionError(null)
@@ -876,11 +1362,75 @@ export function SkipperDashboard() {
       console.error("Jelentkezés státusz mentési hiba:", error)
       setStatuses((prev) => ({ ...prev, [id]: previousStatus }))
       setActionError("A döntés mentése nem sikerült.")
-    } else {
-      setActionNotice(status === "accepted" ? "Jelentkezés elfogadva." : "Jelentkezés elutasítva.")
+      setStatusSaving((prev) => ({ ...prev, [id]: false }))
+      return
     }
 
+    setActionNotice(status === "accepted" ? "Jelentkezés elfogadva." : "Jelentkezés elutasítva.")
     setStatusSaving((prev) => ({ ...prev, [id]: false }))
+  }
+
+  async function addAcceptedApplicantToEvent(applicantId: string) {
+    const applicant = selected.applicants.find((item) => item.id === applicantId)
+    if (!applicant || !applicant.userId || !selected.id) {
+      setActionError("A jelentkező adatainak hozzáadása nem lehetséges.")
+      return
+    }
+
+    const matchingEvent = events.find((event) => isMatchingListingToEvent(selected, event))
+    if (!matchingEvent) {
+      setActionError("Ehhez a hirdetéshez nincs megfelelő esemény, ezért a jelentkező nem adható hozzá.")
+      return
+    }
+
+    const { error: attendeeError } = await supabase
+      .from("boat_event_attendees")
+      .upsert(
+        {
+          event_id: matchingEvent.id,
+          user_id: applicant.userId,
+          status: "confirmed",
+        },
+        { onConflict: "event_id,user_id" },
+      )
+
+    if (attendeeError) {
+      console.error("Elfogadott jelentkező eseményhez kötése hiba:", attendeeError)
+      setActionError("A jelentkező hozzáadása az eseményhez nem sikerült.")
+      return
+    }
+
+    setEvents((prev) =>
+      prev.map((eventItem) => {
+        if (eventItem.id !== matchingEvent.id) {
+          return eventItem
+        }
+
+        const existing = eventItem.participants.find((participant) => participant.userId === applicant.userId)
+
+        return {
+          ...eventItem,
+          participants: existing
+            ? eventItem.participants.map((participant) =>
+                participant.userId === applicant.userId
+                  ? { ...participant, status: "confirmed", source: "listing" }
+                  : participant,
+              )
+            : [
+                ...eventItem.participants,
+                {
+                  userId: applicant.userId,
+                  name: applicant.name,
+                  avatar: applicant.avatar || "/placeholder.svg",
+                  status: "confirmed",
+                  source: "listing",
+                },
+              ],
+        }
+      }),
+    )
+
+    setActionNotice(`${applicant.name} hozzáadva az eseményhez.`)
   }
 
   return (
@@ -1084,7 +1634,11 @@ export function SkipperDashboard() {
             <Button
               type="button"
               variant="outline"
-              className="h-10 border-dashed border-accent/50 bg-card text-accent hover:bg-accent/5"
+              className="h-10 border-dashed border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100/80"
+              onClick={() => {
+                resetNewEventForm()
+                setIsNewEventModalOpen(true)
+              }}
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Új esemény hozzáadása
@@ -1092,136 +1646,311 @@ export function SkipperDashboard() {
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-            <div className="hidden grid-cols-[2.2fr_1.2fr_1.5fr_1fr_1.3fr] gap-0 border-b border-border bg-secondary/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:grid">
-              <span>Esemény</span>
-              <span>Időpont</span>
-              <span>Helyszín</span>
-              <span>Típus</span>
-              <span>Jelentkezők</span>
-            </div>
+            {events.length === 0 ? (
+              <div className="flex flex-col items-center gap-4 px-6 py-12 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-100 text-cyan-700 ring-1 ring-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-300 dark:ring-cyan-400/20">
+                  <CalendarDays className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold text-foreground">Még nincsenek eseményeid</h3>
+                  <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
+                    Hozz létre versenyeket, edzéseket vagy egyéb hajózási programokat, majd itt nyomon követheted a csapattagok részvételét.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  className="h-10 bg-accent! text-accent-foreground! hover:bg-accent/90!"
+                  onClick={() => {
+                    resetNewEventForm()
+                    setIsNewEventModalOpen(true)
+                  }}
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Új esemény hozzáadása
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="hidden border-b border-border bg-secondary/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:grid md:grid-cols-[minmax(0,2.5fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,0.8fr)_120px]">
+                  <span>Esemény</span>
+                  <span>Időpont</span>
+                  <span>Helyszín</span>
+                  <span>Résztvevők</span>
+                  <span className="text-right">Műveletek</span>
+                </div>
 
-            {events.map((event) => {
-              const isEditing = editingEventId === event.id
-              const currentDetails = eventDrafts[event.id] ?? event.details
+                {events.map((event) => {
+              const isExpanded = expandedEventId === event.id
+              const visibleParticipants = event.participants.filter((participant) => participant.status !== "declined")
 
               return (
-                <div
-                  key={event.id}
-                  className="border-b border-border px-4 py-4 last:border-b-0"
-                >
-                  <div className="grid gap-3 md:grid-cols-[2.2fr_1.2fr_1.5fr_1fr_1.3fr_112px] md:items-center md:gap-0">
-                    <div className="flex flex-col gap-1">
-                      <span className="font-semibold text-foreground">{event.title}</span>
-                      <span className="text-xs text-muted-foreground md:hidden">{event.type}</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">{event.date}</span>
-                    <span className="text-sm text-muted-foreground">{event.location}</span>
-                    <div className="md:flex md:justify-start">
-                      <Badge className="border-0 bg-accent text-accent-foreground shadow-sm">{event.type}</Badge>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex -space-x-2">
-                        {event.participants.slice(0, 4).map((participant) => (
-                          <span
-                            key={`${event.id}-${participant.name}`}
-                            className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border-2 border-card bg-secondary"
-                            title={participant.name}
-                          >
-                            <Image
-                              src={participant.avatar || "/placeholder.svg"}
-                              alt={participant.name}
-                              width={32}
-                              height={32}
-                              className="object-cover"
-                            />
-                          </span>
-                        ))}
+                <div key={event.id} className="border-b border-border last:border-b-0">
+                  <div
+                    className={`grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,2.5fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,0.8fr)_120px] md:items-center ${
+                      isExpanded ? "bg-secondary/25" : "bg-transparent hover:bg-secondary/20"
+                    }`}
+                    onClick={() => setExpandedEventId((prev) => (prev === event.id ? null : event.id))}
+                    onKeyDown={(keyboardEvent) => {
+                      if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+                        keyboardEvent.preventDefault()
+                        setExpandedEventId((prev) => (prev === event.id ? null : event.id))
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-100 text-cyan-700 ring-1 ring-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-300 dark:ring-cyan-400/20">
+                        <CalendarDays className="h-4 w-4" aria-hidden="true" />
                       </div>
-                      {event.participants.length > 4 ? (
-                        <span className="text-xs font-medium text-muted-foreground">+{event.participants.length - 4}</span>
-                      ) : null}
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate text-base font-semibold text-foreground">{event.title}</span>
+                          <Badge className={getEventTypeBadgeClass(event.type)}>{event.type}</Badge>
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground md:hidden">
+                          <span>{event.date}</span>
+                        </div>
+                      </div>
                     </div>
+
+                    <div className="text-sm text-muted-foreground md:text-sm">{event.date}</div>
+                    <div className="text-sm text-muted-foreground md:text-sm">{event.location}</div>
+                    <div className="flex min-h-8 items-center gap-2">
+                      {visibleParticipants.length === 0 ? (
+                        <span className="text-xs text-muted-foreground/70">Nincs még résztvevő</span>
+                      ) : (
+                        <>
+                          <div className="flex -space-x-2">
+                            {visibleParticipants.slice(0, 3).map((participant) => (
+                              <span
+                                key={`${event.id}-${participant.name}-${participant.avatar}`}
+                                className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border-2 border-card bg-secondary shadow-sm"
+                                title={participant.name}
+                              >
+                                <Image
+                                  src={participant.avatar || "/placeholder.svg"}
+                                  alt={participant.name}
+                                  width={32}
+                                  height={32}
+                                  className="object-cover"
+                                />
+                              </span>
+                            ))}
+                          </div>
+                          {visibleParticipants.length > 3 ? (
+                            <span className="text-xs font-medium text-muted-foreground">+{visibleParticipants.length - 3}</span>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+
                     <div className="flex items-center justify-end gap-2">
                       <button
                         type="button"
                         title="Szerkesztés"
                         aria-label={`Esemény szerkesztése: ${event.title}`}
-                        onClick={() => setEditingEventId(event.id)}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-secondary/60 text-foreground transition-colors hover:border-accent hover:text-accent"
+                        onClick={(clickEvent) => {
+                          clickEvent.stopPropagation()
+                          openEditEventModal(event)
+                        }}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-secondary/80 text-foreground transition-colors hover:border-cyan-400 hover:text-cyan-600"
                       >
                         <PencilLine className="h-4 w-4" aria-hidden="true" />
                       </button>
                       <button
                         type="button"
-                        title="Hirdetés feladása ehhez az eseményhez"
+                        title="Hirdetés feladása"
                         aria-label={`Hirdetés feladása az ${event.title} eseményhez`}
-                        onClick={() => openModal("listing")}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/40 bg-accent/10 text-accent transition-colors hover:bg-accent hover:text-accent-foreground"
+                        onClick={(clickEvent) => {
+                          clickEvent.stopPropagation()
+                          openListingModalFromEvent(event)
+                        }}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300 bg-cyan-50 text-cyan-700 transition-colors hover:bg-cyan-500 hover:text-white"
                       >
-                        <Plus className="h-4 w-4" aria-hidden="true" />
+                        <Megaphone className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={isExpanded ? "Esemény összecsukása" : "Esemény kinyitása"}
+                        onClick={(clickEvent) => {
+                          clickEvent.stopPropagation()
+                          setExpandedEventId((prev) => (prev === event.id ? null : event.id))
+                        }}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-secondary/60 hover:text-foreground"
+                      >
+                        <ChevronRight
+                          className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90 text-cyan-600" : ""}`}
+                          aria-hidden="true"
+                        />
                       </button>
                     </div>
                   </div>
 
-                  {isEditing ? (
-                    <div className="mt-3 rounded-xl border border-dashed border-border bg-secondary/30 p-3">
-                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Esemény részletei
-                      </label>
-                      <textarea
-                        value={currentDetails}
-                        onChange={(changeEvent) =>
-                          setEventDrafts((prev) => ({
-                            ...prev,
-                            [event.id]: changeEvent.target.value,
-                          }))
-                        }
-                        rows={3}
-                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-0 placeholder:text-muted-foreground focus:border-accent"
-                        placeholder="Írj ide részletes infót az eseményről..."
-                      />
-                      <div className="mt-3 flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setEditingEventId(null)
-                            setEventDrafts((prev) => ({
-                              ...prev,
-                              [event.id]: event.details,
-                            }))
-                          }}
-                        >
-                          Mégse
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="bg-accent! text-accent-foreground! hover:bg-accent/90!"
-                          onClick={() => {
-                            setEvents((prev) =>
-                              prev.map((item) =>
-                                item.id === event.id
-                                  ? { ...item, details: currentDetails }
-                                  : item,
-                              ),
+                  {isExpanded ? (
+                    <div className="border-t border-border/70 bg-transparent px-4 py-4">
+                      <div className="mb-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Esemény részletei
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <p className="text-sm leading-relaxed text-foreground">{event.details}</p>
+
+                        {(() => {
+                          const relatedListing = listings.find((listing) => isMatchingListingToEvent(listing, event))
+
+                          const hasActiveListing = Boolean(relatedListing && relatedListing.isActive)
+                          const applicantCount = relatedListing?.applicants.length ?? 0
+                          const acceptedCount = relatedListing?.applicants.filter((applicant) => (statuses[applicant.id] ?? "pending") === "accepted").length ?? 0
+                          const pendingCount = relatedListing?.applicants.filter((applicant) => (statuses[applicant.id] ?? "pending") === "pending").length ?? 0
+                          const rejectedCount = relatedListing?.applicants.filter((applicant) => (statuses[applicant.id] ?? "pending") === "rejected").length ?? 0
+
+                          return (
+                            <div className={`grid gap-2 ${hasActiveListing ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+                              {hasActiveListing ? (
+                                <div className="rounded-lg border border-border bg-background/80 p-2.5">
+                                  <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Hirdetés</p>
+                                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                                    <span className="text-xs font-medium text-foreground">Aktív</span>
+                                    <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="rounded-lg border border-dashed border-border bg-secondary/20 p-2.5 sm:col-span-2">
+                                  <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Hirdetés</p>
+                                  <div className="mt-1.5 flex items-center justify-between gap-3">
+                                    <p className="text-xs text-muted-foreground">Még nincs aktív hirdetés ehhez az eseményhez.</p>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
+                                      onClick={(clickEvent) => {
+                                        clickEvent.stopPropagation()
+                                        openListingModalFromEvent(event)
+                                      }}
+                                    >
+                                      Hirdetés létrehozása
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="rounded-lg border border-border bg-background/80 p-2.5">
+                                <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Jelentkezők</p>
+                                <p className="mt-1.5 text-base font-bold text-foreground">{applicantCount}</p>
+                              </div>
+
+                              <div className="rounded-lg border border-border bg-background/80 p-2.5">
+                                <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Elfogadva</p>
+                                <p className="mt-1.5 text-base font-bold text-foreground">{acceptedCount}</p>
+                              </div>
+                            </div>
+                          )
+                        })()}
+
+                        <div>
+                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Csapattagok és részvétel
+                          </p>
+
+                          {(() => {
+                            const rosterMembers = [
+                              ...teamMembers
+                                .filter((member) => member.userId)
+                                .map((member) => ({
+                                  id: member.userId,
+                                  name: member.name,
+                                  avatar: member.avatar,
+                                  participant: visibleParticipants.find((item) => item.userId === member.userId),
+                                  source: "team" as const,
+                                })),
+                              ...visibleParticipants
+                                .filter(
+                                  (participant) =>
+                                    !teamMembers.some((member) => member.userId === participant.userId),
+                                )
+                                .map((participant) => ({
+                                  id: participant.userId,
+                                  name: participant.name,
+                                  avatar: participant.avatar,
+                                  participant,
+                                  source: participant.source ?? ("listing" as const),
+                                })),
+                            ]
+
+                            if (rosterMembers.length === 0) {
+                              return <p className="text-sm text-muted-foreground">Még nincs csapattag a hajón.</p>
+                            }
+
+                            return (
+                              <div className="flex flex-wrap gap-2">
+                                {rosterMembers.map((person) => {
+                                  const status = person.participant?.status ?? "declined"
+                                  const chipClasses = {
+                                    confirmed: "border-emerald-300 bg-emerald-50 text-emerald-700",
+                                    pending: "border-amber-300 bg-amber-50 text-amber-700",
+                                    declined: "border-border bg-secondary/40 text-muted-foreground",
+                                  }
+                                  const statusLabel = {
+                                    confirmed: "Jelentkezett",
+                                    pending: "Várakozik",
+                                    declined: "Nincs megadva",
+                                  }[status]
+                                  const isListingOrigin = person.source === "listing" || person.participant?.source === "listing"
+
+                                  return (
+                                    <button
+                                      key={`${event.id}-${person.id}`}
+                                      type="button"
+                                      onClick={(clickEvent) => {
+                                        clickEvent.stopPropagation()
+                                        if (person.id) {
+                                          void toggleEventParticipant(event.id, person.id)
+                                        }
+                                      }}
+                                      className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs font-medium transition-colors ${chipClasses[status]}`}
+                                      title={`${person.name} — ${statusLabel}`}
+                                    >
+                                      <span className="relative flex h-6 w-6 shrink-0 overflow-hidden rounded-full border border-current/30 bg-white/70">
+                                        <Image
+                                          src={person.avatar || "/placeholder.svg"}
+                                          alt={person.name}
+                                          fill
+                                          className="object-cover"
+                                          sizes="24px"
+                                        />
+                                      </span>
+                                      <span>{person.name}</span>
+                                      <span className="rounded-full border border-current/20 bg-white/80 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]">
+                                        {status === "confirmed" ? "✓" : status === "pending" ? "…" : "+"}
+                                      </span>
+                                      {isListingOrigin ? (
+                                        <span className="rounded-full border border-current/20 bg-white/80 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]">
+                                          Hirdetés
+                                        </span>
+                                      ) : null}
+                                      <span className="text-[9px] font-semibold uppercase tracking-[0.08em] opacity-80">
+                                        {statusLabel}
+                                      </span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
                             )
-                            setEditingEventId(null)
-                          }}
-                        >
-                          Mentés
-                        </Button>
+                          })()}
+                        </div>
                       </div>
                     </div>
-                  ) : (
-                    <div className="mt-3 rounded-lg border border-border/70 bg-secondary/30 px-3 py-2 text-sm leading-relaxed text-muted-foreground">
-                      {event.details}
-                    </div>
-                  )}
+                  ) : null}
                 </div>
               )
             })}
+              </>
+            )}
           </div>
         </section>
 
@@ -1463,24 +2192,37 @@ export function SkipperDashboard() {
                     </div>
 
                     {status === "accepted" && (
-                      <div className="flex flex-col gap-2 rounded-lg border border-emerald-600/20 bg-emerald-50 p-3 sm:flex-row sm:items-center sm:gap-6">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                          Elérhetőségek
-                        </p>
-                        <a
-                          href={`tel:${applicant.phone.replace(/\s/g, "")}`}
-                          className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors hover:text-emerald-700"
-                        >
-                          <Phone className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-                          {applicant.phone}
-                        </a>
-                        <a
-                          href={`mailto:${applicant.email}`}
-                          className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors hover:text-emerald-700"
-                        >
-                          <Mail className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-                          {applicant.email}
-                        </a>
+                      <div className="flex flex-col gap-3 rounded-lg border border-emerald-600/20 bg-emerald-50 p-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-6">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                            Elérhetőségek
+                          </p>
+                          <a
+                            href={`tel:${applicant.phone.replace(/\s/g, "")}`}
+                            className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors hover:text-emerald-700"
+                          >
+                            <Phone className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                            {applicant.phone}
+                          </a>
+                          <a
+                            href={`mailto:${applicant.email}`}
+                            className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors hover:text-emerald-700"
+                          >
+                            <Mail className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                            {applicant.email}
+                          </a>
+                        </div>
+
+                        <div className="flex items-center justify-end">
+                          <Button
+                            size="sm"
+                            onClick={() => void addAcceptedApplicantToEvent(applicant.id)}
+                            className="h-9 bg-emerald-600 text-white hover:bg-emerald-700"
+                          >
+                            <Users className="mr-2 h-4 w-4" aria-hidden="true" />
+                            Jelentkező hozzáadása az eseményhez
+                          </Button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1538,6 +2280,37 @@ export function SkipperDashboard() {
         }}
         user={user}
       />
+
+      <Dialog open={!!confirmEventDeleteId} onOpenChange={(open) => { if (!open) setConfirmEventDeleteId(null) }}>
+        <DialogContent className="max-w-sm gap-0 rounded-2xl p-0">
+          <div className="flex flex-col gap-4 p-6">
+            <DialogHeader className="gap-2">
+              <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+                Esemény törlése
+              </DialogTitle>
+              <DialogDescription className="text-pretty leading-relaxed">
+                Biztosan törölni szeretnéd az eseményt? A törlés végleges, és a hozzá tartozó résztvevő adatok is eltűnnek.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setConfirmEventDeleteId(null)}
+              >
+                Mégse
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={() => confirmEventDeleteId && void deleteEvent(confirmEventDeleteId)}
+              >
+                Igen, törlöm
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!confirmArchiveId} onOpenChange={(open) => { if (!open) setConfirmArchiveId(null) }}>
         <DialogContent className="max-w-sm gap-0 rounded-2xl p-0">
@@ -1638,6 +2411,269 @@ export function SkipperDashboard() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isNewEventModalOpen} onOpenChange={(open) => {
+        setIsNewEventModalOpen(open)
+        if (!open) {
+          resetNewEventForm()
+        }
+      }}>
+        <DialogContent className="max-w-2xl rounded-2xl p-0">
+          <form onSubmit={handleCreateEvent} className="flex flex-col gap-0">
+            <div className="border-b border-border px-6 py-5">
+              <DialogHeader className="gap-2">
+                <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
+                  Új esemény hozzáadása
+                </DialogTitle>
+                <DialogDescription className="text-pretty leading-relaxed">
+                  Add meg az esemény alapadatait, hogy később csapattagokat és hirdetéseket tudj kapcsolni hozzá.
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+
+            <div className="grid gap-5 px-6 py-6 md:grid-cols-2">
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="event-type">Esemény típusa</Label>
+                <select
+                  id="event-type"
+                  value={newEventForm.type}
+                  onChange={(event) => setNewEventForm((prev) => ({ ...prev, type: event.target.value as EventItem["type"] }))}
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent"
+                >
+                  <option value="Verseny">Verseny</option>
+                  <option value="Edzés">Edzés</option>
+                  <option value="Egyéb">Egyéb</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="event-title">Esemény megnevezése</Label>
+                <Input
+                  id="event-title"
+                  value={newEventForm.title}
+                  onChange={(event) => setNewEventForm((prev) => ({ ...prev, title: event.target.value }))}
+                  placeholder="Pl. Balaton-felvezető verseny"
+                  className="h-11"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="event-start-date">Kezdő időpont</Label>
+                <Input
+                  id="event-start-date"
+                  type="date"
+                  value={newEventForm.startDate}
+                  onChange={(event) => setNewEventForm((prev) => ({ ...prev, startDate: event.target.value }))}
+                  className="h-11"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="event-end-date">Végdátum</Label>
+                <Input
+                  id="event-end-date"
+                  type="date"
+                  value={newEventForm.endDate}
+                  onChange={(event) => setNewEventForm((prev) => ({ ...prev, endDate: event.target.value }))}
+                  className="h-11"
+                  disabled={newEventForm.oneDay}
+                />
+              </div>
+
+              <div className="flex items-center gap-2 md:col-span-2">
+                <input
+                  id="event-one-day"
+                  type="checkbox"
+                  checked={newEventForm.oneDay}
+                  onChange={(event) =>
+                    setNewEventForm((prev) => ({
+                      ...prev,
+                      oneDay: event.target.checked,
+                      endDate: event.target.checked ? "" : prev.endDate,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-border text-accent focus:ring-accent"
+                />
+                <Label htmlFor="event-one-day" className="cursor-pointer text-sm text-foreground">
+                  Egy napos esemény
+                </Label>
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="event-location">Helyszín</Label>
+                <Input
+                  id="event-location"
+                  value={newEventForm.location}
+                  onChange={(event) => setNewEventForm((prev) => ({ ...prev, location: event.target.value }))}
+                  placeholder="Pl. Balatonfüred, Déli kikötő"
+                  className="h-11"
+                />
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="event-notes">Megjegyzés</Label>
+                <textarea
+                  id="event-notes"
+                  value={newEventForm.notes}
+                  onChange={(event) => setNewEventForm((prev) => ({ ...prev, notes: event.target.value }))}
+                  placeholder="Írj ide további részleteket, utasításokat vagy információkat..."
+                  rows={6}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
+              <Button type="button" variant="outline" onClick={() => setIsNewEventModalOpen(false)}>
+                Mégse
+              </Button>
+              <Button type="submit" className="bg-accent! text-accent-foreground! hover:bg-accent/90!">
+                Esemény mentése
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditEventModalOpen} onOpenChange={(open) => {
+        setIsEditEventModalOpen(open)
+        if (!open) {
+          setEditingEventId(null)
+          setEditEventForm({
+            type: "Verseny",
+            title: "",
+            startDate: "",
+            endDate: "",
+            oneDay: false,
+            location: "",
+            notes: "",
+          })
+        }
+      }}>
+        <DialogContent className="max-w-2xl rounded-2xl p-0">
+          <form onSubmit={handleUpdateEvent} className="flex flex-col gap-0">
+            <div className="border-b border-border px-6 py-5">
+              <DialogHeader className="gap-2">
+                <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
+                  Esemény szerkesztése
+                </DialogTitle>
+                <DialogDescription className="text-pretty leading-relaxed">
+                  Módosítsd az esemény adatait és a részleteket.
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+
+            <div className="grid gap-5 px-6 py-6 md:grid-cols-2">
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="edit-event-type">Esemény típusa</Label>
+                <select
+                  id="edit-event-type"
+                  value={editEventForm.type}
+                  onChange={(event) => setEditEventForm((prev) => ({ ...prev, type: event.target.value as EventItem["type"] }))}
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent"
+                >
+                  <option value="Verseny">Verseny</option>
+                  <option value="Edzés">Edzés</option>
+                  <option value="Egyéb">Egyéb</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="edit-event-title">Esemény megnevezése</Label>
+                <Input
+                  id="edit-event-title"
+                  value={editEventForm.title}
+                  onChange={(event) => setEditEventForm((prev) => ({ ...prev, title: event.target.value }))}
+                  className="h-11"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-event-start-date">Kezdő időpont</Label>
+                <Input
+                  id="edit-event-start-date"
+                  type="date"
+                  value={editEventForm.startDate}
+                  onChange={(event) => setEditEventForm((prev) => ({ ...prev, startDate: event.target.value }))}
+                  className="h-11"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-event-end-date">Végdátum</Label>
+                <Input
+                  id="edit-event-end-date"
+                  type="date"
+                  value={editEventForm.endDate}
+                  onChange={(event) => setEditEventForm((prev) => ({ ...prev, endDate: event.target.value }))}
+                  className="h-11"
+                  disabled={editEventForm.oneDay}
+                />
+              </div>
+
+              <div className="flex items-center gap-2 md:col-span-2">
+                <input
+                  id="edit-event-one-day"
+                  type="checkbox"
+                  checked={editEventForm.oneDay}
+                  onChange={(event) =>
+                    setEditEventForm((prev) => ({
+                      ...prev,
+                      oneDay: event.target.checked,
+                      endDate: event.target.checked ? "" : prev.endDate,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-border text-accent focus:ring-accent"
+                />
+                <Label htmlFor="edit-event-one-day" className="cursor-pointer text-sm text-foreground">
+                  Egy napos esemény
+                </Label>
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="edit-event-location">Helyszín</Label>
+                <Input
+                  id="edit-event-location"
+                  value={editEventForm.location}
+                  onChange={(event) => setEditEventForm((prev) => ({ ...prev, location: event.target.value }))}
+                  className="h-11"
+                />
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="edit-event-notes">Megjegyzés</Label>
+                <textarea
+                  id="edit-event-notes"
+                  value={editEventForm.notes}
+                  onChange={(event) => setEditEventForm((prev) => ({ ...prev, notes: event.target.value }))}
+                  rows={6}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-border px-6 py-4">
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => editingEventId && setConfirmEventDeleteId(editingEventId)}
+                className="h-9"
+              >
+                Esemény törlése
+              </Button>
+
+              <div className="flex items-center gap-3">
+                <Button type="button" variant="outline" onClick={() => setIsEditEventModalOpen(false)}>
+                  Mégse
+                </Button>
+                <Button type="submit" className="bg-accent! text-accent-foreground! hover:bg-accent/90!">
+                  Mentés
+                </Button>
+              </div>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <AuthGateModal
         key={nonce}
         open={modalOpen}
@@ -1646,7 +2682,11 @@ export function SkipperDashboard() {
         initialView={modalView}
         boatId={boat?.id}
         userId={user?.id}
-        onListingCreated={() => setListingsRefreshKey((prev) => prev + 1)}
+        prefill={listingPrefill}
+        onListingCreated={() => {
+          setListingPrefill(null)
+          setListingsRefreshKey((prev) => prev + 1)
+        }}
       />
 
       <SiteFooter />

@@ -12,8 +12,8 @@ const options = [
   {
     icon: Sailboat,
     title: "Hajóm van",
-    subtitle: "Legénységet keresek a következő versenyre, vagy fix csapattagot a szezonra.",
-    cta: "Szabad hely hirdetése",
+    subtitle: "A hajómmal és a legénységemmel kapcsolatos adatokat szeretném kezelni, vagy szabad helyet hirdetni.",
+    cta: "Hajó és legénnység kezelése",
     action: "skipper" as const,
   },
   {
@@ -49,7 +49,7 @@ export function CoreOptions() {
           Hogyan szeretnél vitorlázni?
         </h2>
         <p className="mt-4 text-pretty leading-relaxed text-muted-foreground">
-          Válaszd ki, hogy hajótulajdonosként legénységet keresel, vagy vitorlázóként szeretnél fedélzetre kerülni.
+          Válaszd ki, hogy hajótulajdonosként legénységedet szeretnéd alakítani, vagy vitorlázóként szeretnél fedélzetre kerülni.
         </p>
       </div>
 

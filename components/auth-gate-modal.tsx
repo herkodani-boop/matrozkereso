@@ -95,6 +95,7 @@ export function AuthGateModal({
   boatId,
   userId,
   onListingCreated,
+  prefill,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -104,6 +105,13 @@ export function AuthGateModal({
   boatId?: string
   userId?: string
   onListingCreated?: () => void
+  prefill?: {
+    title?: string
+    location?: string
+    startDate?: string
+    endDate?: string
+    oneDay?: boolean
+  } | null
 }) {
   const router = useRouter()
   const [view, setView] = useState<View>("login")
@@ -120,6 +128,7 @@ export function AuthGateModal({
   const [boatCrewSize, setBoatCrewSize] = useState("")
   const [crewType, setCrewType] = useState<string>("amator")
   const [listingCommitment, setListingCommitment] = useState<string>("egy-verseny")
+  const [isEventPrefilledListing, setIsEventPrefilledListing] = useState(false)
   const [listingPosts, setListingPosts] = useState<string[]>([])
   const [listingLevel, setListingLevel] = useState<string>("kezdo")
   const [listingNote, setListingNote] = useState("")
@@ -191,11 +200,25 @@ export function AuthGateModal({
 
   // Megnyitáskor a kért nézetre ugrunk; skipper esetén alapból a regisztráció.
   useEffect(() => {
-    if (open) {
-      resetFormState()
-      setView(initialView ?? (mode === "skipper" ? "register" : "login"))
+    if (!open) {
+      return
     }
-  }, [open, mode, initialView])
+
+    resetFormState()
+    setView(initialView ?? (mode === "skipper" ? "register" : "login"))
+
+    if (prefill) {
+      setListingTitle(prefill.title ?? "")
+      setListingLocation(prefill.location ?? "")
+      setListingStartDate(prefill.startDate ?? "")
+      setListingEndDate(prefill.endDate ?? "")
+      setListingOneDay(Boolean(prefill.oneDay))
+      setListingCommitment("egy-verseny")
+      setIsEventPrefilledListing(true)
+    } else {
+      setIsEventPrefilledListing(false)
+    }
+  }, [open, mode, initialView, prefill])
 
   useEffect(() => {
     return () => {
@@ -770,7 +793,12 @@ export function AuthGateModal({
                 variant="outline"
                 size="lg"
                 className="h-11 w-full text-base"
-                onClick={() => setView("register")}
+                onClick={() => {
+                  setFormError(null)
+                  setEmail("")
+                  setPassword("")
+                  setView("register")
+                }}
               >
                 Profil létrehozása
               </Button>
@@ -1184,14 +1212,18 @@ export function AuthGateModal({
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {Object.entries(commitmentOptions).map(([value, label]) => {
                       const active = listingCommitment === value
+                      const disabled = isEventPrefilledListing && value === "szezon"
+
                       return (
                         <label
                           key={value}
-                          className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition-colors ${
+                          className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition-colors ${
                             active
                               ? "border-accent bg-accent/10 text-foreground"
-                              : "border-border bg-card text-foreground hover:border-accent/60"
-                          }`}
+                              : disabled
+                                ? "border-border bg-card text-muted-foreground opacity-50"
+                                : "border-border bg-card text-foreground hover:border-accent/60"
+                          } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
                         >
                           <span
                             className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
@@ -1205,7 +1237,11 @@ export function AuthGateModal({
                             name="listing-commitment"
                             value={value}
                             checked={active}
+                            disabled={disabled}
                             onChange={() => {
+                              if (disabled) {
+                                return
+                              }
                               setListingCommitment(value)
                               if (value === "szezon") {
                                 setListingOneDay(false)

@@ -336,7 +336,7 @@ export default function ProfilPage() {
         ) : null}
 
         {notice ? (
-          <div className="mb-4 rounded-xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm text-accent-foreground">
+          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-100">
             {notice}
           </div>
         ) : null}
