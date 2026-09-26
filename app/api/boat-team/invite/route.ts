@@ -9,13 +9,53 @@ function normalizeEmail(value: unknown) {
   return normalized
 }
 
+function isPlaceholderDomain(value: string | undefined) {
+  return !value || /yourdomain\.com|localhost|127\.0\.0\.1|resend\.dev/i.test(value)
+}
+
+function getSenderEmail() {
+  const senderEmail = process.env.RESEND_FROM_EMAIL?.trim()
+
+  if (isPlaceholderDomain(senderEmail)) {
+    throw new Error(
+      "A RESEND_FROM_EMAIL mezőnek egy tényleges, ellenőrzött domainre kell mutatnia, például: no-reply@matrozkereso.com",
+    )
+  }
+
+  return senderEmail
+}
+
+function getAppBaseUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
+
+  if (!configuredUrl || /localhost|127\.0\.0\.1/.test(configuredUrl)) {
+    return "https://www.matrozkereso.com"
+  }
+
+  return configuredUrl.replace(/\/$/, "")
+}
+
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const resendApiKey = process.env.RESEND_API_KEY
-  const senderEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev"
   const senderName = process.env.RESEND_FROM_NAME || "Matrózkereső"
+
+  let senderEmail: string
+  try {
+    senderEmail = getSenderEmail()
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "A RESEND_FROM_EMAIL mezőnek egy ellenőrzött, valós domainre kell mutatnia.",
+      },
+      { status: 500 },
+    )
+  }
 
   if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
     return NextResponse.json({ error: "Hiányzó Supabase konfiguráció." }, { status: 500 })
@@ -91,7 +131,7 @@ export async function POST(request: NextRequest) {
 
   const invitation = data as { id?: string; token?: string; invitee_email?: string } | null
   const tokenValue = invitation?.token ?? null
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+  const baseUrl = getAppBaseUrl()
   const inviteLink = tokenValue ? `${baseUrl}/accept-team-invite?token=${tokenValue}` : null
   const inviterDisplayName = user.user_metadata?.full_name || user.email?.split("@")[0] || "A hajós csapat"
 
@@ -107,6 +147,9 @@ export async function POST(request: NextRequest) {
     to: [email],
     replyTo: senderEmail,
     subject: "Meghívás csapatba a Matrózkeresőn",
+    headers: {
+      "List-Unsubscribe": `mailto:${senderEmail}?subject=Unsubscribe`,
+    },
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #111827; max-width: 620px; margin: 0 auto; padding: 28px 24px; background: #ffffff;">
         <div style="font-size: 14px; color: #475569; margin-bottom: 20px;">Matrózkereső</div>
