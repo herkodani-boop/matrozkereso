@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
 
   const { data: ownerBoat, error: boatError } = await adminClient
     .from("boats")
-    .select("id, name")
+    .select("id, name, image_url")
     .eq("id", boatId)
     .eq("user_id", user.id)
     .maybeSingle()
@@ -141,6 +141,7 @@ export async function POST(request: NextRequest) {
 
   const resend = new Resend(resendApiKey)
   const fromAddress = `${senderName} <${senderEmail}>`
+  const boatImageUrl = ownerBoat?.image_url || "https://www.matrozkereso.com/placeholder.svg"
 
   const emailResult = await resend.emails.send({
     from: fromAddress,
@@ -151,36 +152,45 @@ export async function POST(request: NextRequest) {
       "List-Unsubscribe": `mailto:${senderEmail}?subject=Unsubscribe`,
     },
     html: `
-      <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #111827; max-width: 620px; margin: 0 auto; padding: 28px 24px; background: #ffffff;">
-        <div style="font-size: 14px; color: #475569; margin-bottom: 20px;">Matrózkereső</div>
+      <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #111827; max-width: 660px; margin: 0 auto; background: #f8fafc; padding: 24px;">
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);">
+          <div style="padding: 22px 28px 14px; border-bottom: 1px solid #e2e8f0; background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);">
+            <img src="https://www.matrozkereso.com/logo-mark.png" alt="Matrózkereső logo" style="display: block; width: 44px; height: 44px; border-radius: 12px;" />
+          </div>
 
-        <h2 style="margin: 0 0 18px; font-size: 30px; line-height: 1.2; color: #0f172a;">Meghívás csapatba a Matrózkeresőn</h2>
+          <div style="padding: 28px 28px 20px; background: #ffffff;">
+            <div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 10px;">Matrózkereső</div>
+            <h2 style="margin: 0 0 18px; font-size: 32px; line-height: 1.2; color: #0f172a; font-weight: 700;">Meghívás csapatba a Matrózkeresőn</h2>
 
-        <p style="margin: 0 0 10px; font-size: 16px;">Kedves Címzett!</p>
-        <p style="margin: 0 0 18px; font-size: 16px;">
-          <strong>${inviterDisplayName}</strong> meghívott a csapatába, melyet az alábbi linken tudsz elfogadni bejelentkezés vagy regisztrációt követően.
-        </p>
+            <p style="margin: 0 0 10px; font-size: 16px; color: #334155;">Kedves Címzett!</p>
+            <p style="margin: 0 0 22px; font-size: 16px; color: #334155; line-height: 1.7;">
+              <strong>${inviterDisplayName}</strong> meghívott a csapatába, mielőtt az alábbi linkre kattintva elfogadhatja a meghívást.
+            </p>
 
-        <div style="margin: 0 0 18px; padding: 18px 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;">
-          <div style="font-size: 14px; color: #475569; margin-bottom: 6px;">Hajó</div>
-          <div style="font-size: 20px; font-weight: 700; color: #0f172a;">${ownerBoat.name}</div>
+            <div style="margin: 0 0 20px; display: block; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
+              <div style="padding: 0;">
+                <img src="${boatImageUrl}" alt="Hajó kép" style="display: block; width: 100%; height: 180px; object-fit: cover; background: #e2e8f0;" />
+              </div>
+              <div style="padding: 18px 18px 12px;">
+                <div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 6px;">Hajó</div>
+                <div style="font-size: 22px; font-weight: 700; color: #0f172a;">${ownerBoat.name}</div>
+              </div>
+            </div>
+
+            <p style="margin: 0 0 18px; font-size: 15px; color: #475569;">A meghívás elfogadásához kattints az alábbi gombra:</p>
+
+            <p style="margin: 0 0 22px; text-align: left;">
+              <a href="${inviteLink}" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; padding: 15px 28px; border-radius: 999px; font-weight: 700; font-size: 16px; line-height: 1;">
+                Elfogadom a meghívást
+              </a>
+            </p>
+
+            <p style="margin: 0; font-size: 12px; color: #64748b;">Ez a meghívás 7 napig érvényes.</p>
+          </div>
         </div>
-
-        <p style="margin: 0 0 18px; font-size: 16px;">A meghívás elfogadásához kattints az alábbi gombra:</p>
-
-        <p style="margin: 0 0 20px;">
-          <a href="${inviteLink}" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 999px; font-weight: 700; font-size: 16px;">
-            Elfogadom a meghívást
-          </a>
-        </p>
-
-        <p style="margin: 0 0 10px; font-size: 14px; color: #475569;">Ha a gomb nem nyílik meg, másold be ezt a linket a böngészőbe:</p>
-        <p style="margin: 0; font-size: 14px; word-break: break-all;"><a href="${inviteLink}" style="color: #2563eb;">${inviteLink}</a></p>
-
-        <p style="margin-top: 22px; font-size: 14px; color: #475569;">Ez a meghívás 7 napig érvényes.</p>
       </div>
     `,
-    text: `Meghívás csapatba a Matrózkeresőn\n\nKedves Címzett!\n\n${inviterDisplayName} meghívott a csapatába, melyet az alábbi linken tudsz elfogadni bejelentkezés vagy regisztrációt követően.\n\nHajó: ${ownerBoat.name}\n\nElfogadási link:\n${inviteLink}\n\nEz a meghívás 7 napig érvényes.`,
+    text: `Meghívás csapatba a Matrózkeresőn\n\nKedves Címzett!\n\n${inviterDisplayName} meghívott a csapatába. A meghívást az alkalmazásban vagy a weboldalon tudja elfogadni.\n\nHajó: ${ownerBoat.name}\n\nEz a meghívás 7 napig érvényes.`,
   })
 
   if (emailResult.error) {
