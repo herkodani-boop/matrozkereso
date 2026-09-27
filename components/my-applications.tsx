@@ -262,9 +262,14 @@ export function MyApplications() {
                 </div>
 
                 {application.status === "accepted" ? (
-                  <p role="status" className="mt-2 text-sm text-emerald-800">
-                    A kapitány szeretné felvenni veled a kapcsolatot. Ez még nem végleges részvételi visszaigazolás; egyeztessétek közvetlenül.
-                  </p>
+                  <div role="status" className="mt-2 flex flex-col gap-2">
+                    <p className="text-sm font-medium text-emerald-800">
+                      A kapitány elfogadta a jelentkezésed, és várhatóan a megadott elérhetőségeden keresni fog.
+                    </p>
+                    <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950">
+                      Ez még nem végleges részvételi visszaigazolás. A részleteket egyeztessétek közvetlenül.
+                    </p>
+                  </div>
                 ) : null}
 
                 {application.captain_contact_shared_at ? (

@@ -128,11 +128,6 @@ export function LatestListings() {
                   className="object-cover transition-transform duration-300 group-hover:scale-105"
                   sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                 />
-                {listing.positions.length > 0 && (
-                  <Badge className="absolute left-3 top-3 border-0 bg-primary text-primary-foreground">
-                    {listing.positions[0]}
-                  </Badge>
-                )}
               </div>
 
               <div className="flex flex-1 flex-col gap-2 p-4">

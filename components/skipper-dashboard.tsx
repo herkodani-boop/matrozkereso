@@ -23,6 +23,7 @@ import {
   Trash2,
   Archive,
   PencilLine,
+  RotateCcw,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -43,7 +44,6 @@ type Applicant = {
   name: string
   age?: number
   level: "Kezdő" | "Haladó" | "Profi / Versenyző"
-  position: string
   phone: string
   email: string
   avatar: string
@@ -133,7 +133,7 @@ type TeamMember = {
 
 const levelStyles: Record<Applicant["level"], string> = {
   Kezdő: "bg-secondary text-secondary-foreground",
-  Haladó: "bg-accent/15 text-accent-foreground",
+  Haladó: "border border-cyan-300 bg-cyan-100 text-cyan-950 dark:border-cyan-700 dark:bg-cyan-950 dark:text-cyan-100",
   "Profi / Versenyző": "bg-primary text-primary-foreground",
 }
 
@@ -363,6 +363,7 @@ export function SkipperDashboard() {
   })
   const [selectedId, setSelectedId] = useState<string>("")
   const [showPreviousListings, setShowPreviousListings] = useState(false)
+  const [expandedApplicantIds, setExpandedApplicantIds] = useState<Record<string, boolean>>({})
   const [statuses, setStatuses] = useState<Record<string, ApplicantStatus>>({})
   const [statusSaving, setStatusSaving] = useState<Record<string, boolean>>({})
   const [participantSaving, setParticipantSaving] = useState<Record<string, boolean>>({})
@@ -849,12 +850,10 @@ export function SkipperDashboard() {
             return listing
           }
 
-          const defaultPosition = listing.positions[0] ?? "Legénység"
           return {
             ...listing,
             applicants: rawApplicants.map((applicant) => ({
               ...applicant,
-              position: defaultPosition,
             })),
           }
         }),
@@ -2522,60 +2521,56 @@ export function SkipperDashboard() {
               {selected.id ? selected.applicants.map((applicant) => {
                 const status = statuses[applicant.id] ?? "pending"
                 const isSaving = statusSaving[applicant.id] ?? false
+                const isExpanded = expandedApplicantIds[applicant.id] ?? false
                 return (
                   <div
                     key={applicant.id}
-                    className={`flex flex-col gap-4 rounded-xl border bg-card p-4 ${
-                      status === "rejected" ? "border-border opacity-60" : "border-border"
-                    }`}
+                    className="flex flex-col gap-2 rounded-lg border border-border bg-card p-2.5"
                   >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                    <div className="flex flex-1 items-center gap-4">
-                      <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full ring-1 ring-border">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <span className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full ring-1 ring-border">
                         <Image
                           src={applicant.avatar || "/placeholder.svg"}
                           alt={applicant.name}
                           fill
                           className="object-cover"
-                          sizes="56px"
+                          sizes="36px"
                         />
                       </span>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="font-semibold text-foreground">{applicant.name}</h3>
-                          <span className="text-sm text-muted-foreground">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                          <h3 className="truncate text-sm font-semibold text-foreground">{applicant.name}</h3>
+                          <span className="text-xs text-muted-foreground">
                             {applicant.age ? `${applicant.age} éves` : "Kor ismeretlen"}
                           </span>
-                        </div>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
                           <Badge className={`${levelStyles[applicant.level]} border-0`}>{applicant.level}</Badge>
-                          <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-                            {applicant.position}
-                          </span>
-                        </div>
                       </div>
                     </div>
 
                     {status === "pending" && !selected.isHistorical ? (
-                      <div className="flex shrink-0 gap-2">
+                      <div className="flex shrink-0 items-center gap-1">
                         <Button
-                          size="sm"
+                          type="button"
+                          size="icon-sm"
                           onClick={() => void decide(applicant.id, "accepted")}
                           disabled={isSaving || listingMutatingId === selected.id}
-                          className="h-9 bg-emerald-600! text-white! hover:bg-emerald-700!"
+                          aria-label={`Kapcsolatfelvétel indítása: ${applicant.name}`}
+                          title="Kapcsolatfelvétel indítása"
+                          className="bg-emerald-600! text-white! hover:bg-emerald-700!"
                         >
                           <Check className="h-4 w-4" aria-hidden="true" />
-                          Kapcsolatfelvétel indítása
                         </Button>
                         <Button
-                          size="sm"
+                          type="button"
+                          size="icon-sm"
                           variant="outline"
                           onClick={() => void decide(applicant.id, "rejected")}
                           disabled={isSaving || listingMutatingId === selected.id}
-                          className="h-9 text-muted-foreground"
+                          aria-label={`Jelentkező elutasítása: ${applicant.name}`}
+                          title="Elutasítás"
+                          className="text-muted-foreground"
                         >
                           <X className="h-4 w-4" aria-hidden="true" />
-                          Elutasítás
                         </Button>
                       </div>
                     ) : (
@@ -2586,13 +2581,13 @@ export function SkipperDashboard() {
                               ? "border-0 bg-emerald-600 text-white hover:bg-emerald-600"
                               : status === "pending"
                                 ? "border-0 bg-amber-100 text-amber-900 hover:bg-amber-100"
-                                : "border-0 bg-secondary text-muted-foreground hover:bg-secondary"
+                                : "border-0 bg-rose-100 text-rose-800 hover:bg-rose-100"
                           }
                         >
                           {status === "pending" ? (
                             "Függőben"
                           ) : status === "accepted" ? (
-                            "Kapcsolatfelvétel kezdeményezve"
+                            "Kapcsolatfelvétel"
                           ) : (
                             <>
                               <X className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
@@ -2603,28 +2598,47 @@ export function SkipperDashboard() {
                         {status === "accepted" && !selected.isHistorical ? (
                           <Button
                             type="button"
-                            size="sm"
+                            size="icon-sm"
                             variant="outline"
                             disabled={isSaving}
                             onClick={() => setConfirmRevokeApplicantId(applicant.id)}
                             aria-label={`Kapcsolatfelvétel visszavonása: ${applicant.name}`}
                             title="Kapcsolatfelvétel visszavonása"
                           >
-                            Visszavonás
+                            <RotateCcw className="h-4 w-4" aria-hidden="true" />
                           </Button>
                         ) : null}
                       </div>
                     )}
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
+                      aria-controls={`applicant-details-${applicant.id}`}
+                      aria-label={isExpanded ? `Részletek elrejtése: ${applicant.name}` : `Részletek megtekintése: ${applicant.name}`}
+                      title={isExpanded ? "Részletek elrejtése" : "Üzenet és kapcsolat megtekintése"}
+                      onClick={() => setExpandedApplicantIds((previous) => ({
+                        ...previous,
+                        [applicant.id]: !isExpanded,
+                      }))}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    >
+                      <ChevronRight
+                        className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90 text-cyan-600" : ""}`}
+                        aria-hidden="true"
+                      />
+                    </button>
                     </div>
 
-                    <div className="rounded-lg border border-border/70 bg-secondary/35 p-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        Jelentkező üzenete
-                      </p>
-                      <p className="mt-1 text-sm leading-relaxed text-foreground">
-                        {applicant.applicationMessage ?? "Nem írt külön üzenetet a jelentkezéshez."}
-                      </p>
-                    </div>
+                    {isExpanded ? (
+                        <div id={`applicant-details-${applicant.id}`} className="flex flex-col gap-2 border-t border-border/70 pt-2">
+                          <div className="rounded-lg border border-border/70 bg-secondary/35 p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Jelentkező üzenete
+                            </p>
+                            <p className="mt-1 text-sm leading-relaxed text-foreground">
+                              {applicant.applicationMessage ?? "Nem írt külön üzenetet a jelentkezéshez."}
+                            </p>
+                          </div>
 
                     {status === "accepted" && (
                       <div className="overflow-hidden rounded-lg border border-emerald-700/15 bg-emerald-50">
@@ -2681,6 +2695,8 @@ export function SkipperDashboard() {
                         </div>
                       </div>
                     )}
+                        </div>
+                      ) : null}
                   </div>
                 )
               }) : (
