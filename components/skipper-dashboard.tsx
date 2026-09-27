@@ -2006,7 +2006,10 @@ export function SkipperDashboard() {
                 Csapatom
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Csapattagok és függő meghívások kezelése.
+                {teamMembers.filter((member) => member.status === "active").length} aktív tag
+                {teamMembers.some((member) => member.status === "invited")
+                  ? ` · ${teamMembers.filter((member) => member.status === "invited").length} függő meghívó`
+                  : ""}
               </p>
             </div>
           </div>
@@ -2056,15 +2059,15 @@ export function SkipperDashboard() {
               </div>
             ) : null}
 
-            <div className="divide-y divide-border">
+            <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
               {teamLoading ? (
-                <div role="status" className="p-4 text-sm text-muted-foreground">
+                <div role="status" className="col-span-full p-2 text-sm text-muted-foreground">
                   Csapattagok betöltése...
                 </div>
               ) : teamLoadError ? (
                 <div
                   role="alert"
-                  className="p-4 text-sm text-destructive"
+                  className="col-span-full p-2 text-sm text-destructive"
                 >
                   <p>{teamLoadError}</p>
                   <Button
@@ -2078,17 +2081,17 @@ export function SkipperDashboard() {
                   </Button>
                 </div>
               ) : teamMembers.length === 0 ? (
-                <div className="p-4 text-sm text-muted-foreground">
+                <div className="col-span-full p-2 text-sm text-muted-foreground">
                   Még nincs csapattag. Küldj meghívót, hogy összeálljon a legénység.
                 </div>
               ) : (
                 teamMembers.map((member) => (
                   <div
                     key={member.id}
-                    className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex min-w-0 items-center gap-2.5 rounded-lg border border-border bg-background px-2.5 py-2"
                   >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full border border-border bg-secondary">
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <span className="relative flex h-8 w-8 shrink-0 overflow-hidden rounded-full border border-border bg-secondary">
                         <Image
                           src={member.avatar || "/placeholder.svg"}
                           alt={member.name}
@@ -2107,13 +2110,13 @@ export function SkipperDashboard() {
                             {member.status === "active" ? "Aktív tag" : "Meghívó elküldve"}
                           </Badge>
                         </div>
-                        <p className="mt-0.5 break-all text-xs text-muted-foreground" title={member.email}>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground" title={member.email}>
                           {member.email}
                         </p>
                         {member.status === "active" && member.phone ? (
                           <a
                             href={`tel:${member.phone.replace(/\s/g, "")}`}
-                            className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                            className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                             aria-label={`${member.name} telefonszáma: ${member.phone}`}
                           >
                             <Phone className="h-3 w-3" aria-hidden="true" />
@@ -2123,17 +2126,17 @@ export function SkipperDashboard() {
                       </div>
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-2 pl-12 sm:pl-0">
+                    <div className="flex shrink-0 items-center gap-1.5">
                       {member.status === "invited" ? (
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="h-8"
+                          className="h-8 px-2 text-xs"
                           disabled={inviteSending}
                           onClick={() => void handleInviteTeamMember(member.email)}
                         >
-                          {inviteSending ? "Küldés..." : "Meghívó újraküldése"}
+                          {inviteSending ? "Küldés..." : "Újraküldés"}
                         </Button>
                       ) : null}
 
