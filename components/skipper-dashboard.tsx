@@ -54,6 +54,7 @@ type Applicant = {
 type Listing = {
   id: string
   eventId: string | null
+  commitment: "egy-verseny" | "szezon"
   event: string
   location: string
   date: string
@@ -393,6 +394,7 @@ export function SkipperDashboard() {
   const [pendingCountsError, setPendingCountsError] = useState<string | null>(null)
   const [applicantsLoading, setApplicantsLoading] = useState(false)
   const [applicantsLoadError, setApplicantsLoadError] = useState<string | null>(null)
+  const [addingTeamMemberApplicantId, setAddingTeamMemberApplicantId] = useState<string | null>(null)
   const [listingMutatingId, setListingMutatingId] = useState<string | null>(null)
   const [pendingCountsMap, setPendingCountsMap] = useState<Record<string, number>>({})
   const [teamLoading, setTeamLoading] = useState(false)
@@ -702,6 +704,7 @@ export function SkipperDashboard() {
         const mapped: Listing[] = allAds.map((ad: any) => ({
           id: ad.id,
           eventId: ad.event_id ? String(ad.event_id) : null,
+          commitment: ad.commitment === "szezon" ? "szezon" : "egy-verseny",
           event: ad.title,
           location: ad.location,
           date: ad.date_text,
@@ -913,7 +916,7 @@ export function SkipperDashboard() {
   const selected = useMemo(
     () =>
       listings.find((l) => l.id === selectedId) ??
-      ({ id: "", eventId: null, event: "Válassz hirdetést", location: "", date: "", expiryDate: null, isActive: true, isDeleted: false, isHistorical: false, positions: [], applicants: [] } as Listing),
+      ({ id: "", eventId: null, commitment: "egy-verseny", event: "Válassz hirdetést", location: "", date: "", expiryDate: null, isActive: true, isDeleted: false, isHistorical: false, positions: [], applicants: [] } as Listing),
     [listings, selectedId],
   )
   const previousListingsCount = listings.filter((listing) => listing.isHistorical).length
@@ -1827,6 +1830,80 @@ export function SkipperDashboard() {
     )
 
     setActionNotice(`${applicant.name} hozzáadva az eseményhez.`)
+  }
+
+  async function addAcceptedApplicantToTeam(applicantId: string) {
+    const applicant = selected.applicants.find((item) => item.id === applicantId)
+    if (!applicant || !applicant.userId || !boat?.id || !user) {
+      setActionError("A jelentkezőt nem sikerült csapattaggá tenni.")
+      return
+    }
+
+    if (teamMembers.some((member) => member.userId === applicant.userId && member.status === "active")) {
+      setActionNotice(`${applicant.name} már csapattag.`)
+      return
+    }
+
+    setAddingTeamMemberApplicantId(applicantId)
+    setActionError(null)
+    setActionNotice(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error("A csapattag hozzáadásához be kell jelentkezned.")
+      }
+
+      const response = await fetch("/api/boat-team/add-applicant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ applicationId: applicant.id }),
+      })
+      const payload = (await response.json()) as {
+        ok?: boolean
+        alreadyMember?: boolean
+        error?: string
+        member?: {
+          id: string
+          user_id: string
+          email: string
+          display_name: string | null
+          role: string
+          status: string
+          avatar_url?: string | null
+        }
+      }
+
+      if (!response.ok || !payload.ok || !payload.member) {
+        throw new Error(payload.error || "A jelentkezőt nem sikerült csapattaggá tenni.")
+      }
+
+      const member: TeamMember = {
+        id: payload.member.id,
+        userId: payload.member.user_id,
+        name: payload.member.display_name || applicant.name,
+        email: payload.member.email || applicant.email,
+        role: payload.member.role || "Csapattag",
+        avatar: payload.member.avatar_url || applicant.avatar || "/placeholder.svg",
+        status: "active",
+      }
+
+      setTeamMembers((previous) => [
+        member,
+        ...previous.filter((item) => item.userId !== member.userId && item.email.toLowerCase() !== member.email.toLowerCase()),
+      ])
+      setActionNotice(payload.alreadyMember
+        ? `${applicant.name} már csapattag.`
+        : `${applicant.name} hozzáadva a csapathoz.`)
+    } catch (error) {
+      console.error("Jelentkező csapathoz adási hiba:", error)
+      setActionError(error instanceof Error ? error.message : "A jelentkezőt nem sikerült csapattaggá tenni.")
+    } finally {
+      setAddingTeamMemberApplicantId(null)
+    }
   }
 
   return (
@@ -2752,9 +2829,14 @@ export function SkipperDashboard() {
                 const isSaving = statusSaving[applicant.id] ?? false
                 const isExpanded = expandedApplicantIds[applicant.id] ?? false
                 const matchingEvent = events.find((event) => isMatchingListingToEvent(selected, event))
+                const isSeasonListing = selected.commitment === "szezon"
                 const isAlreadyInEvent = Boolean(
                   matchingEvent?.participants.some((participant) => participant.userId === applicant.userId),
                 )
+                const isAlreadyTeamMember = teamMembers.some(
+                  (member) => member.userId === applicant.userId && member.status === "active",
+                )
+                const isAddingToTeam = addingTeamMemberApplicantId === applicant.id
                 return (
                   <div
                     key={applicant.id}
@@ -2929,7 +3011,30 @@ export function SkipperDashboard() {
                                 ? "Elérhetőségek megosztva"
                                 : "Elérhetőségeim megjelenítése a jelentkező fiókjában"}
                           </Button>
-                          {matchingEvent ? (
+                          {isSeasonListing ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={isAddingToTeam || isAlreadyTeamMember}
+                              onClick={() => void addAcceptedApplicantToTeam(applicant.id)}
+                              className={`h-auto min-h-10 w-full justify-start whitespace-normal px-3 py-2 text-left leading-snug ${
+                                isAlreadyTeamMember
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800 opacity-100"
+                                  : "bg-emerald-700! text-white! hover:bg-emerald-800!"
+                              }`}
+                            >
+                              {isAlreadyTeamMember ? (
+                                <Check className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+                              ) : (
+                                <Users className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+                              )}
+                              {isAddingToTeam
+                                ? "Hozzáadás..."
+                                : isAlreadyTeamMember
+                                  ? "Már csapattag"
+                                  : "Hozzáadás csapattagként"}
+                            </Button>
+                          ) : matchingEvent ? (
                             <Button
                               type="button"
                               size="sm"
