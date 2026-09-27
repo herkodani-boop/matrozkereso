@@ -7,7 +7,17 @@ AS $$
 DECLARE
   listing_owner_id uuid;
 BEGIN
-  IF auth.uid() IS NOT NULL AND NEW.user_id <> auth.uid() THEN
+  IF TG_OP = 'INSERT'
+    AND auth.uid() IS NOT NULL
+    AND NEW.user_id <> auth.uid() THEN
+    RAISE EXCEPTION 'A jelentkezés csak a bejelentkezett felhasználó nevében adható be.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF TG_OP = 'UPDATE'
+    AND (NEW.user_id IS DISTINCT FROM OLD.user_id OR NEW.ad_id IS DISTINCT FROM OLD.ad_id)
+    AND auth.uid() IS NOT NULL
+    AND NEW.user_id <> auth.uid() THEN
     RAISE EXCEPTION 'A jelentkezés csak a bejelentkezett felhasználó nevében adható be.'
       USING ERRCODE = '42501';
   END IF;
@@ -29,6 +39,6 @@ $$;
 DROP TRIGGER IF EXISTS prevent_owner_application ON public.applications;
 
 CREATE TRIGGER prevent_owner_application
-BEFORE INSERT OR UPDATE ON public.applications
+BEFORE INSERT OR UPDATE OF user_id, ad_id ON public.applications
 FOR EACH ROW
 EXECUTE FUNCTION public.prevent_owner_application();
