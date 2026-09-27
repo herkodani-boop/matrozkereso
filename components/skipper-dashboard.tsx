@@ -1879,7 +1879,7 @@ export function SkipperDashboard() {
                       setBoatModalMode("edit")
                       setIsBoatModalOpen(true)
                     }}
-                    className="h-11 bg-accent! text-accent-foreground! hover:bg-accent/90!"
+                    className="h-10 bg-accent! text-accent-foreground! hover:bg-accent/90!"
                   >
                     <PencilLine className="h-4 w-4" aria-hidden="true" />
                     Hajó adatai szerkesztése
@@ -1930,7 +1930,7 @@ export function SkipperDashboard() {
                 <Button
                   type="submit"
                   disabled={inviteSending}
-                  className="h-10 shrink-0 sm:min-w-32"
+                  className="h-10 shrink-0 bg-accent! text-accent-foreground! hover:bg-accent/90! sm:min-w-32"
                 >
                   <Plus className="h-4 w-4" aria-hidden="true" />
                   {inviteSending ? "Meghívás..." : "Meghívás"}
@@ -2047,8 +2047,7 @@ export function SkipperDashboard() {
             </div>
             <Button
               type="button"
-              variant="outline"
-              className="h-10 border-dashed border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100/80"
+              className="h-10 bg-accent! text-accent-foreground! hover:bg-accent/90!"
               onClick={() => {
                 resetNewEventForm()
                 setIsNewEventModalOpen(true)
@@ -2468,8 +2467,7 @@ export function SkipperDashboard() {
               </h2>
               <Button
                 type="button"
-                size="sm"
-                className="h-9 bg-accent! text-accent-foreground! hover:bg-accent/90!"
+                className="h-10 bg-accent! text-accent-foreground! hover:bg-accent/90!"
                 onClick={() => openModal("listing")}
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
