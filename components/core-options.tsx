@@ -13,7 +13,7 @@ const options = [
     icon: Sailboat,
     title: "Hajóm van",
     subtitle: "A hajómmal és a legénységemmel kapcsolatos adatokat szeretném kezelni, vagy szabad helyet hirdetni.",
-    cta: "Hajó és legénnység kezelése",
+    cta: "Hajó és legénység kezelése",
     action: "skipper" as const,
   },
   {

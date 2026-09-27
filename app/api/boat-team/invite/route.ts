@@ -207,6 +207,18 @@ export async function POST(request: NextRequest) {
   })
 
   if (emailResult.error) {
+    if (invitation?.id) {
+      const { error: cancelInvitationError } = await adminClient
+        .from("boat_team_invitations")
+        .update({ status: "cancelled" })
+        .eq("id", invitation.id)
+        .eq("status", "pending")
+
+      if (cancelInvitationError) {
+        console.error("Sikertelen emailküldés utáni meghívó-visszavonási hiba:", cancelInvitationError)
+      }
+    }
+
     return NextResponse.json(
       { error: emailResult.error.message || "A meghívó email elküldése nem sikerült." },
       { status: 500 },

@@ -342,6 +342,8 @@ export function SkipperDashboard() {
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null)
   const [isNewEventModalOpen, setIsNewEventModalOpen] = useState(false)
   const [isEditEventModalOpen, setIsEditEventModalOpen] = useState(false)
+  const [eventSaveMode, setEventSaveMode] = useState<"create" | "edit" | null>(null)
+  const [deletingEventId, setDeletingEventId] = useState<string | null>(null)
   const [editingEventId, setEditingEventId] = useState<string | null>(null)
   const [newEventForm, setNewEventForm] = useState({
     type: "Verseny" as EventItem["type"],
@@ -376,7 +378,9 @@ export function SkipperDashboard() {
   const [hasBoat, setHasBoat] = useState(false)
   const [boatLoading, setBoatLoading] = useState(true)
   const [boatLoadError, setBoatLoadError] = useState<string | null>(null)
+  const [eventsLoadError, setEventsLoadError] = useState<string | null>(null)
   const [confirmRemoveMemberId, setConfirmRemoveMemberId] = useState<string | null>(null)
+  const [removingTeamMemberId, setRemovingTeamMemberId] = useState<string | null>(null)
   const [eventApplicantToRemove, setEventApplicantToRemove] = useState<{
     eventId: string
     userId: string
@@ -386,6 +390,9 @@ export function SkipperDashboard() {
 
   const [loadingListings, setLoadingListings] = useState(false)
   const [listingsLoadError, setListingsLoadError] = useState<string | null>(null)
+  const [pendingCountsError, setPendingCountsError] = useState<string | null>(null)
+  const [applicantsLoading, setApplicantsLoading] = useState(false)
+  const [applicantsLoadError, setApplicantsLoadError] = useState<string | null>(null)
   const [listingMutatingId, setListingMutatingId] = useState<string | null>(null)
   const [pendingCountsMap, setPendingCountsMap] = useState<Record<string, number>>({})
   const [teamLoading, setTeamLoading] = useState(false)
@@ -558,6 +565,7 @@ export function SkipperDashboard() {
     }
 
     const fetchBoatEvents = async (boatId: string) => {
+      setEventsLoadError(null)
       const { data: eventRows, error: eventError } = await supabase
         .from("boat_events")
         .select("*")
@@ -567,6 +575,7 @@ export function SkipperDashboard() {
       if (eventError) {
         console.error("Események lekérdezési hiba:", eventError)
         setEvents([])
+        setEventsLoadError("Az eseményeket nem sikerült betölteni. Ellenőrizd a kapcsolatot, majd próbáld újra.")
         return
       }
 
@@ -591,6 +600,17 @@ export function SkipperDashboard() {
         }
       })
 
+      const today = new Date()
+      const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`
+      mappedEvents.sort((first, second) => {
+        const firstUpcoming = first.startDate >= todayKey
+        const secondUpcoming = second.startDate >= todayKey
+        if (firstUpcoming !== secondUpcoming) return firstUpcoming ? -1 : 1
+        return firstUpcoming
+          ? first.startDate.localeCompare(second.startDate)
+          : second.startDate.localeCompare(first.startDate)
+      })
+
       const eventIds = mappedEvents.map((event) => event.id)
       if (eventIds.length === 0) {
         setEvents([])
@@ -605,6 +625,7 @@ export function SkipperDashboard() {
       if (attendeeError) {
         console.error("Esemény résztvevők lekérdezési hiba:", attendeeError)
         setEvents(mappedEvents)
+        setEventsLoadError("Az események betöltődtek, de a résztvevőket nem sikerült lekérni. Próbáld újra.")
         return
       }
 
@@ -652,6 +673,7 @@ export function SkipperDashboard() {
     const fetchListings = async (boatId: string) => {
       setLoadingListings(true)
       setListingsLoadError(null)
+      setPendingCountsError(null)
       // Először próbáljunk egy egyszerűbb lekérdezést
       const { data: adsData, error: adsError } = await supabase
         .from("ads")
@@ -711,21 +733,28 @@ export function SkipperDashboard() {
 
         // Pending számok lekérése az összes hirdetéshez
         const adIds = allAds.map((ad: any) => ad.id)
-        const { data: pendingApps } = await supabase
+        const { data: pendingApps, error: pendingAppsError } = await supabase
           .from("applications")
           .select("ad_id")
           .in("ad_id", adIds)
           .eq("status", "pending")
 
+        if (pendingAppsError) {
+          console.error("Függő jelentkezések számolási hiba:", pendingAppsError)
+          setPendingCountsMap({})
+          setPendingCountsError("A függő jelentkezések száma nem tölthető be.")
+        } else {
         const countsMap: Record<string, number> = {}
         pendingApps?.forEach((app: any) => {
           countsMap[app.ad_id] = (countsMap[app.ad_id] ?? 0) + 1
         })
         setPendingCountsMap(countsMap)
+        }
       } else {
         setListings([])
         setSelectedId("")
         setPendingCountsMap({})
+        setPendingCountsError(null)
       }
       setLoadingListings(false)
     }
@@ -742,12 +771,16 @@ export function SkipperDashboard() {
 
   useEffect(() => {
     if (!activeListingId) {
+      setApplicantsLoading(false)
+      setApplicantsLoadError(null)
       return
     }
 
     let cancelled = false
 
     const fetchApplicants = async () => {
+      setApplicantsLoading(true)
+      setApplicantsLoadError(null)
       let data: any[] | null = null
       let error: any = null
 
@@ -780,6 +813,10 @@ export function SkipperDashboard() {
 
       if (error) {
         console.error("Jelentkezők lekérdezési hiba:", error)
+        if (!cancelled) {
+          setApplicantsLoadError("A jelentkezőket nem sikerült betölteni. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+          setApplicantsLoading(false)
+        }
         return
       }
 
@@ -860,6 +897,7 @@ export function SkipperDashboard() {
       )
 
       setStatuses((prev) => ({ ...prev, ...nextStatuses }))
+      setApplicantsLoading(false)
     }
 
     void fetchApplicants()
@@ -867,7 +905,7 @@ export function SkipperDashboard() {
     return () => {
       cancelled = true
     }
-  }, [activeListingId])
+  }, [activeListingId, listingsRefreshKey])
 
   const [isBoatModalOpen, setIsBoatModalOpen] = useState(false)
   const [boatModalMode, setBoatModalMode] = useState<"create" | "edit">("create")
@@ -887,14 +925,25 @@ export function SkipperDashboard() {
     return listing.applicants.filter((a) => (statuses[a.id] ?? "pending") === "pending").length
   }
 
-  function openModal(view: "boat" | "listing") {
+  function openModal(
+    view: "boat" | "listing",
+    prefill: {
+      eventId?: string
+      title?: string
+      location?: string
+      startDate?: string
+      endDate?: string
+      oneDay?: boolean
+    } | null = null,
+  ) {
+    setListingPrefill(view === "listing" ? prefill : null)
     setModalView(view)
     setNonce((n) => n + 1)
     setModalOpen(true)
   }
 
   function openListingModalFromEvent(event: EventItem) {
-    setListingPrefill({
+    openModal("listing", {
       eventId: event.id,
       title: event.title,
       location: event.location,
@@ -902,7 +951,6 @@ export function SkipperDashboard() {
       endDate: event.endDate,
       oneDay: event.oneDay,
     })
-    openModal("listing")
   }
 
   async function handleInviteTeamMember(inviteEmailOverride?: string) {
@@ -996,63 +1044,78 @@ export function SkipperDashboard() {
 
   async function confirmRemoveTeamMember() {
     const memberId = confirmRemoveMemberId
-    if (!memberId || !boat?.id) return
+    if (!memberId || !boat?.id || removingTeamMemberId) return
 
+    setRemovingTeamMemberId(memberId)
     setTeamError(null)
 
-    const member = teamMembers.find((item) => item.id === memberId)
-    if (!member) {
+    try {
+      const member = teamMembers.find((item) => item.id === memberId)
+      if (!member) {
+        setConfirmRemoveMemberId(null)
+        return
+      }
+
+      const memberEmail = member.email?.trim().toLowerCase()
+      if (!memberEmail) {
+        setConfirmRemoveMemberId(null)
+        setTeamError("A csapattag eltávolítása nem sikerült.")
+        return
+      }
+
+      const { data: memberRows, error: lookupError } = await supabase
+        .from("boat_team_members")
+        .select("id")
+        .eq("boat_id", boat.id)
+        .eq("email", memberEmail)
+        .in("status", ["invited", "active"])
+        .limit(20)
+
+      if (lookupError) {
+        console.error("Csapattag keresési hiba:", lookupError)
+        setTeamError("A csapattag eltávolítása nem sikerült.")
+        setConfirmRemoveMemberId(null)
+        return
+      }
+
+      const matchedMemberId = memberRows?.[0]?.id ?? memberId
+
+      const { error } = await supabase
+        .from("boat_team_members")
+        .update({ status: "removed" })
+        .eq("id", matchedMemberId)
+        .eq("boat_id", boat.id)
+        .in("status", ["invited", "active"])
+
+      if (error) {
+        console.error("Csapattag törlési hiba:", error)
+        setTeamError("A csapattag eltávolítása nem sikerült.")
+        setConfirmRemoveMemberId(null)
+        return
+      }
+
+      const { error: invitationCancelError } = await supabase
+        .from("boat_team_invitations")
+        .update({ status: "cancelled" })
+        .eq("boat_id", boat.id)
+        .eq("invitee_email", memberEmail)
+        .in("status", ["pending"])
+
+      setTeamMembers((prev) => prev.filter((item) => item.email.toLowerCase() !== memberEmail && item.id !== memberId))
       setConfirmRemoveMemberId(null)
-      return
-    }
 
-    const memberEmail = member.email?.trim().toLowerCase()
-    if (!memberEmail) {
+      if (invitationCancelError) {
+        console.error("Csapatmeghívás visszavonási hiba:", invitationCancelError)
+        setTeamError("A tag eltávolítva, de a függő meghívót nem sikerült lezárni. Frissítsd a listát, és ellenőrizd az állapotát.")
+        setListingsRefreshKey((key) => key + 1)
+      }
+    } catch (error) {
+      console.error("Csapattag eltávolítási hiba:", error)
+      setTeamError("A csapattag eltávolítása nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
       setConfirmRemoveMemberId(null)
-      setTeamError("A csapattag eltávolítása nem sikerült.")
-      return
+    } finally {
+      setRemovingTeamMemberId(null)
     }
-
-    const { data: memberRows, error: lookupError } = await supabase
-      .from("boat_team_members")
-      .select("id")
-      .eq("boat_id", boat.id)
-      .eq("email", memberEmail)
-      .in("status", ["invited", "active"])
-      .limit(20)
-
-    if (lookupError) {
-      console.error("Csapattag keresési hiba:", lookupError)
-      setTeamError("A csapattag eltávolítása nem sikerült.")
-      setConfirmRemoveMemberId(null)
-      return
-    }
-
-    const matchedMemberId = memberRows?.[0]?.id ?? memberId
-
-    const { error } = await supabase
-      .from("boat_team_members")
-      .update({ status: "removed" })
-      .eq("id", matchedMemberId)
-      .eq("boat_id", boat.id)
-      .in("status", ["invited", "active"])
-
-    if (error) {
-      console.error("Csapattag törlési hiba:", error)
-      setTeamError("A csapattag eltávolítása nem sikerült.")
-      setConfirmRemoveMemberId(null)
-      return
-    }
-
-    await supabase
-      .from("boat_team_invitations")
-      .update({ status: "cancelled" })
-      .eq("boat_id", boat.id)
-      .eq("invitee_email", memberEmail)
-      .in("status", ["pending"])
-
-    setTeamMembers((prev) => prev.filter((item) => item.email.toLowerCase() !== memberEmail && item.id !== memberId))
-    setConfirmRemoveMemberId(null)
   }
 
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -1070,7 +1133,7 @@ export function SkipperDashboard() {
     const timeoutId = window.setTimeout(() => {
       setActionNotice(null)
       setActionError(null)
-    }, 3000)
+    }, actionError ? 10000 : 3000)
 
     return () => window.clearTimeout(timeoutId)
   }, [actionNotice, actionError])
@@ -1146,35 +1209,44 @@ export function SkipperDashboard() {
       notes: newEventForm.notes.trim() || "Nincs megjegyzés.",
     }
 
-    const { data, error } = await supabase.from("boat_events").insert(payload).select().single()
+    if (eventSaveMode) return
+    setEventSaveMode("create")
+    try {
+      const { data, error } = await supabase.from("boat_events").insert(payload).select().single()
 
-    if (error) {
+      if (error) {
+        console.error("Esemény mentési hiba:", error)
+        setActionError("Az esemény mentése nem sikerült.")
+        return
+      }
+
+      const formattedDate = payload.is_one_day
+        ? formatEventDate(payload.start_date)
+        : `${formatEventDate(payload.start_date)} – ${formatEventDate(payload.end_date)}`
+
+      const createdItem: EventItem = {
+        id: String(data?.id ?? `event-${Date.now()}`),
+        title: data?.title ?? payload.title,
+        date: formattedDate,
+        location: data?.location ?? payload.location,
+        type: (data?.type === "Verseny" || data?.type === "Edzés" || data?.type === "Egyéb") ? data.type : payload.type,
+        details: data?.notes || payload.notes,
+        startDate: String(data?.start_date ?? payload.start_date),
+        endDate: data?.end_date ? String(data.end_date) : (payload.end_date ? String(payload.end_date) : ""),
+        oneDay: Boolean(data?.is_one_day ?? payload.is_one_day),
+        participants: [],
+      }
+
+      setEvents((prev) => [createdItem, ...prev])
+      setActionNotice("Az új esemény hozzáadva.")
+      setIsNewEventModalOpen(false)
+      resetNewEventForm()
+    } catch (error) {
       console.error("Esemény mentési hiba:", error)
-      setActionError("Az esemény mentése nem sikerült.")
-      return
+      setActionError("Az esemény mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+    } finally {
+      setEventSaveMode(null)
     }
-
-    const formattedDate = payload.is_one_day
-      ? formatEventDate(payload.start_date)
-      : `${formatEventDate(payload.start_date)} – ${formatEventDate(payload.end_date)}`
-
-    const createdItem: EventItem = {
-      id: String(data?.id ?? `event-${Date.now()}`),
-      title: data?.title ?? payload.title,
-      date: formattedDate,
-      location: data?.location ?? payload.location,
-      type: (data?.type === "Verseny" || data?.type === "Edzés" || data?.type === "Egyéb") ? data.type : payload.type,
-      details: data?.notes || payload.notes,
-      startDate: String(data?.start_date ?? payload.start_date),
-      endDate: data?.end_date ? String(data.end_date) : (payload.end_date ? String(payload.end_date) : ""),
-      oneDay: Boolean(data?.is_one_day ?? payload.is_one_day),
-      participants: [],
-    }
-
-    setEvents((prev) => [createdItem, ...prev])
-    setActionNotice("Az új esemény hozzáadva.")
-    setIsNewEventModalOpen(false)
-    resetNewEventForm()
   }
 
   async function handleUpdateEvent(event: FormEvent<HTMLFormElement>) {
@@ -1220,81 +1292,99 @@ export function SkipperDashboard() {
       notes: editEventForm.notes.trim() || "Nincs megjegyzés.",
     }
 
-    const { data, error } = await supabase
-      .from("boat_events")
-      .update(payload)
-      .eq("id", editingEventId)
-      .select()
-      .single()
+    if (eventSaveMode) return
+    setEventSaveMode("edit")
+    try {
+      const { data, error } = await supabase
+        .from("boat_events")
+        .update(payload)
+        .eq("id", editingEventId)
+        .select()
+        .single()
 
-    if (error) {
+      if (error) {
+        console.error("Esemény frissítési hiba:", error)
+        setActionError("Az esemény frissítése nem sikerült.")
+        return
+      }
+
+      const nextDate = payload.is_one_day
+        ? formatEventDate(payload.start_date)
+        : `${formatEventDate(payload.start_date)} – ${formatEventDate(payload.end_date)}`
+
+      setEvents((prev) =>
+        prev.map((item) =>
+          item.id === editingEventId
+            ? {
+                ...item,
+                title: payload.title,
+                date: nextDate,
+                location: payload.location,
+                type: payload.type,
+                details: payload.notes,
+                startDate: String(payload.start_date),
+                endDate: payload.end_date ? String(payload.end_date) : "",
+                oneDay: payload.is_one_day,
+              }
+            : item,
+        ),
+      )
+
+      setActionNotice("Az esemény frissítve.")
+      setIsEditEventModalOpen(false)
+      setEditingEventId(null)
+      setEditEventForm({
+        type: "Verseny",
+        title: "",
+        startDate: "",
+        endDate: "",
+        oneDay: false,
+        location: "",
+        notes: "",
+      })
+    } catch (error) {
       console.error("Esemény frissítési hiba:", error)
-      setActionError("Az esemény frissítése nem sikerült.")
-      return
+      setActionError("Az esemény frissítése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+    } finally {
+      setEventSaveMode(null)
     }
-
-    const nextDate = payload.is_one_day
-      ? formatEventDate(payload.start_date)
-      : `${formatEventDate(payload.start_date)} – ${formatEventDate(payload.end_date)}`
-
-    setEvents((prev) =>
-      prev.map((item) =>
-        item.id === editingEventId
-          ? {
-              ...item,
-              title: payload.title,
-              date: nextDate,
-              location: payload.location,
-              type: payload.type,
-              details: payload.notes,
-              startDate: String(payload.start_date),
-              endDate: payload.end_date ? String(payload.end_date) : "",
-              oneDay: payload.is_one_day,
-            }
-          : item,
-      ),
-    )
-
-    setActionNotice("Az esemény frissítve.")
-    setIsEditEventModalOpen(false)
-    setEditingEventId(null)
-    setEditEventForm({
-      type: "Verseny",
-      title: "",
-      startDate: "",
-      endDate: "",
-      oneDay: false,
-      location: "",
-      notes: "",
-    })
   }
 
   async function deleteEvent(id: string) {
+    if (deletingEventId) return
+    setDeletingEventId(id)
     setActionError(null)
     setActionNotice(null)
 
-    const { error } = await supabase.from("boat_events").delete().eq("id", id)
+    try {
+      const { error } = await supabase.from("boat_events").delete().eq("id", id)
 
-    if (error) {
+      if (error) {
+        console.error("Esemény törlési hiba:", error)
+        setActionError("Az esemény törlése nem sikerült.")
+        return
+      }
+
+      setEvents((prev) => prev.filter((event) => event.id !== id))
+      setActionNotice("Az esemény törölve.")
+      setConfirmEventDeleteId(null)
+      setIsEditEventModalOpen(false)
+      setEditingEventId(null)
+      setEditEventForm({
+        type: "Verseny",
+        title: "",
+        startDate: "",
+        endDate: "",
+        oneDay: false,
+        location: "",
+        notes: "",
+      })
+    } catch (error) {
       console.error("Esemény törlési hiba:", error)
-      setActionError("Az esemény törlése nem sikerült.")
-      return
+      setActionError("Az esemény törlése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+    } finally {
+      setDeletingEventId(null)
     }
-
-    setEvents((prev) => prev.filter((event) => event.id !== id))
-    setActionNotice("Az esemény törölve.")
-    setConfirmEventDeleteId(null)
-    setIsEditEventModalOpen(false)
-    setEditingEventId(null)
-    setEditEventForm({
-      type: "Verseny",
-      title: "",
-      startDate: "",
-      endDate: "",
-      oneDay: false,
-      location: "",
-      notes: "",
-    })
   }
 
   async function setEventParticipantStatus(
@@ -1644,7 +1734,7 @@ export function SkipperDashboard() {
             : listing,
         ),
       )
-      setActionNotice(`Az elérhetőségeid megosztva ${applicant.name} jelentkezővel.`)
+      setActionNotice(`Az elérhetőségeid megjelentek ${applicant.name} jelentkezésénél. Külön értesítő e-mailt nem küldünk.`)
     } catch (error) {
       console.error("Kapitányi elérhetőségek megosztási hiba:", error)
       setActionError(error instanceof Error ? error.message : "Az elérhetőségek megosztása nem sikerült.")
@@ -1970,7 +2060,22 @@ export function SkipperDashboard() {
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-            {events.length === 0 ? (
+            {eventsLoadError ? (
+              <div role="alert" className="border-b border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p>{eventsLoadError}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setListingsRefreshKey((key) => key + 1)}
+                  >
+                    Újrapróbálás
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+            {events.length === 0 && !eventsLoadError ? (
               <div className="flex flex-col items-center gap-4 px-6 py-12 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-100 text-cyan-700 ring-1 ring-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-300 dark:ring-cyan-400/20">
                   <CalendarDays className="h-6 w-6" aria-hidden="true" />
@@ -1993,7 +2098,7 @@ export function SkipperDashboard() {
                   Új esemény hozzáadása
                 </Button>
               </div>
-            ) : (
+            ) : events.length > 0 ? (
               <>
                 <div className="hidden border-b border-border bg-secondary/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:grid md:grid-cols-[minmax(0,2.5fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,0.8fr)_120px]">
                   <span>Esemény</span>
@@ -2013,22 +2118,18 @@ export function SkipperDashboard() {
                     className={`grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,2.5fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,0.8fr)_120px] md:items-center ${
                       isExpanded ? "bg-secondary/25" : "bg-transparent hover:bg-secondary/20"
                     }`}
-                    onClick={() => setExpandedEventId((prev) => (prev === event.id ? null : event.id))}
-                    onKeyDown={(keyboardEvent) => {
-                      if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
-                        keyboardEvent.preventDefault()
-                        setExpandedEventId((prev) => (prev === event.id ? null : event.id))
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    aria-expanded={isExpanded}
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-100 text-cyan-700 ring-1 ring-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-300 dark:ring-cyan-400/20">
                         <CalendarDays className="h-4 w-4" aria-hidden="true" />
                       </div>
-                      <div className="min-w-0">
+                      <button
+                        type="button"
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? `Esemény összecsukása: ${event.title}` : `Esemény részleteinek megnyitása: ${event.title}`}
+                        onClick={() => setExpandedEventId((prev) => (prev === event.id ? null : event.id))}
+                        className="min-w-0 text-left"
+                      >
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="truncate text-base font-semibold text-foreground">{event.title}</span>
                           <Badge className={getEventTypeBadgeClass(event.type)}>{event.type}</Badge>
@@ -2036,7 +2137,7 @@ export function SkipperDashboard() {
                         <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground md:hidden">
                           <span>{event.date}</span>
                         </div>
-                      </div>
+                      </button>
                     </div>
 
                     <div className="text-sm text-muted-foreground md:text-sm">{event.date}</div>
@@ -2101,24 +2202,28 @@ export function SkipperDashboard() {
                   </div>
 
                   {isExpanded ? (
-                    <div className="border-t border-border/70 bg-transparent px-4 py-4">
-                      <div className="mb-4 rounded-r-lg border-l-4 border-cyan-500 bg-cyan-50/80 px-4 py-3 dark:bg-cyan-950/25">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-800 dark:text-cyan-200">
+                    <div className="mx-3 mb-3 rounded-lg border border-cyan-200 bg-cyan-50/70 px-4 py-4 shadow-sm dark:border-cyan-900/70 dark:bg-cyan-950/25 sm:mx-4">
+                      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-cyan-200/80 pb-3 dark:border-cyan-900/70">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-cyan-800 dark:text-cyan-200">
+                            Lenyitott esemény
+                          </p>
+                          <p className="mt-0.5 truncate text-sm font-semibold text-foreground">{event.title}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{event.date} · {event.location}</p>
+                        </div>
+                        <Badge className={getEventTypeBadgeClass(event.type)}>{event.type}</Badge>
+                      </div>
+
+                      <div className="mb-4 border-l-2 border-cyan-500 pl-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                           Esemény részletei
                         </p>
-                        <p className="mt-1.5 text-sm leading-relaxed text-foreground">{event.details}</p>
+                        <p className="mt-1 text-sm leading-relaxed text-foreground">{event.details}</p>
                       </div>
 
                       <div className="space-y-4">
 
                         <div>
-                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                            Csapattagok és részvétel
-                          </p>
-                          <p className="mb-3 text-sm text-muted-foreground">
-                            A résztvevő melletti legördülőben állíthatod be a részvételi státuszt.
-                          </p>
-
                           {(() => {
                             const rosterMembers = [
                               ...teamMembers
@@ -2157,27 +2262,19 @@ export function SkipperDashboard() {
                             const statusStyles = {
                               confirmed: {
                                 dot: "bg-emerald-500",
-                                row: "border-l-emerald-500",
                                 trigger: "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
-                                summary: "border-emerald-200 bg-emerald-50 text-emerald-900",
                               },
                               pending: {
                                 dot: "bg-amber-500",
-                                row: "border-l-amber-500",
                                 trigger: "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100",
-                                summary: "border-amber-200 bg-amber-50 text-amber-900",
                               },
                               declined: {
                                 dot: "bg-rose-500",
-                                row: "border-l-rose-500",
                                 trigger: "border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100",
-                                summary: "border-rose-200 bg-rose-50 text-rose-900",
                               },
                               unset: {
                                 dot: "bg-slate-400",
-                                row: "border-l-slate-300",
                                 trigger: "border-border bg-secondary/50 text-muted-foreground hover:bg-secondary",
-                                summary: "border-border bg-secondary/40 text-muted-foreground",
                               },
                             }
                             const statusCounts = rosterMembers.reduce(
@@ -2191,31 +2288,38 @@ export function SkipperDashboard() {
 
                             return (
                               <>
-                              <div className="mb-3 flex flex-wrap gap-2" aria-label="Részvételi státuszok összesítése">
+                              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                  Csapattagok és részvétel
+                                </p>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1" aria-label="Részvételi státuszok összesítése">
                                 {(["confirmed", "pending", "declined", "unset"] as const).map((status) => (
                                   <span
                                     key={status}
-                                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs ${statusStyles[status].summary}`}
+                                    className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
                                   >
-                                    <span className={`h-2 w-2 rounded-full ${statusStyles[status].dot}`} aria-hidden="true" />
+                                    <span className={`h-1.5 w-1.5 rounded-full ${statusStyles[status].dot}`} aria-hidden="true" />
                                     <span>{statusLabels[status]}</span>
-                                    <strong className="font-semibold">{statusCounts[status]}</strong>
+                                    <strong className="font-semibold text-foreground">{statusCounts[status]}</strong>
                                   </span>
                                 ))}
+                                </div>
                               </div>
-                              <div className="divide-y divide-border border-y border-border">
+                              <div className="divide-y divide-border/70 border-t border-border/70">
                                 {rosterMembers.map((person) => {
                                   const status = person.participant?.status ?? null
                                   const statusKey = status ?? "unset"
                                   const statusStyle = statusStyles[statusKey]
                                   const mutationKey = `${event.id}:${person.id}`
                                   const isSavingParticipant = participantSaving[mutationKey] ?? false
-                                  const isListingOrigin = person.source === "listing" || person.participant?.source === "listing"
+                                  const isTeamMember = teamMembers.some((member) => member.userId === person.id)
+                                  const isListingOrigin = !isTeamMember &&
+                                    (person.source === "listing" || person.participant?.source === "listing")
 
                                   return (
                                     <div
                                       key={`${event.id}-${person.id}`}
-                                      className={`flex flex-col gap-3 border-l-2 py-3 pl-3 sm:flex-row sm:items-center sm:justify-between ${statusStyle.row}`}
+                                      className="flex flex-col gap-2.5 py-2.5 sm:flex-row sm:items-center sm:justify-between"
                                     >
                                       <div className="flex min-w-0 items-center gap-3">
                                         <span className="relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full border border-border bg-secondary">
@@ -2233,6 +2337,24 @@ export function SkipperDashboard() {
                                             {isListingOrigin ? "Jelentkező" : "Csapattag"}
                                           </p>
                                         </div>
+                                        {isListingOrigin ? (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            title="Jelentkező eltávolítása az eseményről"
+                                            aria-label={`Jelentkező eltávolítása az eseményről: ${person.name}`}
+                                            disabled={isSavingParticipant}
+                                            onClick={() => setEventApplicantToRemove({
+                                              eventId: event.id,
+                                              userId: person.id,
+                                              name: person.name,
+                                            })}
+                                            className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                          >
+                                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                          </Button>
+                                        ) : null}
                                       </div>
                                       <div className="flex items-center gap-2 pl-12 sm:pl-0">
                                         {isSavingParticipant ? (
@@ -2265,24 +2387,6 @@ export function SkipperDashboard() {
                                             <SelectItem value="declined">Nem vesz részt</SelectItem>
                                           </SelectContent>
                                         </Select>
-                                        {isListingOrigin ? (
-                                          <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="icon-sm"
-                                            title="Jelentkező eltávolítása az eseményről"
-                                            aria-label={`Jelentkező eltávolítása az eseményről: ${person.name}`}
-                                            disabled={isSavingParticipant}
-                                            onClick={() => setEventApplicantToRemove({
-                                              eventId: event.id,
-                                              userId: person.id,
-                                              name: person.name,
-                                            })}
-                                            className="shrink-0 text-muted-foreground hover:border-destructive hover:text-destructive"
-                                          >
-                                            <Trash2 className="h-4 w-4" aria-hidden="true" />
-                                          </Button>
-                                        ) : null}
                                       </div>
                                     </div>
                                   )
@@ -2309,45 +2413,37 @@ export function SkipperDashboard() {
                                 : "A korábbi hirdetés lejárt, ezért már nem jelenik meg a böngészésben."
 
                           return (
-                            <div className={`grid gap-2 ${hasActiveListing ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-                              {hasActiveListing ? (
-                                <div className="rounded-lg border border-border bg-background/80 p-2.5">
-                                  <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Hirdetés</p>
-                                  <div className="mt-1.5 flex items-center justify-between gap-2">
-                                    <span className="text-xs font-medium text-foreground">Aktív</span>
-                                    <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="rounded-lg border border-dashed border-border bg-secondary/20 p-2.5 sm:col-span-2">
-                                  <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Hirdetés</p>
-                                  <div className="mt-1.5 flex items-center justify-between gap-3">
-                                    <p className="text-xs text-muted-foreground">{previousListingMessage}</p>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-7 border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
-                                      onClick={(clickEvent) => {
-                                        clickEvent.stopPropagation()
-                                        openListingModalFromEvent(event)
-                                      }}
-                                    >
-                                      Új hirdetés feladása
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="rounded-lg border border-border bg-background/80 p-2.5">
-                                <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Jelentkezők</p>
-                                <p className="mt-1.5 text-base font-bold text-foreground">{applicantCount}</p>
+                            <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border/70 pt-3">
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                                <span className="flex items-center gap-1.5">
+                                  <span className={`h-2 w-2 rounded-full ${hasActiveListing ? "bg-emerald-500" : "bg-slate-400"}`} aria-hidden="true" />
+                                  <span className="text-muted-foreground">Hirdetés</span>
+                                  <strong className="font-medium text-foreground">{hasActiveListing ? "Aktív" : "Nincs aktív"}</strong>
+                                </span>
+                                <span className="text-muted-foreground">
+                                  Jelentkezők <strong className="font-semibold text-foreground">{applicantCount}</strong>
+                                </span>
+                                <span className="text-muted-foreground">
+                                  Kapcsolatfelvétel <strong className="font-semibold text-foreground">{acceptedCount}</strong>
+                                </span>
+                                {!hasActiveListing ? (
+                                  <span className="text-muted-foreground">{previousListingMessage}</span>
+                                ) : null}
                               </div>
-
-                              <div className="rounded-lg border border-border bg-background/80 p-2.5">
-                                <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Kapcsolatfelvétel</p>
-                                <p className="mt-1.5 text-base font-bold text-foreground">{acceptedCount}</p>
-                              </div>
+                              {!hasActiveListing ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
+                                  onClick={(clickEvent) => {
+                                    clickEvent.stopPropagation()
+                                    openListingModalFromEvent(event)
+                                  }}
+                                >
+                                  Új hirdetés feladása
+                                </Button>
+                              ) : null}
                             </div>
                           )
                         })()}
@@ -2358,7 +2454,7 @@ export function SkipperDashboard() {
               )
             })}
               </>
-            )}
+            ) : null}
           </div>
         </section>
 
@@ -2366,9 +2462,34 @@ export function SkipperDashboard() {
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-5">
           {/* SECTION B: Listings */}
           <section className="lg:col-span-2" aria-labelledby="active-listings">
-            <h2 id="active-listings" className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Hirdetéseim
-            </h2>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 id="active-listings" className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Hirdetéseim
+              </h2>
+              <Button
+                type="button"
+                size="sm"
+                className="h-9 bg-accent! text-accent-foreground! hover:bg-accent/90!"
+                onClick={() => openModal("listing")}
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Hirdetés feladása
+              </Button>
+            </div>
+            {pendingCountsError ? (
+              <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                <span>{pendingCountsError}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => setListingsRefreshKey((key) => key + 1)}
+                >
+                  Újrapróbálás
+                </Button>
+              </div>
+            ) : null}
             <div className="max-h-[70vh] overflow-y-auto overscroll-y-contain pr-1">
               <div className="flex flex-col gap-3">
               {loadingListings ? (
@@ -2407,14 +2528,6 @@ export function SkipperDashboard() {
                     <p className="font-medium text-foreground">Még nincs hirdetésed</p>
                     <p className="mt-1 text-sm text-muted-foreground">Add fel első szabad helyed, hogy elérhetlő legyen a vitorlázók számára.</p>
                   </div>
-                  <Button
-                    size="sm"
-                    onClick={() => openModal("listing")}
-                    className="bg-accent! text-accent-foreground! hover:bg-accent/90!"
-                  >
-                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                    Hirdetés feladása
-                  </Button>
                 </div>
               ) : displayedListings.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">
@@ -2433,18 +2546,24 @@ export function SkipperDashboard() {
                 return (
                   <div
                     key={listing.id}
-                    role="button"
-                    tabIndex={0}
                     onClick={() => setSelectedId(listing.id)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedId(listing.id) }}
-                    className={`group relative cursor-pointer rounded-xl border bg-card p-4 text-left transition-all ${
+                    className={`group relative rounded-xl border bg-card p-4 text-left transition-all ${
                       isActive
-                        ? "border-accent ring-1 ring-accent"
-                        : "border-border hover:border-accent/50"
+                        ? "cursor-pointer border-accent ring-1 ring-accent"
+                        : "cursor-pointer border-border hover:border-accent/50"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <h3 className="font-semibold text-foreground">{listing.event}</h3>
+                      <h3 className="min-w-0 flex-1 font-semibold text-foreground">
+                        <button
+                          type="button"
+                          aria-pressed={isActive}
+                          onClick={() => setSelectedId(listing.id)}
+                          className="text-left hover:text-accent focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-accent"
+                        >
+                          {listing.event}
+                        </button>
+                      </h3>
                       <div className="flex shrink-0 items-center gap-2">
                         {listing.isDeleted ? (
                           <Badge className="bg-muted text-muted-foreground hover:bg-muted">
@@ -2571,7 +2690,28 @@ export function SkipperDashboard() {
 
             <div className="max-h-[70vh] overflow-y-auto overscroll-y-contain pr-1">
               <div className="flex flex-col gap-3">
-              {selected.id ? selected.applicants.map((applicant) => {
+              {!selected.id ? (
+                <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
+                  <p className="text-sm text-muted-foreground">Válassz ki egy hirdetést a jelentkezők megtekintéséhez.</p>
+                </div>
+              ) : applicantsLoading ? (
+                <div role="status" className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+                  Jelentkezők betöltése...
+                </div>
+              ) : applicantsLoadError ? (
+                <div role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
+                  <p>{applicantsLoadError}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => setListingsRefreshKey((key) => key + 1)}
+                  >
+                    Újrapróbálás
+                  </Button>
+                </div>
+              ) : selected.applicants.map((applicant) => {
                 const status = statuses[applicant.id] ?? "pending"
                 const isSaving = statusSaving[applicant.id] ?? false
                 const isExpanded = expandedApplicantIds[applicant.id] ?? false
@@ -2751,7 +2891,7 @@ export function SkipperDashboard() {
                               ? "Megosztás..."
                               : applicant.contactShared
                                 ? "Elérhetőségek megosztva"
-                                : "Elérhetőségeim megosztása a jelentkezővel"}
+                                : "Elérhetőségeim megjelenítése a jelentkező fiókjában"}
                           </Button>
                           {matchingEvent ? (
                             <Button
@@ -2780,13 +2920,9 @@ export function SkipperDashboard() {
                       ) : null}
                   </div>
                 )
-              }) : (
-                <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
-                  <p className="text-sm text-muted-foreground">Válassz ki egy hirdetést a jelentkezők megtekintéséhez.</p>
-                </div>
-              )}
+              })}
 
-              {selected.id && selected.applicants.length === 0 && (
+              {selected.id && !applicantsLoading && !applicantsLoadError && selected.applicants.length === 0 && (
                 <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
                   <p className="text-sm text-muted-foreground">Erre a hirdetésre még nincs jelentkező.</p>
                 </div>
@@ -2850,13 +2986,14 @@ export function SkipperDashboard() {
                 Esemény törlése
               </DialogTitle>
               <DialogDescription className="text-pretty leading-relaxed">
-                Biztosan törölni szeretnéd az eseményt? A törlés végleges, és a hozzá tartozó résztvevő adatok is eltűnnek.
+                Biztosan törölni szeretnéd az eseményt? A törlés végleges, a résztvevői rekordok törlődnek, a kapcsolt hirdetés pedig megmarad, de leválik erről az eseményről.
               </DialogDescription>
             </DialogHeader>
             <div className="flex gap-3 pt-2">
               <Button
                 variant="outline"
                 className="flex-1"
+                disabled={deletingEventId !== null}
                 onClick={() => setConfirmEventDeleteId(null)}
               >
                 Mégse
@@ -2864,9 +3001,10 @@ export function SkipperDashboard() {
               <Button
                 variant="destructive"
                 className="flex-1"
+                disabled={deletingEventId !== null}
                 onClick={() => confirmEventDeleteId && void deleteEvent(confirmEventDeleteId)}
               >
-                Igen, törlöm
+                {deletingEventId ? "Törlés..." : "Igen, törlöm"}
               </Button>
             </div>
           </div>
@@ -3063,15 +3201,17 @@ export function SkipperDashboard() {
               <Button
                 variant="outline"
                 className="flex-1"
+                disabled={removingTeamMemberId !== null}
                 onClick={() => setConfirmRemoveMemberId(null)}
               >
                 Mégse
               </Button>
               <Button
                 className="flex-1 bg-destructive! text-white! hover:bg-destructive/90!"
+                disabled={removingTeamMemberId !== null}
                 onClick={confirmRemoveTeamMember}
               >
-                Igen, törlöm
+                {removingTeamMemberId ? "Eltávolítás..." : "Igen, törlöm"}
               </Button>
             </div>
           </div>
@@ -3195,11 +3335,11 @@ export function SkipperDashboard() {
             </div>
 
             <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
-              <Button type="button" variant="outline" onClick={() => setIsNewEventModalOpen(false)}>
+              <Button type="button" variant="outline" disabled={eventSaveMode !== null} onClick={() => setIsNewEventModalOpen(false)}>
                 Mégse
               </Button>
-              <Button type="submit" className="bg-accent! text-accent-foreground! hover:bg-accent/90!">
-                Esemény mentése
+              <Button type="submit" disabled={eventSaveMode !== null} className="bg-accent! text-accent-foreground! hover:bg-accent/90!">
+                {eventSaveMode === "create" ? "Mentés..." : "Esemény mentése"}
               </Button>
             </div>
           </form>
@@ -3332,6 +3472,7 @@ export function SkipperDashboard() {
               <Button
                 type="button"
                 variant="destructive"
+                disabled={eventSaveMode !== null || deletingEventId !== null}
                 onClick={() => editingEventId && setConfirmEventDeleteId(editingEventId)}
                 className="h-9"
               >
@@ -3339,11 +3480,11 @@ export function SkipperDashboard() {
               </Button>
 
               <div className="flex items-center gap-3">
-                <Button type="button" variant="outline" onClick={() => setIsEditEventModalOpen(false)}>
+                <Button type="button" variant="outline" disabled={eventSaveMode !== null} onClick={() => setIsEditEventModalOpen(false)}>
                   Mégse
                 </Button>
-                <Button type="submit" className="bg-accent! text-accent-foreground! hover:bg-accent/90!">
-                  Mentés
+                <Button type="submit" disabled={eventSaveMode !== null} className="bg-accent! text-accent-foreground! hover:bg-accent/90!">
+                  {eventSaveMode === "edit" ? "Mentés..." : "Mentés"}
                 </Button>
               </div>
             </div>
@@ -3373,13 +3514,24 @@ export function SkipperDashboard() {
             role={actionError ? "alert" : "status"}
             aria-live={actionError ? "assertive" : "polite"}
             aria-atomic="true"
-            className={`pointer-events-auto w-full max-w-lg rounded-xl border px-4 py-3 text-sm shadow-lg ${
+            className={`pointer-events-auto flex w-full max-w-lg items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg ${
               actionError
                 ? "border-destructive/30 bg-card text-destructive"
                 : "border-accent/30 bg-card text-foreground"
             }`}
           >
-            {actionError ?? actionNotice}
+            <span>{actionError ?? actionNotice}</span>
+            <button
+              type="button"
+              aria-label="Értesítés bezárása"
+              onClick={() => {
+                setActionNotice(null)
+                setActionError(null)
+              }}
+              className="-mr-1 -mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
           </div>
         </div>
       ) : null}
@@ -3400,6 +3552,20 @@ CREATE TABLE boats (
   created_at timestamp with time zone DEFAULT now()
 );
 */
+
+function getBoatImageStoragePath(imageUrl?: string | null) {
+  if (!imageUrl) return null
+
+  try {
+    const url = new URL(imageUrl)
+    const marker = "/object/public/boats/"
+    const markerIndex = url.pathname.indexOf(marker)
+    if (markerIndex === -1) return null
+    return decodeURIComponent(url.pathname.slice(markerIndex + marker.length)) || null
+  } catch {
+    return null
+  }
+}
 
 function BoatRegistrationModal({
   open,
@@ -3475,8 +3641,8 @@ function BoatRegistrationModal({
       newErrors.harbor = "Bázis kikötő megadása kötelező."
     }
 
-    if (!crewSizeValue || Number.isNaN(crewSizeValue) || crewSizeValue <= 0) {
-      newErrors.crewSize = "Érvényes legénységi létszám megadása kötelező."
+    if (!Number.isInteger(crewSizeValue) || crewSizeValue <= 0) {
+      newErrors.crewSize = "Pozitív egész legénységi létszámot adj meg."
     }
 
     if (!crewType) {
@@ -3499,6 +3665,9 @@ function BoatRegistrationModal({
     setErrors({})
     setIsSaving(true)
 
+    let uploadedBoatPhotoPath: string | null = null
+    let boatRecordSaved = false
+
     try {
       let imageUrl: string | null = existingBoat?.image_url ?? null
       if (boatPhoto) {
@@ -3518,6 +3687,7 @@ function BoatRegistrationModal({
           setErrors({ submit: uploadError.message })
           return
         }
+        uploadedBoatPhotoPath = filePath
 
         const { data: publicUrlData } = await supabase.storage
           .from("boats")
@@ -3551,6 +3721,21 @@ function BoatRegistrationModal({
           return
         }
 
+        boatRecordSaved = true
+        if (uploadedBoatPhotoPath && existingBoat.image_url) {
+          const oldImagePath = getBoatImageStoragePath(existingBoat.image_url)
+          if (oldImagePath && oldImagePath !== uploadedBoatPhotoPath) {
+            try {
+              const { error: oldImageRemoveError } = await supabase.storage.from("boats").remove([oldImagePath])
+              if (oldImageRemoveError) {
+                console.warn("Régi hajókép törlése nem sikerült:", oldImageRemoveError)
+              }
+            } catch (cleanupError) {
+              console.warn("Régi hajókép törlése hálózati hiba miatt nem sikerült:", cleanupError)
+            }
+          }
+        }
+
         onBoatSaved(updatedBoat)
         onOpenChange(false)
         return
@@ -3577,19 +3762,35 @@ function BoatRegistrationModal({
         return
       }
 
+      boatRecordSaved = true
       onBoatSaved(insertedBoat)
       onOpenChange(false)
     } catch (error) {
       const message = error instanceof Error ? error.message : "Ismeretlen hiba történt a mentés közben."
       setErrors({ submit: message })
     } finally {
+      if (uploadedBoatPhotoPath && !boatRecordSaved) {
+        try {
+          const { error: orphanCleanupError } = await supabase.storage.from("boats").remove([uploadedBoatPhotoPath])
+          if (orphanCleanupError) {
+            console.warn("Sikertelen hajómentés után az új kép törlése nem sikerült:", orphanCleanupError)
+          }
+        } catch (cleanupError) {
+          console.warn("Sikertelen hajómentés után az új kép törlése hálózati hiba miatt nem sikerült:", cleanupError)
+        }
+      }
       setIsOptimizingImage(false)
       setIsSaving(false)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!isSaving) onOpenChange(nextOpen)
+      }}
+    >
       <DialogContent showCloseButton className="max-w-lg gap-0 rounded-2xl p-0 sm:max-w-xl">
         <div className="flex flex-col gap-6 p-6 sm:p-8">
           <DialogHeader className="gap-3">
@@ -3685,6 +3886,7 @@ function BoatRegistrationModal({
                   id="crew-size"
                   type="number"
                   min={1}
+                  step={1}
                   value={crewSize}
                   onChange={(e) => {
                     const value = e.target.value === "" ? "" : Number(e.target.value)
