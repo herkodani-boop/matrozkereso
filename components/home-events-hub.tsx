@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import type { User } from "@supabase/supabase-js"
-import { ArrowRight, CalendarDays, Compass, MapPin, Ship, Users } from "lucide-react"
+import { ArrowRight, CalendarDays, Check, Compass, LoaderCircle, MapPin, Ship, Users, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { supabase } from "@/lib/supabase"
@@ -27,6 +27,7 @@ type EventOpportunity = {
   endDate: string | null
   boatName: string
   type: string
+  response: "declined" | null
 }
 
 function getTodayKey() {
@@ -91,6 +92,8 @@ export function HomeEventsHub() {
   const [opportunities, setOpportunities] = useState<EventOpportunity[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [respondingEventId, setRespondingEventId] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
@@ -131,7 +134,7 @@ export function HomeEventsHub() {
         supabase.from("users").select("role").eq("id", user.id).maybeSingle(),
         supabase.from("boats").select("id").eq("user_id", user.id),
         supabase.from("boat_team_members").select("boat_id").eq("user_id", user.id).eq("status", "active"),
-        supabase.from("boat_event_attendees").select("event_id, status").eq("user_id", user.id).neq("status", "declined"),
+        supabase.from("boat_event_attendees").select("event_id, status").eq("user_id", user.id),
       ])
 
       const queryErrors = [profileResult.error, boatsResult.error, membershipsResult.error, attendeesResult.error]
@@ -172,17 +175,6 @@ export function HomeEventsHub() {
       }
 
       const teamEventRows = (boatEventsResult.data ?? []).filter((event: any) => teamBoatIds.includes(String(event.boat_id)))
-      const teamEventIds = teamEventRows.map((event: any) => String(event.id))
-      const eventApplicationsResult = teamEventIds.length > 0
-        ? await supabase
-            .from("ads")
-            .select("event_id, applications(user_id)")
-            .in("event_id", teamEventIds)
-        : { data: [], error: null }
-
-      if (eventApplicationsResult.error) {
-        console.error("Csapattagként elérhető események lekérdezési hiba:", eventApplicationsResult.error)
-      }
 
       const eventRows = new Map<string, any>()
       ;[...(boatEventsResult.data ?? []), ...(attendeeEventsResult.data ?? [])].forEach((event: any) => {
@@ -190,7 +182,12 @@ export function HomeEventsHub() {
       })
 
       const nextEvents = Array.from(eventRows.values())
-        .filter((event: any) => attendeeStatuses.has(String(event.id)) || ownedBoatIds.includes(String(event.boat_id)))
+        .filter((event: any) => {
+          const status = attendeeStatuses.get(String(event.id))
+          return status === "confirmed" || status === "pending" || (
+            status === undefined && ownedBoatIds.includes(String(event.boat_id))
+          )
+        })
         .map((event: any) => {
           const eventId = String(event.id)
           const boat = normalizeBoat(event.boat)
@@ -218,21 +215,11 @@ export function HomeEventsHub() {
         .sort((first, second) => first.startDate.localeCompare(second.startDate))
         .slice(0, 4)
 
-      const appliedEventIds = new Set<string>()
-      ;(eventApplicationsResult.data ?? []).forEach((ad: any) => {
-        const eventId = String(ad.event_id ?? "")
-        if (!eventId) return
-
-        const applications = ad.applications ?? []
-        if (applications.some((application: any) => application.user_id === user.id)) {
-          appliedEventIds.add(eventId)
-        }
-      })
-
       const availableEvents = teamEventRows
         .filter((event: any) => {
           const eventId = String(event.id)
-          return !appliedEventIds.has(eventId) && !attendeeStatuses.has(eventId)
+          const status = attendeeStatuses.get(eventId)
+          return status === undefined || status === "declined" || status === "unset"
         })
         .slice(0, 3)
         .map((event: any) => {
@@ -245,6 +232,7 @@ export function HomeEventsHub() {
             endDate: event.end_date ? String(event.end_date) : null,
             boatName: String(boat?.name ?? "Hajó"),
             type: String(event.type ?? "Esemény"),
+            response: attendeeStatuses.get(String(event.id)) === "declined" ? "declined" : null,
           } satisfies EventOpportunity
         })
 
@@ -253,7 +241,7 @@ export function HomeEventsHub() {
       setIsTeamMember(teamBoatIds.length > 0)
       setEvents(nextEvents)
       setOpportunities(availableEvents)
-      setLoadError(queryErrors.length > 0 || Boolean(boatEventsResult.error || attendeeEventsResult.error || eventApplicationsResult.error))
+      setLoadError(queryErrors.length > 0 || Boolean(boatEventsResult.error || attendeeEventsResult.error))
       setLoading(false)
     }
 
@@ -269,6 +257,61 @@ export function HomeEventsHub() {
       active = false
     }
   }, [user, retryKey])
+
+  async function respondToEvent(event: EventOpportunity, status: "confirmed" | "declined") {
+    if (!user || respondingEventId) return
+
+    setRespondingEventId(event.id)
+    setActionError(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error("A válasz mentéséhez be kell jelentkezned.")
+      }
+
+      const response = await fetch("/api/events/respond", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ eventId: event.id, status }),
+      })
+      const result = (await response.json()) as { ok?: boolean; error?: string }
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || "A részvételi válasz mentése nem sikerült.")
+      }
+    } catch (error) {
+      console.error("Esemény-visszajelzés mentési hiba:", error)
+      setActionError(error instanceof Error
+        ? error.message
+        : status === "confirmed"
+          ? "A részvétel jelzése nem sikerült. Próbáld újra."
+          : "A visszautasítás mentése nem sikerült. Próbáld újra.")
+      setRespondingEventId(null)
+      return
+    }
+
+    if (status === "confirmed") {
+      setOpportunities((previous) => previous.filter((item) => item.id !== event.id))
+      setEvents((previous) => [
+        {
+          ...event,
+          participation: "Részt veszel",
+        },
+        ...previous.filter((item) => item.id !== event.id),
+      ].sort((first, second) => first.startDate.localeCompare(second.startDate)).slice(0, 4))
+    } else {
+      setOpportunities((previous) => previous.map((item) =>
+        item.id === event.id ? { ...item, response: "declined" } : item,
+      ))
+      setEvents((previous) => previous.filter((item) => item.id !== event.id))
+    }
+
+    setRespondingEventId(null)
+  }
 
   if (!authResolved || !user) return null
 
@@ -308,6 +351,12 @@ export function HomeEventsHub() {
             <Button type="button" variant="outline" size="sm" onClick={() => setRetryKey((key) => key + 1)}>
               Újrapróbálás
             </Button>
+          </div>
+        ) : null}
+
+        {actionError ? (
+          <div role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-background px-3 py-2 text-sm text-destructive">
+            {actionError}
           </div>
         ) : null}
 
@@ -369,14 +418,63 @@ export function HomeEventsHub() {
               {opportunities.length > 0 ? (
                 <ul className="divide-y divide-border border-y border-border">
                   {opportunities.map((opportunity) => (
-                    <li key={opportunity.id} className="flex items-start gap-3 py-3">
+                    <li key={opportunity.id} className="flex flex-wrap items-center gap-3 py-3 sm:flex-nowrap">
                       <EventDateBadge startDate={opportunity.startDate} endDate={opportunity.endDate} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-foreground">{opportunity.title}</span>
                         <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                           {opportunity.type} · {opportunity.boatName}{opportunity.location ? ` · ${opportunity.location}` : ""}
                         </span>
+                        {opportunity.response === "declined" ? (
+                          <span className="mt-1 block text-xs font-medium text-rose-700">Nem veszel részt</span>
+                        ) : null}
                       </span>
+                      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                        {opportunity.response === "declined" ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            aria-label={`Részvétel vállalása: ${opportunity.title}`}
+                            title="Mégis részt veszek"
+                            className="h-8 w-8 p-0"
+                            disabled={respondingEventId !== null}
+                            onClick={() => void respondToEvent(opportunity, "confirmed")}
+                          >
+                            {respondingEventId === opportunity.id
+                              ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                              : <Check className="h-4 w-4" aria-hidden="true" />}
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              aria-label={`Részvétel vállalása: ${opportunity.title}`}
+                              title="Részt veszek"
+                              className="h-8 w-8 p-0"
+                              disabled={respondingEventId !== null}
+                              onClick={() => void respondToEvent(opportunity, "confirmed")}
+                            >
+                              {respondingEventId === opportunity.id
+                                ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                : <Check className="h-4 w-4" aria-hidden="true" />}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              aria-label={`Részvétel visszautasítása: ${opportunity.title}`}
+                              title="Nem veszek részt"
+                              className="h-8 w-8 p-0"
+                              disabled={respondingEventId !== null}
+                              onClick={() => void respondToEvent(opportunity, "declined")}
+                            >
+                              {respondingEventId === opportunity.id
+                                ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                : <X className="h-4 w-4" aria-hidden="true" />}
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
