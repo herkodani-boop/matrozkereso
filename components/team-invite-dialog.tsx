@@ -107,8 +107,8 @@ export function TeamInviteDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md gap-5 p-5 sm:max-w-md">
-        <DialogHeader className="text-center">
+      <DialogContent className="w-full min-w-0 max-w-md gap-5 p-5 sm:max-w-md">
+        <DialogHeader className="min-w-0 pr-8 text-center">
           <DialogTitle className="text-xl font-bold">Csapat meghívás</DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
             {status === "success"
@@ -121,40 +121,40 @@ export function TeamInviteDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-border bg-muted/40 px-4 py-5 text-center">
+        <div className="flex w-full min-w-0 flex-col items-center justify-center gap-4 rounded-xl border border-border bg-muted/40 px-4 py-5 text-center">
           {status === "success" ? (
             <CheckCircle2 className="h-10 w-10 text-emerald-600" />
           ) : status === "error" ? (
             <XCircle className="h-10 w-10 text-destructive" />
           ) : null}
 
-          <p className="text-sm text-foreground">{message}</p>
+          <p className="w-full min-w-0 break-words text-sm text-foreground">{message}</p>
 
           {status === "signed-out" ? (
-            <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
-              <Button onClick={() => onRequestAuth("login")} className="w-full sm:w-auto">
-                <LogIn className="mr-2 h-4 w-4" />
-                Bejelentkezés
+            <div className="flex w-full min-w-0 flex-col gap-2">
+              <Button onClick={() => onRequestAuth("login")} className="h-auto min-h-10 w-full min-w-0 justify-start whitespace-normal px-3 py-2 text-left leading-snug">
+                <LogIn className="mr-2 h-4 w-4 shrink-0" />
+                <span className="min-w-0 whitespace-normal">Bejelentkezés</span>
               </Button>
-              <Button variant="outline" onClick={() => onRequestAuth("register")} className="w-full sm:w-auto">
-                <UserPlus className="mr-2 h-4 w-4" />
-                Fiók létrehozása
+              <Button variant="outline" onClick={() => onRequestAuth("register")} className="h-auto min-h-10 w-full min-w-0 justify-start whitespace-normal px-3 py-2 text-left leading-snug">
+                <UserPlus className="mr-2 h-4 w-4 shrink-0" />
+                <span className="min-w-0 whitespace-normal">Fiók létrehozása</span>
               </Button>
-              <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
-                Később
+              <Button variant="outline" onClick={() => onOpenChange(false)} className="h-auto min-h-10 w-full min-w-0 justify-center whitespace-normal px-3 py-2 text-center leading-snug">
+                <span className="min-w-0 whitespace-normal">Később</span>
               </Button>
             </div>
           ) : null}
 
           {status === "email-mismatch" ? (
-            <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
-              <Button onClick={() => void switchAccount("login")} className="w-full sm:w-auto">
-                <LogIn className="mr-2 h-4 w-4" />
-                Bejelentkezés a meghívott címmel
+            <div className="flex w-full min-w-0 flex-col gap-2">
+              <Button onClick={() => void switchAccount("login")} className="h-auto min-h-10 w-full min-w-0 justify-start whitespace-normal px-3 py-2 text-left leading-snug">
+                <LogIn className="mr-2 h-4 w-4 shrink-0" />
+                <span className="min-w-0 whitespace-normal">Bejelentkezés a meghívott címmel</span>
               </Button>
-              <Button variant="outline" onClick={() => void switchAccount("register")} className="w-full sm:w-auto">
-                <UserPlus className="mr-2 h-4 w-4" />
-                Regisztráció a meghívott címmel
+              <Button variant="outline" onClick={() => void switchAccount("register")} className="h-auto min-h-10 w-full min-w-0 justify-start whitespace-normal px-3 py-2 text-left leading-snug">
+                <UserPlus className="mr-2 h-4 w-4 shrink-0" />
+                <span className="min-w-0 whitespace-normal">Regisztráció a meghívott címmel</span>
               </Button>
             </div>
           ) : null}
