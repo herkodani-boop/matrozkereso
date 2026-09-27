@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -23,13 +23,13 @@ import {
   Trash2,
   Archive,
   PencilLine,
-  Megaphone,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AuthGateModal } from "@/components/auth-gate-modal"
 import { SiteFooter } from "@/components/site-footer"
@@ -57,6 +57,7 @@ type Listing = {
   event: string
   location: string
   date: string
+  expiryDate: string | null
   isActive: boolean
   isDeleted: boolean
   isHistorical: boolean
@@ -242,6 +243,13 @@ function formatEventDate(dateValue: string | null | undefined) {
   return `${parsed.getFullYear()}. ${String(parsed.getMonth() + 1).padStart(2, "0")}. ${String(parsed.getDate()).padStart(2, "0")}.`
 }
 
+function formatListingExpiryDate(dateValue: string | null) {
+  if (!dateValue) return null
+  const parsed = new Date(`${dateValue}T12:00:00`)
+  if (Number.isNaN(parsed.getTime())) return null
+  return new Intl.DateTimeFormat("hu-HU", { year: "numeric", month: "long", day: "numeric" }).format(parsed)
+}
+
 const MAX_BOAT_IMAGE_DIMENSION = 1600
 const TARGET_BOAT_IMAGE_SIZE_BYTES = 900 * 1024
 const MAX_BOAT_IMAGE_UPLOAD_SIZE_BYTES = 12 * 1024 * 1024
@@ -357,6 +365,10 @@ export function SkipperDashboard() {
   const [showPreviousListings, setShowPreviousListings] = useState(false)
   const [statuses, setStatuses] = useState<Record<string, ApplicantStatus>>({})
   const [statusSaving, setStatusSaving] = useState<Record<string, boolean>>({})
+  const [participantSaving, setParticipantSaving] = useState<Record<string, boolean>>({})
+  const participantMutationRef = useRef(new Set<string>())
+  const applicantMutationRef = useRef(new Set<string>())
+  const listingMutationRef = useRef<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [boat, setBoat] = useState<Boat | null>(null)
@@ -364,8 +376,11 @@ export function SkipperDashboard() {
   const [boatLoading, setBoatLoading] = useState(true)
   const [boatLoadError, setBoatLoadError] = useState<string | null>(null)
   const [confirmRemoveMemberId, setConfirmRemoveMemberId] = useState<string | null>(null)
+  const [confirmRevokeApplicantId, setConfirmRevokeApplicantId] = useState<string | null>(null)
 
   const [loadingListings, setLoadingListings] = useState(false)
+  const [listingsLoadError, setListingsLoadError] = useState<string | null>(null)
+  const [listingMutatingId, setListingMutatingId] = useState<string | null>(null)
   const [pendingCountsMap, setPendingCountsMap] = useState<Record<string, number>>({})
   const [teamLoading, setTeamLoading] = useState(false)
   const [teamError, setTeamError] = useState<string | null>(null)
@@ -628,6 +643,7 @@ export function SkipperDashboard() {
 
     const fetchListings = async (boatId: string) => {
       setLoadingListings(true)
+      setListingsLoadError(null)
       // Először próbáljunk egy egyszerűbb lekérdezést
       const { data: adsData, error: adsError } = await supabase
         .from("ads")
@@ -645,6 +661,7 @@ export function SkipperDashboard() {
         })
         setListings([])
         setSelectedId("")
+        setListingsLoadError("A hirdetéseket nem sikerült betölteni. Ellenőrizd a kapcsolatot, majd próbáld újra.")
         setLoadingListings(false)
         return
       }
@@ -658,6 +675,7 @@ export function SkipperDashboard() {
           event: ad.title,
           location: ad.location,
           date: ad.date_text,
+          expiryDate: ad.commitment === "egy-verseny" ? ad.start_date ?? null : ad.commitment === "szezon" ? ad.end_date ?? null : null,
           isActive: ad.is_active !== false,
           isDeleted: ad.is_deleted === true,
           isHistorical: ad.is_deleted === true || ad.is_active === false || !isAdVisibleByDate(ad),
@@ -851,7 +869,7 @@ export function SkipperDashboard() {
   const selected = useMemo(
     () =>
       listings.find((l) => l.id === selectedId) ??
-      ({ id: "", eventId: null, event: "Válassz hirdetést", location: "", date: "", isActive: true, isDeleted: false, isHistorical: false, positions: [], applicants: [] } as Listing),
+      ({ id: "", eventId: null, event: "Válassz hirdetést", location: "", date: "", expiryDate: null, isActive: true, isDeleted: false, isHistorical: false, positions: [], applicants: [] } as Listing),
     [listings, selectedId],
   )
   const previousListingsCount = listings.filter((listing) => listing.isHistorical).length
@@ -1039,6 +1057,17 @@ export function SkipperDashboard() {
   const [contactSharingId, setContactSharingId] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!actionNotice && !actionError) return
+
+    const timeoutId = window.setTimeout(() => {
+      setActionNotice(null)
+      setActionError(null)
+    }, 3000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [actionNotice, actionError])
 
   function resetNewEventForm() {
     setNewEventForm({
@@ -1262,85 +1291,101 @@ export function SkipperDashboard() {
     })
   }
 
-  async function toggleEventParticipant(eventId: string, userId: string) {
-    if (!userId) {
-      return
-    }
+  async function setEventParticipantStatus(
+    eventId: string,
+    userId: string,
+    nextStatus: "confirmed" | "pending" | "declined" | null,
+  ) {
+    if (!userId) return
 
     const event = events.find((item) => item.id === eventId)
     const currentParticipant = event?.participants.find((participant) => participant.userId === userId)
-    const currentStatus = currentParticipant?.status ?? "confirmed"
-    const nextStatusSequence: Array<"confirmed" | "pending" | "declined"> = ["confirmed", "pending", "declined"]
-    const statusIndex = nextStatusSequence.indexOf(currentStatus)
-    const nextStatus = statusIndex === -1 ? "confirmed" : nextStatusSequence[(statusIndex + 1) % nextStatusSequence.length]
-    const matchingMember = teamMembers.find((member) => member.userId === userId)
+    const mutationKey = `${eventId}:${userId}`
 
-    if (!currentParticipant) {
-      const { error } = await supabase.from("boat_event_attendees").upsert(
-        {
-          event_id: eventId,
-          user_id: userId,
-          status: nextStatus,
-        },
-        { onConflict: "event_id,user_id" },
-      )
+    if (!event || participantMutationRef.current.has(mutationKey)) return
+    if (currentParticipant?.status === nextStatus || (!currentParticipant && nextStatus === null)) return
 
-      if (error) {
-        console.error("Esemény résztvevő hozzáadási hiba:", error)
-        setActionError("A résztvevő hozzáadása nem sikerült.")
+    participantMutationRef.current.add(mutationKey)
+    setParticipantSaving((prev) => ({ ...prev, [mutationKey]: true }))
+    setActionError(null)
+    setActionNotice(null)
+
+    try {
+      const result = nextStatus === null
+        ? await supabase
+            .from("boat_event_attendees")
+            .delete()
+            .eq("event_id", eventId)
+            .eq("user_id", userId)
+            .select("id")
+            .maybeSingle()
+        : currentParticipant
+          ? await supabase
+              .from("boat_event_attendees")
+              .update({ status: nextStatus })
+              .eq("event_id", eventId)
+              .eq("user_id", userId)
+              .select("id")
+              .maybeSingle()
+          : await supabase.from("boat_event_attendees").upsert(
+              {
+                event_id: eventId,
+                user_id: userId,
+                status: nextStatus,
+              },
+              { onConflict: "event_id,user_id" },
+            )
+              .select("id")
+              .maybeSingle()
+
+      if (result.error || !result.data) {
+        console.error("Esemény résztvevő státusz mentési hiba:", result.error)
+        setActionError(result.error
+          ? "A résztvevő státuszának mentése nem sikerült. Próbáld újra."
+          : "A résztvevő állapota időközben megváltozott. Töltsd újra az eseményt.")
         return
       }
 
+      const matchingMember = teamMembers.find((member) => member.userId === userId)
       setEvents((prev) =>
         prev.map((item) => {
-          if (item.id !== eventId) {
-            return item
-          }
+          if (item.id !== eventId) return item
 
           return {
             ...item,
-            participants: [...item.participants, {
-              userId,
-              name: matchingMember?.name || "Résztvevő",
-              avatar: matchingMember?.avatar || "/placeholder.svg",
-              status: nextStatus,
-              source: matchingMember ? "team" : "listing",
-            }],
+            participants: nextStatus === null
+              ? item.participants.filter((participant) => participant.userId !== userId)
+              : currentParticipant
+                ? item.participants.map((participant) =>
+                    participant.userId === userId ? { ...participant, status: nextStatus } : participant,
+                  )
+                : [
+                    ...item.participants,
+                    {
+                      userId,
+                      name: matchingMember?.name || "Résztvevő",
+                      avatar: matchingMember?.avatar || "/placeholder.svg",
+                      status: nextStatus,
+                      source: matchingMember ? "team" : "listing",
+                    },
+                  ],
           }
         }),
       )
-      setActionNotice("A résztvevő hozzáadva az eseményhez.")
-      return
+      setActionNotice(nextStatus === null ? "A résztvevő eltávolítva az eseményről." : "A részvételi státusz frissítve.")
+    } catch (error) {
+      console.error("Esemény résztvevő státusz mentési hiba:", error)
+      setActionError("A résztvevő státuszának mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+    } finally {
+      participantMutationRef.current.delete(mutationKey)
+      setParticipantSaving((prev) => ({ ...prev, [mutationKey]: false }))
     }
-
-    const { error } = await supabase
-      .from("boat_event_attendees")
-      .update({ status: nextStatus })
-      .eq("event_id", eventId)
-      .eq("user_id", userId)
-
-    if (error) {
-      console.error("Esemény résztvevő státusz frissítési hiba:", error)
-      setActionError("A résztvevő státuszának frissítése nem sikerült.")
-      return
-    }
-
-    setEvents((prev) =>
-      prev.map((item) =>
-        item.id === eventId
-          ? {
-              ...item,
-              participants: item.participants.map((participant) =>
-                participant.userId === userId ? { ...participant, status: nextStatus } : participant,
-              ),
-            }
-          : item,
-      ),
-    )
-    setActionNotice("A résztvevő státusza frissítve.")
   }
 
   async function deleteListing(id: string) {
+    if (listingMutationRef.current || applicantMutationRef.current.size > 0) return
+    listingMutationRef.current = id
+    setListingMutatingId(id)
     setActionError(null)
     setActionNotice(null)
     setDeletingId(id)
@@ -1382,10 +1427,15 @@ export function SkipperDashboard() {
       setActionError(error instanceof Error ? error.message : "A hirdetés visszavonása nem sikerült.")
     } finally {
       setDeletingId(null)
+      listingMutationRef.current = null
+      setListingMutatingId(null)
     }
   }
 
   async function archiveListing(id: string) {
+    if (listingMutationRef.current || applicantMutationRef.current.size > 0) return
+    listingMutationRef.current = id
+    setListingMutatingId(id)
     setActionError(null)
     setActionNotice(null)
     setArchivingId(id)
@@ -1429,32 +1479,59 @@ export function SkipperDashboard() {
       )
     } finally {
       setArchivingId(null)
+      listingMutationRef.current = null
+      setListingMutatingId(null)
     }
   }
 
   async function decide(id: string, status: ApplicantStatus) {
+    if (selected.isHistorical || listingMutationRef.current === selected.id || applicantMutationRef.current.has(id)) return
+    applicantMutationRef.current.add(id)
     setActionError(null)
     setActionNotice(null)
     const previousStatus = statuses[id] ?? "pending"
+    const expectedStatus = status === "pending" ? "accepted" : "pending"
+
+    if (previousStatus !== expectedStatus) {
+      applicantMutationRef.current.delete(id)
+      setActionError("A jelentkezés állapota időközben megváltozott. Frissítsd az oldalt.")
+      return
+    }
 
     setStatuses((prev) => ({ ...prev, [id]: status }))
     setStatusSaving((prev) => ({ ...prev, [id]: true }))
 
-    const { error } = await supabase
-      .from("applications")
-      .update({ status })
-      .eq("id", id)
+    try {
+      const { data, error } = await supabase
+        .from("applications")
+        .update({ status })
+        .eq("id", id)
+        .eq("status", expectedStatus)
+        .select("id")
+        .maybeSingle()
 
-    if (error) {
+      if (error || !data) {
+        if (error) console.error("Jelentkezés státusz mentési hiba:", error)
+        setStatuses((prev) => ({ ...prev, [id]: previousStatus }))
+        setActionError(error
+          ? "A döntés mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra."
+          : "A jelentkezés állapota időközben megváltozott. Frissítsd az oldalt.")
+        return
+      }
+
+      setActionNotice(status === "accepted"
+        ? "A kapcsolatfelvétel kezdeményezhető. Ez még nem jelenti azt, hogy a jelentkező biztosan részt vesz az eseményen."
+        : status === "pending"
+          ? "A kapcsolatfelvétel visszavonva. A jelentkezés visszakerült elbírálás alá."
+          : "Jelentkezés elutasítva.")
+    } catch (error) {
       console.error("Jelentkezés státusz mentési hiba:", error)
       setStatuses((prev) => ({ ...prev, [id]: previousStatus }))
-      setActionError("A döntés mentése nem sikerült.")
+      setActionError("A döntés mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+    } finally {
+      applicantMutationRef.current.delete(id)
       setStatusSaving((prev) => ({ ...prev, [id]: false }))
-      return
     }
-
-    setActionNotice(status === "accepted" ? "Jelentkezés elfogadva." : "Jelentkezés elutasítva.")
-    setStatusSaving((prev) => ({ ...prev, [id]: false }))
   }
 
   async function shareCaptainContact(applicantId: string) {
@@ -1597,16 +1674,6 @@ export function SkipperDashboard() {
               <p className="mt-1 text-sm text-muted-foreground">
                 Kezeld a hajóidat, hirdetéseidet és a beérkező jelentkezőket egy helyen.
               </p>
-              {actionError ? (
-                <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                  {actionError}
-                </div>
-              ) : null}
-              {actionNotice ? (
-                <div className="mt-4 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-foreground">
-                  {actionNotice}
-                </div>
-              ) : null}
             </div>
 
         {/* SECTION A: Boat management */}
@@ -1675,31 +1742,49 @@ export function SkipperDashboard() {
                 Csapatom
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                A hajóhoz rendelt alapcsapat tagjai és a meghívások.
+                Csapattagok és függő meghívások kezelése.
               </p>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Input
-                type="email"
-                value={newTeamMemberEmail}
-                onChange={(event) => setNewTeamMemberEmail(event.target.value)}
-                placeholder="email@pelda.hu"
-                className="h-11 flex-1 border-border bg-background"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void handleInviteTeamMember()}
-                disabled={inviteSending}
-                className="h-11 border-border bg-background text-foreground hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                {inviteSending ? "Meghívás..." : "Meghívás"}
-              </Button>
-            </div>
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault()
+                void handleInviteTeamMember()
+              }}
+              className="border-b border-border bg-secondary/20 p-4"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="w-full max-w-sm">
+                  <Label htmlFor="team-invite-email" className="mb-1.5 block text-xs font-semibold text-foreground">
+                    Meghívás e-mail-címmel
+                  </Label>
+                  <Input
+                    id="team-invite-email"
+                    type="email"
+                    required
+                    maxLength={254}
+                    value={newTeamMemberEmail}
+                    onChange={(event) => setNewTeamMemberEmail(event.target.value)}
+                    placeholder="nev@pelda.hu"
+                    className="h-10 border-border bg-background"
+                    aria-describedby="team-invite-hint"
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  disabled={inviteSending}
+                  className="h-10 shrink-0 sm:min-w-32"
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  {inviteSending ? "Meghívás..." : "Meghívás"}
+                </Button>
+              </div>
+              <p id="team-invite-hint" className="mt-1.5 text-xs text-muted-foreground sm:max-w-sm">
+                E-mailben küldött meghívó, 7 napos érvényességgel.
+              </p>
+            </form>
 
             {teamError ? (
               <div className="mt-3 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -1707,34 +1792,39 @@ export function SkipperDashboard() {
               </div>
             ) : null}
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="divide-y divide-border">
               {teamLoading ? (
-                <div className="text-sm text-muted-foreground sm:col-span-2 xl:col-span-3">
+                <div role="status" className="p-4 text-sm text-muted-foreground">
                   Csapattagok betöltése...
                 </div>
               ) : teamLoadError ? (
                 <div
                   role="alert"
-                  className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive sm:col-span-2 xl:col-span-3"
+                  className="p-4 text-sm text-destructive"
                 >
-                  {teamLoadError}
+                  <p>{teamLoadError}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => setListingsRefreshKey((key) => key + 1)}
+                  >
+                    Újrapróbálás
+                  </Button>
                 </div>
               ) : teamMembers.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border bg-secondary/20 p-4 text-sm text-muted-foreground sm:col-span-2 xl:col-span-3">
-                  Még nincs tag a csapatban.
+                <div className="p-4 text-sm text-muted-foreground">
+                  Még nincs csapattag. Küldj meghívót, hogy összeálljon a legénység.
                 </div>
               ) : (
                 teamMembers.map((member) => (
                   <div
                     key={member.id}
-                    className={`flex items-center justify-between gap-3 rounded-xl border p-3 transition-all ${
-                      member.status === "active"
-                        ? "border-accent/50 bg-accent/5 shadow-sm ring-1 ring-accent/20"
-                        : "border-border bg-secondary/20"
-                    }`}
+                    className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full border border-border bg-card">
+                      <span className="relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full border border-border bg-secondary">
                         <Image
                           src={member.avatar || "/placeholder.svg"}
                           alt={member.name}
@@ -1743,32 +1833,42 @@ export function SkipperDashboard() {
                           sizes="40px"
                         />
                       </span>
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">{member.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">{member.email}</p>
-                        <p className="text-[11px] text-muted-foreground/90">{member.role}</p>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-medium text-foreground">{member.name}</p>
+                          <Badge className={member.status === "active"
+                            ? "border-0 bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
+                            : "border-0 bg-amber-100 text-amber-900 hover:bg-amber-100"}
+                          >
+                            {member.status === "active" ? "Aktív tag" : "Meghívó elküldve"}
+                          </Badge>
+                        </div>
+                        <p className="mt-0.5 break-all text-xs text-muted-foreground" title={member.email}>
+                          {member.email}
+                        </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2 pl-12 sm:pl-0">
                       {member.status === "invited" ? (
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="h-8 border-dashed border-border bg-background px-2 text-[11px] text-foreground hover:bg-secondary/70"
+                          className="h-8"
+                          disabled={inviteSending}
                           onClick={() => void handleInviteTeamMember(member.email)}
                         >
-                          Újraküldés
+                          {inviteSending ? "Küldés..." : "Meghívó újraküldése"}
                         </Button>
                       ) : null}
 
                       <button
                         type="button"
                         aria-label={`Eltávolítás: ${member.name}`}
-                        title="Eltávolítás"
+                        title="Tag eltávolítása"
                         onClick={() => handleRemoveTeamMember(member.id)}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
                       >
                         <X className="h-4 w-4" aria-hidden="true" />
                       </button>
@@ -1835,7 +1935,7 @@ export function SkipperDashboard() {
                   <span>Időpont</span>
                   <span>Helyszín</span>
                   <span>Résztvevők</span>
-                  <span className="text-right">Műveletek</span>
+                  <span aria-hidden="true" />
                 </div>
 
                 {events.map((event) => {
@@ -1920,18 +2020,6 @@ export function SkipperDashboard() {
                       </button>
                       <button
                         type="button"
-                        title="Hirdetés feladása"
-                        aria-label={`Hirdetés feladása az ${event.title} eseményhez`}
-                        onClick={(clickEvent) => {
-                          clickEvent.stopPropagation()
-                          openListingModalFromEvent(event)
-                        }}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300 bg-cyan-50 text-cyan-700 transition-colors hover:bg-cyan-500 hover:text-white"
-                      >
-                        <Megaphone className="h-4 w-4" aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
                         aria-label={isExpanded ? "Esemény összecsukása" : "Esemény kinyitása"}
                         onClick={(clickEvent) => {
                           clickEvent.stopPropagation()
@@ -1949,71 +2037,21 @@ export function SkipperDashboard() {
 
                   {isExpanded ? (
                     <div className="border-t border-border/70 bg-transparent px-4 py-4">
-                      <div className="mb-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <div className="mb-4 rounded-r-lg border-l-4 border-cyan-500 bg-cyan-50/80 px-4 py-3 dark:bg-cyan-950/25">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-800 dark:text-cyan-200">
                           Esemény részletei
                         </p>
+                        <p className="mt-1.5 text-sm leading-relaxed text-foreground">{event.details}</p>
                       </div>
 
-                      <div className="space-y-3">
-                        <p className="text-sm leading-relaxed text-foreground">{event.details}</p>
-
-                        {(() => {
-                          const relatedListing = listings.find((listing) => isMatchingListingToEvent(listing, event))
-
-                          const hasActiveListing = Boolean(relatedListing && relatedListing.isActive)
-                          const applicantCount = relatedListing?.applicants.length ?? 0
-                          const acceptedCount = relatedListing?.applicants.filter((applicant) => (statuses[applicant.id] ?? "pending") === "accepted").length ?? 0
-                          const pendingCount = relatedListing?.applicants.filter((applicant) => (statuses[applicant.id] ?? "pending") === "pending").length ?? 0
-                          const rejectedCount = relatedListing?.applicants.filter((applicant) => (statuses[applicant.id] ?? "pending") === "rejected").length ?? 0
-
-                          return (
-                            <div className={`grid gap-2 ${hasActiveListing ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-                              {hasActiveListing ? (
-                                <div className="rounded-lg border border-border bg-background/80 p-2.5">
-                                  <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Hirdetés</p>
-                                  <div className="mt-1.5 flex items-center justify-between gap-2">
-                                    <span className="text-xs font-medium text-foreground">Aktív</span>
-                                    <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="rounded-lg border border-dashed border-border bg-secondary/20 p-2.5 sm:col-span-2">
-                                  <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Hirdetés</p>
-                                  <div className="mt-1.5 flex items-center justify-between gap-3">
-                                    <p className="text-xs text-muted-foreground">Még nincs aktív hirdetés ehhez az eseményhez.</p>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-7 border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
-                                      onClick={(clickEvent) => {
-                                        clickEvent.stopPropagation()
-                                        openListingModalFromEvent(event)
-                                      }}
-                                    >
-                                      Hirdetés létrehozása
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="rounded-lg border border-border bg-background/80 p-2.5">
-                                <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Jelentkezők</p>
-                                <p className="mt-1.5 text-base font-bold text-foreground">{applicantCount}</p>
-                              </div>
-
-                              <div className="rounded-lg border border-border bg-background/80 p-2.5">
-                                <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Elfogadva</p>
-                                <p className="mt-1.5 text-base font-bold text-foreground">{acceptedCount}</p>
-                              </div>
-                            </div>
-                          )
-                        })()}
+                      <div className="space-y-4">
 
                         <div>
                           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                             Csapattagok és részvétel
+                          </p>
+                          <p className="mb-3 text-sm text-muted-foreground">
+                            A résztvevő melletti legördülőben állíthatod be a részvételi státuszt.
                           </p>
 
                           {(() => {
@@ -2024,10 +2062,10 @@ export function SkipperDashboard() {
                                   id: member.userId,
                                   name: member.name,
                                   avatar: member.avatar,
-                                  participant: visibleParticipants.find((item) => item.userId === member.userId),
+                                  participant: event.participants.find((item) => item.userId === member.userId),
                                   source: "team" as const,
                                 })),
-                              ...visibleParticipants
+                              ...event.participants
                                 .filter(
                                   (participant) =>
                                     !teamMembers.some((member) => member.userId === participant.userId),
@@ -2046,62 +2084,138 @@ export function SkipperDashboard() {
                             }
 
                             return (
-                              <div className="flex flex-wrap gap-2">
+                              <div className="divide-y divide-border border-y border-border">
                                 {rosterMembers.map((person) => {
-                                  const status = person.participant?.status ?? "declined"
-                                  const chipClasses = {
-                                    confirmed: "border-emerald-300 bg-emerald-50 text-emerald-700",
-                                    pending: "border-amber-300 bg-amber-50 text-amber-700",
-                                    declined: "border-border bg-secondary/40 text-muted-foreground",
+                                  const statusLabels = {
+                                    confirmed: "Részt vesz",
+                                    pending: "Válaszra vár",
+                                    declined: "Nem vesz részt",
                                   }
-                                  const statusLabel = {
-                                    confirmed: "Jelentkezett",
-                                    pending: "Várakozik",
-                                    declined: "Nincs megadva",
-                                  }[status]
+                                  const status = person.participant?.status ?? null
+                                  const mutationKey = `${event.id}:${person.id}`
+                                  const isSavingParticipant = participantSaving[mutationKey] ?? false
                                   const isListingOrigin = person.source === "listing" || person.participant?.source === "listing"
 
                                   return (
-                                    <button
+                                    <div
                                       key={`${event.id}-${person.id}`}
-                                      type="button"
-                                      onClick={(clickEvent) => {
-                                        clickEvent.stopPropagation()
-                                        if (person.id) {
-                                          void toggleEventParticipant(event.id, person.id)
-                                        }
-                                      }}
-                                      className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs font-medium transition-colors ${chipClasses[status]}`}
-                                      title={`${person.name} — ${statusLabel}`}
+                                      className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                                     >
-                                      <span className="relative flex h-6 w-6 shrink-0 overflow-hidden rounded-full border border-current/30 bg-white/70">
-                                        <Image
-                                          src={person.avatar || "/placeholder.svg"}
-                                          alt={person.name}
-                                          fill
-                                          className="object-cover"
-                                          sizes="24px"
-                                        />
-                                      </span>
-                                      <span>{person.name}</span>
-                                      <span className="rounded-full border border-current/20 bg-white/80 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]">
-                                        {status === "confirmed" ? "✓" : status === "pending" ? "…" : "+"}
-                                      </span>
-                                      {isListingOrigin ? (
-                                        <span className="rounded-full border border-current/20 bg-white/80 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]">
-                                          Hirdetés
+                                      <div className="flex min-w-0 items-center gap-3">
+                                        <span className="relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full border border-border bg-secondary">
+                                          <Image
+                                            src={person.avatar || "/placeholder.svg"}
+                                            alt={person.name}
+                                            fill
+                                            className="object-cover"
+                                            sizes="36px"
+                                          />
                                         </span>
-                                      ) : null}
-                                      <span className="text-[9px] font-semibold uppercase tracking-[0.08em] opacity-80">
-                                        {statusLabel}
-                                      </span>
-                                    </button>
+                                        <div className="min-w-0">
+                                          <p className="truncate text-sm font-medium text-foreground">{person.name}</p>
+                                          <p className="text-xs text-muted-foreground">
+                                            {isListingOrigin ? "Jelentkező" : "Csapattag"}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2 pl-12 sm:pl-0">
+                                        {isSavingParticipant ? (
+                                          <span role="status" className="text-xs text-muted-foreground">Mentés...</span>
+                                        ) : null}
+                                        <Select
+                                          value={status ?? "unset"}
+                                          disabled={isSavingParticipant || !person.id}
+                                          onValueChange={(value) => {
+                                            const nextStatus = value === "unset"
+                                              ? null
+                                              : value as "confirmed" | "pending" | "declined"
+                                            void setEventParticipantStatus(event.id, person.id, nextStatus)
+                                          }}
+                                        >
+                                          <SelectTrigger
+                                            className="h-9 w-44 bg-background"
+                                            aria-label={`Részvételi státusz: ${person.name}`}
+                                          >
+                                            <SelectValue>
+                                              {(value: string) => value === "unset"
+                                                ? "Nincs beállítva"
+                                                : statusLabels[value as keyof typeof statusLabels] ?? "Válassz státuszt"}
+                                            </SelectValue>
+                                          </SelectTrigger>
+                                          <SelectContent align="end">
+                                            <SelectItem value="unset">Nincs beállítva</SelectItem>
+                                            <SelectItem value="confirmed">Részt vesz</SelectItem>
+                                            <SelectItem value="pending">Válaszra vár</SelectItem>
+                                            <SelectItem value="declined">Nem vesz részt</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </div>
                                   )
                                 })}
                               </div>
                             )
                           })()}
                         </div>
+
+                        {(() => {
+                          const relatedListings = listings.filter((listing) => isMatchingListingToEvent(listing, event))
+                          const relatedListing = relatedListings.find((listing) => listing.isActive && !listing.isHistorical)
+                            ?? relatedListings[0]
+                          const hasActiveListing = Boolean(relatedListing && relatedListing.isActive && !relatedListing.isHistorical)
+                          const applicantCount = relatedListing?.applicants.length ?? 0
+                          const acceptedCount = relatedListing?.applicants.filter((applicant) => (statuses[applicant.id] ?? "pending") === "accepted").length ?? 0
+                          const previousListingMessage = !relatedListing
+                            ? "Ehhez az eseményhez még nem adtál fel hirdetést."
+                            : relatedListing.isDeleted
+                              ? "A korábbi hirdetést visszavontad."
+                              : !relatedListing.isActive
+                                ? "A korábbi hirdetést lezártad."
+                                : "A korábbi hirdetés lejárt, ezért már nem jelenik meg a böngészésben."
+
+                          return (
+                            <div className={`grid gap-2 ${hasActiveListing ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+                              {hasActiveListing ? (
+                                <div className="rounded-lg border border-border bg-background/80 p-2.5">
+                                  <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Hirdetés</p>
+                                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                                    <span className="text-xs font-medium text-foreground">Aktív</span>
+                                    <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="rounded-lg border border-dashed border-border bg-secondary/20 p-2.5 sm:col-span-2">
+                                  <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Hirdetés</p>
+                                  <div className="mt-1.5 flex items-center justify-between gap-3">
+                                    <p className="text-xs text-muted-foreground">{previousListingMessage}</p>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
+                                      onClick={(clickEvent) => {
+                                        clickEvent.stopPropagation()
+                                        openListingModalFromEvent(event)
+                                      }}
+                                    >
+                                      Új hirdetés feladása
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="rounded-lg border border-border bg-background/80 p-2.5">
+                                <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Jelentkezők</p>
+                                <p className="mt-1.5 text-base font-bold text-foreground">{applicantCount}</p>
+                              </div>
+
+                              <div className="rounded-lg border border-border bg-background/80 p-2.5">
+                                <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Kapcsolatfelvétel</p>
+                                <p className="mt-1.5 text-base font-bold text-foreground">{acceptedCount}</p>
+                              </div>
+                            </div>
+                          )
+                        })()}
                       </div>
                     </div>
                   ) : null}
@@ -2138,6 +2252,19 @@ export function SkipperDashboard() {
                     </div>
                   ))}
                 </>
+              ) : listingsLoadError ? (
+                <div role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
+                  <p>{listingsLoadError}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => setListingsRefreshKey((key) => key + 1)}
+                  >
+                    Újrapróbálás
+                  </Button>
+                </div>
               ) : listings.length === 0 ? (
                 <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-card px-6 py-10 text-center">
                   <Anchor className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
@@ -2162,6 +2289,12 @@ export function SkipperDashboard() {
                 displayedListings.map((listing) => {
                 const isActive = listing.id === selected.id
                 const count = pendingCountsMap[listing.id] ?? pendingCount(listing)
+                const expiryDate = formatListingExpiryDate(listing.expiryDate)
+                const expiryLabel = !listing.isActive
+                  ? "Eredeti automatikus lejárat:"
+                  : listing.isHistorical
+                    ? "Automatikusan lejárt:"
+                    : "Automatikusan lejár:"
                 return (
                   <div
                     key={listing.id}
@@ -2200,7 +2333,7 @@ export function SkipperDashboard() {
                           type="button"
                           aria-label="Hirdetés lezárása"
                           title="Hirdetés lezárása"
-                          disabled={archivingId === listing.id || !listing.isActive}
+                          disabled={listingMutatingId !== null || applicantMutationRef.current.size > 0 || !listing.isActive}
                           onClick={(e) => {
                             e.stopPropagation()
                             setConfirmArchiveId(listing.id)
@@ -2213,7 +2346,7 @@ export function SkipperDashboard() {
                           type="button"
                           aria-label="Hirdetés törlése"
                           title="Hirdetés visszavonása"
-                          disabled={deletingId === listing.id || listing.isDeleted}
+                          disabled={listingMutatingId !== null || applicantMutationRef.current.size > 0 || listing.isDeleted}
                           onClick={(e) => {
                             e.stopPropagation()
                             setConfirmDeleteId(listing.id)
@@ -2234,6 +2367,14 @@ export function SkipperDashboard() {
                         {listing.location}
                       </span>
                     </div>
+                    {expiryDate ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {expiryLabel} {expiryDate}. {listing.isActive
+                          ? "A dátum után a hirdetés automatikusan eltűnik a böngészésből; külön lezárás nem szükséges."
+                          : "A hirdetés kapitányi döntéssel lett lezárva."
+                        }
+                      </p>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap gap-1.5">
                         {listing.positions.map((p) => (
@@ -2287,6 +2428,12 @@ export function SkipperDashboard() {
               </span>
             </div>
 
+            {selected.id && selected.isHistorical ? (
+              <p role="status" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Ez a hirdetés lezárt vagy lejárt. A jelentkezések megmaradnak megtekintésre, de új döntést már nem lehet rögzíteni.
+              </p>
+            ) : null}
+
             <div className="max-h-[70vh] overflow-y-auto overscroll-y-contain pr-1">
               <div className="flex flex-col gap-3">
               {selected.id ? selected.applicants.map((applicant) => {
@@ -2326,22 +2473,22 @@ export function SkipperDashboard() {
                       </div>
                     </div>
 
-                    {status === "pending" ? (
+                    {status === "pending" && !selected.isHistorical ? (
                       <div className="flex shrink-0 gap-2">
                         <Button
                           size="sm"
                           onClick={() => void decide(applicant.id, "accepted")}
-                          disabled={isSaving}
+                          disabled={isSaving || listingMutatingId === selected.id}
                           className="h-9 bg-emerald-600! text-white! hover:bg-emerald-700!"
                         >
                           <Check className="h-4 w-4" aria-hidden="true" />
-                          Elfogadás
+                          Kapcsolatfelvétel indítása
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => void decide(applicant.id, "rejected")}
-                          disabled={isSaving}
+                          disabled={isSaving || listingMutatingId === selected.id}
                           className="h-9 text-muted-foreground"
                         >
                           <X className="h-4 w-4" aria-hidden="true" />
@@ -2349,19 +2496,20 @@ export function SkipperDashboard() {
                         </Button>
                       </div>
                     ) : (
-                      <div className="shrink-0">
+                      <div className="flex shrink-0 items-center gap-2">
                         <Badge
                           className={
                             status === "accepted"
                               ? "border-0 bg-emerald-600 text-white hover:bg-emerald-600"
-                              : "border-0 bg-secondary text-muted-foreground hover:bg-secondary"
+                              : status === "pending"
+                                ? "border-0 bg-amber-100 text-amber-900 hover:bg-amber-100"
+                                : "border-0 bg-secondary text-muted-foreground hover:bg-secondary"
                           }
                         >
-                          {status === "accepted" ? (
-                            <>
-                              <Check className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-                              Elfogadva
-                            </>
+                          {status === "pending" ? (
+                            "Függőben"
+                          ) : status === "accepted" ? (
+                            "Kapcsolatfelvétel kezdeményezve"
                           ) : (
                             <>
                               <X className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
@@ -2369,6 +2517,19 @@ export function SkipperDashboard() {
                             </>
                           )}
                         </Badge>
+                        {status === "accepted" && !selected.isHistorical ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isSaving}
+                            onClick={() => setConfirmRevokeApplicantId(applicant.id)}
+                            aria-label={`Kapcsolatfelvétel visszavonása: ${applicant.name}`}
+                            title="Kapcsolatfelvétel visszavonása"
+                          >
+                            Visszavonás
+                          </Button>
+                        ) : null}
                       </div>
                     )}
                     </div>
@@ -2386,7 +2547,10 @@ export function SkipperDashboard() {
                       <div className="overflow-hidden rounded-lg border border-emerald-700/15 bg-emerald-50">
                         <div className="p-4">
                           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
-                            Kapcsolatfelvétel
+                            Kapcsolatfelvétel kezdeményezhető
+                          </p>
+                          <p className="mt-1 text-sm text-emerald-950">
+                            Ez nem végleges részvételi visszaigazolás. Vedd fel a kapcsolatot a jelentkezővel, és egyeztessétek, hogy részt vesz-e.
                           </p>
                           <div className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2">
                             <a
@@ -2491,6 +2655,9 @@ export function SkipperDashboard() {
         onBoatSaved={(savedBoat) => {
           setBoat(savedBoat)
           setHasBoat(true)
+          if (boatModalMode === "create") {
+            openModal("listing")
+          }
         }}
         user={user}
       />
@@ -2526,6 +2693,53 @@ export function SkipperDashboard() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={!!confirmRevokeApplicantId}
+        onOpenChange={(open) => { if (!open && !statusSaving[confirmRevokeApplicantId ?? ""]) setConfirmRevokeApplicantId(null) }}
+      >
+        <DialogContent className="max-w-sm gap-0 rounded-2xl p-0">
+          <div className="flex flex-col gap-4 p-6">
+            <DialogHeader className="gap-2">
+              <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+                Kapcsolatfelvétel visszavonása
+              </DialogTitle>
+              <DialogDescription className="text-pretty leading-relaxed">
+                {(() => {
+                  const applicant = selected.applicants.find((item) => item.id === confirmRevokeApplicantId)
+                  return applicant
+                    ? `Visszavonod a kapcsolatfelvétel kezdeményezését ${applicant.name} jelentkezőnél? A jelentkezés visszakerül elbírálás alá. Ez nem vonja vissza a már megosztott elérhetőségeket, és az eseményrésztvevők közül sem távolítja el.`
+                    : "A jelentkezés visszakerül elbírálás alá. A már megosztott elérhetőségek és az eseményrészvétel nem változik."
+                })()}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                disabled={!!statusSaving[confirmRevokeApplicantId ?? ""]}
+                onClick={() => setConfirmRevokeApplicantId(null)}
+              >
+                Mégse
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="flex-1"
+                disabled={!!statusSaving[confirmRevokeApplicantId ?? ""]}
+                onClick={async () => {
+                  if (!confirmRevokeApplicantId) return
+                  await decide(confirmRevokeApplicantId, "pending")
+                  setConfirmRevokeApplicantId(null)
+                }}
+              >
+                {statusSaving[confirmRevokeApplicantId ?? ""] ? "Visszavonás..." : "Visszavonom"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!confirmArchiveId} onOpenChange={(open) => { if (!open) setConfirmArchiveId(null) }}>
         <DialogContent className="max-w-sm gap-0 rounded-2xl p-0">
           <div className="flex flex-col gap-4 p-6">
@@ -2534,7 +2748,7 @@ export function SkipperDashboard() {
                 Hirdetés lezárása
               </DialogTitle>
               <DialogDescription className="text-pretty leading-relaxed">
-                Biztosan lezárod ezt a hirdetést? Nem jelenik meg többé a böngészésben és a kezdőlapon.
+                A hirdetés azonnal eltűnik a böngészésből. A hirdetés és a meglévő jelentkezések megmaradnak a dashboardon, de a jelentkezésekről ezután már nem lehet dönteni. A lejárat ezzel szemben automatikusan történik a megadott dátum után.
               </DialogDescription>
             </DialogHeader>
             {actionError ? (
@@ -2570,7 +2784,7 @@ export function SkipperDashboard() {
                 Hirdetés visszavonása
               </DialogTitle>
               <DialogDescription className="text-pretty leading-relaxed">
-                Biztosan visszavonod ezt a hirdetést? A hirdetés és a hozzá tartozó jelentkezések megmaradnak a kapitányi felületen.
+                A hirdetés azonnal eltűnik a böngészésből. A hirdetés és a meglévő jelentkezések megmaradnak a dashboardon megtekintésre, de a jelentkezésekről ezután már nem lehet dönteni.
               </DialogDescription>
             </DialogHeader>
             <div className="flex gap-3 pt-2">
@@ -2918,6 +3132,22 @@ export function SkipperDashboard() {
       />
 
       <SiteFooter />
+      {actionNotice || actionError ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[60] flex justify-center px-4 sm:bottom-6">
+          <div
+            role={actionError ? "alert" : "status"}
+            aria-live={actionError ? "assertive" : "polite"}
+            aria-atomic="true"
+            className={`pointer-events-auto w-full max-w-lg rounded-xl border px-4 py-3 text-sm shadow-lg ${
+              actionError
+                ? "border-destructive/30 bg-card text-destructive"
+                : "border-accent/30 bg-card text-foreground"
+            }`}
+          >
+            {actionError ?? actionNotice}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -2951,7 +3181,6 @@ function BoatRegistrationModal({
   onBoatSaved: (boat: Boat) => void
   user: User | null
 }) {
-  const router = useRouter()
   const [name, setName] = useState("")
   const [type, setType] = useState("")
   const [harbor, setHarbor] = useState("")
@@ -3017,10 +3246,6 @@ function BoatRegistrationModal({
 
     if (!crewType) {
       newErrors.crewType = "Csapat jellegének kiválasztása kötelező."
-    }
-
-    if (mode !== "edit" && !boatPhoto) {
-      newErrors.boatPhoto = "Hajó fotó feltöltése kötelező."
     }
 
     if (boatPhoto && boatPhoto.size > MAX_BOAT_IMAGE_UPLOAD_SIZE_BYTES) {
@@ -3093,7 +3318,6 @@ function BoatRegistrationModal({
 
         onBoatSaved(updatedBoat)
         onOpenChange(false)
-        router.push("/kapitany-dashboard")
         return
       }
 
@@ -3120,7 +3344,6 @@ function BoatRegistrationModal({
 
       onBoatSaved(insertedBoat)
       onOpenChange(false)
-      router.push("/kapitany-dashboard")
     } catch (error) {
       const message = error instanceof Error ? error.message : "Ismeretlen hiba történt a mentés közben."
       setErrors({ submit: message })
@@ -3248,7 +3471,7 @@ function BoatRegistrationModal({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="boat-photo">Hajó fotó</Label>
+              <Label htmlFor="boat-photo">Hajó fotó (opcionális)</Label>
               <label
                 htmlFor="boat-photo"
                 className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-secondary/40 px-4 py-6 text-center text-muted-foreground transition-colors hover:border-accent hover:text-accent"
@@ -3258,7 +3481,7 @@ function BoatRegistrationModal({
                   {boatPhoto ? boatPhoto.name : "Kép feltöltése a hajóról"}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  A feltöltött kép automatikusan optimalizálva lesz a gyors betöltéshez.
+                  Később is hozzáadható. A feltöltött kép automatikusan optimalizálva lesz a gyors betöltéshez.
                 </span>
                 <input
                   id="boat-photo"

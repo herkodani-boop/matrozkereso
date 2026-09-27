@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { CheckCircle2, LogIn, XCircle } from "lucide-react"
+import { CheckCircle2, LogIn, UserPlus, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -17,17 +17,17 @@ export function TeamInviteDialog({
   open,
   onOpenChange,
   token,
-  onRequestLogin,
+  onRequestAuth,
   onAccepted,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   token: string | null
-  onRequestLogin: () => void
+  onRequestAuth: (view: "login" | "register") => void
   onAccepted?: () => void
 }) {
   const router = useRouter()
-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "signed-out" | "error">("idle")
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "signed-out" | "email-mismatch" | "error">("idle")
   const [message, setMessage] = useState("A meghívás feldolgozása folyamatban...")
 
   useEffect(() => {
@@ -59,7 +59,13 @@ export function TeamInviteDialog({
           body: JSON.stringify({ token }),
         })
 
-        const payload = (await response.json()) as { ok?: boolean; error?: string }
+        const payload = (await response.json()) as { ok?: boolean; error?: string; code?: string }
+
+        if (response.status === 403 && payload.code === "INVITATION_EMAIL_MISMATCH") {
+          setStatus("email-mismatch")
+          setMessage(payload.error || "Ez a meghívó másik e-mail-címre szól.")
+          return
+        }
 
         if (!response.ok || !payload.ok) {
           throw new Error(payload.error || "A meghívás elfogadása nem sikerült.")
@@ -88,6 +94,17 @@ export function TeamInviteDialog({
     onOpenChange(false)
   }
 
+  async function switchAccount(view: "login" | "register") {
+    const { error } = await supabase.auth.signOut({ scope: "local" })
+    if (error) {
+      setStatus("error")
+      setMessage("A kijelentkezés nem sikerült. Próbáld újra, majd válts a meghívott e-mail-címre.")
+      return
+    }
+
+    onRequestAuth(view)
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md gap-5 p-5 sm:max-w-md">
@@ -97,7 +114,9 @@ export function TeamInviteDialog({
             {status === "success"
               ? "A meghívás elfogadva."
               : status === "signed-out"
-                ? "Jelentkezz be a csatlakozáshoz."
+                ? "A csatlakozáshoz használd a meghívott e-mail-címet."
+                : status === "email-mismatch"
+                  ? "Másik fiókkal nyitottad meg a meghívót."
                 : "A meghívás feldolgozása folyamatban."}
           </DialogDescription>
         </DialogHeader>
@@ -113,12 +132,29 @@ export function TeamInviteDialog({
 
           {status === "signed-out" ? (
             <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
-              <Button onClick={onRequestLogin} className="w-full sm:w-auto">
+              <Button onClick={() => onRequestAuth("login")} className="w-full sm:w-auto">
                 <LogIn className="mr-2 h-4 w-4" />
                 Bejelentkezés
               </Button>
+              <Button variant="outline" onClick={() => onRequestAuth("register")} className="w-full sm:w-auto">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Fiók létrehozása
+              </Button>
               <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
                 Később
+              </Button>
+            </div>
+          ) : null}
+
+          {status === "email-mismatch" ? (
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
+              <Button onClick={() => void switchAccount("login")} className="w-full sm:w-auto">
+                <LogIn className="mr-2 h-4 w-4" />
+                Bejelentkezés a meghívott címmel
+              </Button>
+              <Button variant="outline" onClick={() => void switchAccount("register")} className="w-full sm:w-auto">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Regisztráció a meghívott címmel
               </Button>
             </div>
           ) : null}

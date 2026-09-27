@@ -74,11 +74,11 @@ export function AuthGateModalTrigger() {
     router.replace(query ? `/?${query}` : "/", { scroll: false })
   }
 
-  const openLoginModal = () => {
+  const openAuthModal = (view: "login" | "register") => {
     setInviteOpen(false)
-    setAuthView("login")
+    setAuthView(view)
     setAuthOpen(true)
-    syncUrl("login", inviteToken)
+    syncUrl(view, inviteToken)
   }
 
   return (
@@ -103,7 +103,7 @@ export function AuthGateModalTrigger() {
           }
         }}
         token={inviteToken}
-        onRequestLogin={openLoginModal}
+        onRequestAuth={openAuthModal}
         onAccepted={() => {
           setInviteToken(null)
           setInviteOpen(false)

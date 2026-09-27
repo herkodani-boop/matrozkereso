@@ -50,7 +50,7 @@ const statusConfig = {
     className: "bg-secondary text-secondary-foreground",
   },
   accepted: {
-    label: "Elfogadva",
+    label: "Kapcsolatfelvétel",
     className: "bg-emerald-600 text-white",
   },
   rejected: {
@@ -260,6 +260,12 @@ export function MyApplications() {
                     </span>
                   )}
                 </div>
+
+                {application.status === "accepted" ? (
+                  <p role="status" className="mt-2 text-sm text-emerald-800">
+                    A kapitány szeretné felvenni veled a kapcsolatot. Ez még nem végleges részvételi visszaigazolás; egyeztessétek közvetlenül.
+                  </p>
+                ) : null}
 
                 {application.captain_contact_shared_at ? (
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm">

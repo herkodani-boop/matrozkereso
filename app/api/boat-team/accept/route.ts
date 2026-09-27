@@ -41,6 +41,34 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Érvénytelen vagy lejárt session." }, { status: 401 })
   }
 
+  const { data: invitation, error: invitationError } = await adminClient
+    .from("boat_team_invitations")
+    .select("invitee_email")
+    .eq("token", rawToken)
+    .maybeSingle()
+
+  if (invitationError) {
+    console.error("Csapatmeghívás ellenőrzési hiba:", invitationError)
+    return NextResponse.json({ error: "A meghívás ellenőrzése nem sikerült." }, { status: 500 })
+  }
+
+  if (!invitation) {
+    return NextResponse.json({ error: "A meghívás nem létezik vagy lejárt." }, { status: 404 })
+  }
+
+  const invitedEmail = String(invitation.invitee_email ?? "").trim().toLowerCase()
+  const signedInEmail = String(user.email ?? "").trim().toLowerCase()
+
+  if (!signedInEmail || signedInEmail !== invitedEmail) {
+    return NextResponse.json(
+      {
+        code: "INVITATION_EMAIL_MISMATCH",
+        error: "Ez a meghívó másik e-mail-címre szól. A folytatáshoz jelentkezz be vagy regisztrálj a meghívott e-mail-címmel.",
+      },
+      { status: 403 },
+    )
+  }
+
   const { data, error } = await adminClient.rpc("accept_boat_team_invitation", {
     p_token: rawToken,
     p_user_id: user.id,
