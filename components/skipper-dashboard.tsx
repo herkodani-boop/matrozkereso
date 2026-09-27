@@ -2971,9 +2971,6 @@ export function SkipperDashboard() {
         onBoatSaved={(savedBoat) => {
           setBoat(savedBoat)
           setHasBoat(true)
-          if (boatModalMode === "create") {
-            openModal("listing")
-          }
         }}
         user={user}
       />
