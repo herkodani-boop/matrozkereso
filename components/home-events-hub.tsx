@@ -24,6 +24,7 @@ type EventOpportunity = {
   title: string
   location: string
   startDate: string
+  endDate: string | null
   boatName: string
   type: string
 }
@@ -33,15 +34,48 @@ function getTodayKey() {
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`
 }
 
-function formatEventDate(startDate: string, endDate: string | null) {
-  const format = (value: string) => {
-    const date = new Date(`${value}T12:00:00`)
-    return Number.isNaN(date.getTime())
-      ? value
-      : new Intl.DateTimeFormat("hu-HU", { month: "short", day: "numeric" }).format(date)
-  }
+function EventDateBadge({ startDate, endDate }: { startDate: string; endDate: string | null }) {
+  const parse = (value: string) => new Date(`${value}T12:00:00`)
+  const start = parse(startDate)
+  const end = endDate ? parse(endDate) : null
+  const isValidStart = !Number.isNaN(start.getTime())
+  const isValidEnd = Boolean(end && !Number.isNaN(end.getTime()))
+  const shortMonth = (date: Date) =>
+    new Intl.DateTimeFormat("hu-HU", { month: "short" }).format(date).replace(/\.$/, "").toLocaleUpperCase("hu-HU")
+  const sameMonth = Boolean(isValidEnd && end && start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth())
+  const monthLabel = isValidStart
+    ? sameMonth || !isValidEnd || !end
+      ? shortMonth(start)
+      : `${shortMonth(start)}–${shortMonth(end)}`
+    : "DÁTUM"
+  const dayLabel = isValidStart
+    ? sameMonth && end
+      ? `${start.getDate()}–${end.getDate()}.`
+      : isValidEnd && end
+        ? `${start.getDate()}–${end.getDate()}.`
+        : `${start.getDate()}.`
+    : startDate
+  const fullDate = (date: Date) => new Intl.DateTimeFormat("hu-HU", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(date)
+  const accessibleLabel = isValidStart
+    ? isValidEnd && end && endDate !== startDate
+      ? `${fullDate(start)} – ${fullDate(end)}`
+      : fullDate(start)
+    : startDate
 
-  return endDate && endDate !== startDate ? `${format(startDate)} – ${format(endDate)}` : format(startDate)
+  return (
+    <time
+      dateTime={startDate}
+      aria-label={accessibleLabel}
+      className="flex min-h-12 w-[4.25rem] shrink-0 flex-col items-center justify-center rounded-md bg-accent/10 px-1 py-1 text-accent"
+    >
+      <span className="text-[10px] font-semibold leading-4">{monthLabel}</span>
+      <span className="text-sm font-bold leading-5">{dayLabel}</span>
+    </time>
+  )
 }
 
 function normalizeBoat(boat: unknown) {
@@ -208,6 +242,7 @@ export function HomeEventsHub() {
             title: String(event.title ?? "Esemény"),
             location: String(event.location ?? ""),
             startDate: String(event.start_date ?? ""),
+            endDate: event.end_date ? String(event.end_date) : null,
             boatName: String(boat?.name ?? "Hajó"),
             type: String(event.type ?? "Esemény"),
           } satisfies EventOpportunity
@@ -302,9 +337,7 @@ export function HomeEventsHub() {
                 <ul className="divide-y divide-border border-y border-border">
                   {events.map((event) => (
                     <li key={event.id} className="flex items-start gap-3 py-3">
-                      <span className="min-w-14 pt-0.5 text-xs font-semibold text-accent">
-                        {formatEventDate(event.startDate, event.endDate)}
-                      </span>
+                      <EventDateBadge startDate={event.startDate} endDate={event.endDate} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">{event.title}</p>
                         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -337,9 +370,7 @@ export function HomeEventsHub() {
                 <ul className="divide-y divide-border border-y border-border">
                   {opportunities.map((opportunity) => (
                     <li key={opportunity.id} className="flex items-start gap-3 py-3">
-                      <span className="min-w-14 pt-0.5 text-xs font-semibold text-accent">
-                        {formatEventDate(opportunity.startDate, null)}
-                      </span>
+                      <EventDateBadge startDate={opportunity.startDate} endDate={opportunity.endDate} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-foreground">{opportunity.title}</span>
                         <span className="mt-0.5 block truncate text-xs text-muted-foreground">

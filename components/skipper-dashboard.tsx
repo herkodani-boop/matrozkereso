@@ -105,7 +105,7 @@ type EventItem = {
     name: string
     avatar: string
     status: "confirmed" | "pending" | "declined" | "unset"
-    source?: "team" | "listing"
+    source?: "team" | "listing" | "captain"
   }[]
 }
 
@@ -660,6 +660,7 @@ export function SkipperDashboard() {
           name: profile?.full_name || "Résztvevő",
           avatar: resolveAvatarUrl(profile),
           status,
+          source: row.user_id && String(row.user_id) === user.id ? "captain" as const : undefined,
         }
 
         const current = attendeesByEventId.get(String(row.event_id)) ?? []
@@ -1239,7 +1240,13 @@ export function SkipperDashboard() {
         startDate: String(data?.start_date ?? payload.start_date),
         endDate: data?.end_date ? String(data.end_date) : (payload.end_date ? String(payload.end_date) : ""),
         oneDay: Boolean(data?.is_one_day ?? payload.is_one_day),
-        participants: [],
+        participants: user ? [{
+          userId: user.id,
+          name: profile?.full_name || user.user_metadata?.full_name || user.email || "Kapitány",
+          avatar: profile?.avatar_url || "/placeholder.svg",
+          status: "confirmed",
+          source: "captain",
+        }] : [],
       }
 
       setEvents((prev) => [createdItem, ...prev])
@@ -2435,8 +2442,9 @@ export function SkipperDashboard() {
                                   const statusStyle = statusStyles[statusKey]
                                   const mutationKey = `${event.id}:${person.id}`
                                   const isSavingParticipant = participantSaving[mutationKey] ?? false
-                                  const isTeamMember = teamMembers.some((member) => member.userId === person.id)
-                                  const isListingOrigin = !isTeamMember &&
+                                  const isCaptainParticipant = person.id === user?.id
+                                  const isTeamMember = isCaptainParticipant || teamMembers.some((member) => member.userId === person.id)
+                                  const isListingOrigin = !isCaptainParticipant && !isTeamMember &&
                                     (person.source === "listing" || person.participant?.source === "listing")
 
                                   return (
@@ -2457,7 +2465,7 @@ export function SkipperDashboard() {
                                         <div className="min-w-0">
                                           <p className="truncate text-sm font-medium text-foreground">{person.name}</p>
                                           <p className="text-xs text-muted-foreground">
-                                            {isListingOrigin ? "Jelentkező" : "Csapattag"}
+                                            {isCaptainParticipant ? "Kapitány" : isListingOrigin ? "Jelentkező" : "Csapattag"}
                                           </p>
                                         </div>
                                         {isListingOrigin ? (
