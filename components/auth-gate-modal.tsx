@@ -91,6 +91,7 @@ export function AuthGateModal({
   onOpenChange,
   boatName,
   mode = "sailor",
+  teamInvite = false,
   initialView,
   boatId,
   userId,
@@ -101,6 +102,7 @@ export function AuthGateModal({
   onOpenChange: (open: boolean) => void
   boatName?: string
   mode?: Mode
+  teamInvite?: boolean
   initialView?: View
   boatId?: string
   userId?: string
@@ -540,7 +542,9 @@ export function AuthGateModal({
       }
 
       handleOpenChange(false)
-      await router.push("/bongeszes")
+      if (!teamInvite) {
+        await router.push("/bongeszes")
+      }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Ismeretlen hiba történt.")
     } finally {
@@ -893,7 +897,9 @@ export function AuthGateModal({
                 {mode === "skipper" ? "Kapitány profil létrehozása" : "Mancsaft profil létrehozása"}
               </DialogTitle>
               <DialogDescription className="text-pretty leading-relaxed">
-                {mode === "skipper"
+                {teamInvite
+                  ? "Hozd létre a fiókodat a csapathoz való csatlakozáshoz."
+                  : mode === "skipper"
                   ? "Add meg az alapadataidat, majd a következő lépésben regisztráld a hajódat és a szabad helyet."
                   : "Add meg a vitorlás profilod alapadatait, hogy a kapitányok láthassák a tapasztalatodat."}
               </DialogDescription>
@@ -1042,7 +1048,13 @@ export function AuthGateModal({
                 className="mt-1 h-11 w-full bg-accent! text-base text-accent-foreground! hover:bg-accent/90!"
                 disabled={loading}
               >
-                {loading ? "Regisztráció folyamatban…" : mode === "skipper" ? "Profil mentése és Hajó regisztrációja" : "Profil mentése és Jelentkezés"}
+                {loading
+                  ? "Regisztráció folyamatban…"
+                  : teamInvite
+                    ? "Regisztráció"
+                    : mode === "skipper"
+                      ? "Profil mentése és Hajó regisztrációja"
+                      : "Profil mentése és Jelentkezés"}
               </Button>
 
               {formError ? (

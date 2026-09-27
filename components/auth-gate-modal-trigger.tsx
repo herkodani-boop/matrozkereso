@@ -92,6 +92,7 @@ export function AuthGateModalTrigger() {
           }
         }}
         initialView={authView}
+        teamInvite={Boolean(inviteToken)}
       />
       <TeamInviteDialog
         open={inviteOpen}
