@@ -143,21 +143,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "A jelentkezőt nem sikerült csapattaggá tenni." }, { status: 500 })
   }
 
-  const { data: boat, error: boatNameError } = await adminClient
-    .from("boats")
-    .select("name")
-    .eq("id", listing.boat_id)
-    .maybeSingle()
+  const [{ data: boat, error: boatNameError }, { data: captainProfile, error: captainProfileError }] = await Promise.all([
+    adminClient.from("boats").select("name").eq("id", listing.boat_id).maybeSingle(),
+    adminClient.from("users").select("full_name, phone, avatar_url").eq("id", captain.id).maybeSingle(),
+  ])
 
-  if (boatNameError) {
-    console.error("Hajónév lekérdezési hiba az értesítő emailhez:", boatNameError)
-  }
+  if (boatNameError) console.error("Hajónév lekérdezési hiba az értesítő emailhez:", boatNameError)
+  if (captainProfileError) console.error("Kapitányi profil lekérdezési hiba az értesítő emailhez:", captainProfileError)
 
   const emailSent = boat?.name
     ? await sendTeamMembershipEmail({
         email: applicantEmail,
         memberName: applicantName,
         boatName: boat.name,
+        captainName: captainProfile?.full_name || captain.user_metadata?.full_name || captain.email?.split("@")[0] || "Kapitány",
+        captainEmail: captain.email ?? null,
+        captainPhone: captainProfile?.phone ?? null,
+        captainAvatarUrl: captainProfile?.avatar_url ?? null,
       })
     : false
 

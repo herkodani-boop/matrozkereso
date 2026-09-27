@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
 
   const { data: invitation, error: invitationError } = await adminClient
     .from("boat_team_invitations")
-    .select("invitee_email, boat_id")
+    .select("invitee_email, boat_id, inviter_id")
     .eq("token", rawToken)
     .maybeSingle()
 
@@ -97,19 +97,32 @@ export async function POST(request: NextRequest) {
 
   let emailSent: boolean | null = null
   if (!existingMembership) {
-    const [{ data: boat, error: boatError }, { data: profile, error: profileError }] = await Promise.all([
+    const [
+      { data: boat, error: boatError },
+      { data: profile, error: profileError },
+      { data: captainProfile, error: captainProfileError },
+      { data: captainAccount, error: captainAccountError },
+    ] = await Promise.all([
       adminClient.from("boats").select("name").eq("id", invitation.boat_id).maybeSingle(),
       adminClient.from("users").select("full_name").eq("id", user.id).maybeSingle(),
+      adminClient.from("users").select("full_name, phone, avatar_url").eq("id", invitation.inviter_id).maybeSingle(),
+      adminClient.auth.admin.getUserById(invitation.inviter_id),
     ])
 
     if (boatError) console.error("Hajónév lekérdezési hiba az értesítő emailhez:", boatError)
     if (profileError) console.error("Csapattag profil lekérdezési hiba az értesítő emailhez:", profileError)
+    if (captainProfileError) console.error("Kapitányi profil lekérdezési hiba az értesítő emailhez:", captainProfileError)
+    if (captainAccountError) console.error("Kapitányi fiók lekérdezési hiba az értesítő emailhez:", captainAccountError)
 
     emailSent = boat?.name
       ? await sendTeamMembershipEmail({
           email: signedInEmail,
           memberName: profile?.full_name || user.user_metadata?.full_name || signedInEmail.split("@")[0],
           boatName: boat.name,
+          captainName: captainProfile?.full_name || captainAccount.user?.user_metadata?.full_name || captainAccount.user?.email?.split("@")[0] || "Kapitány",
+          captainEmail: captainAccount.user?.email ?? null,
+          captainPhone: captainProfile?.phone ?? null,
+          captainAvatarUrl: captainProfile?.avatar_url ?? null,
         })
       : false
   }
