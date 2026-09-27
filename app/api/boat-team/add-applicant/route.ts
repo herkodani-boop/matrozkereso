@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
   const { data: applicantProfile, error: profileError } = await adminClient
     .from("users")
-    .select("full_name, email, avatar_url")
+    .select("full_name, email, avatar_url, phone")
     .eq("id", application.user_id)
     .maybeSingle()
 
@@ -167,6 +167,10 @@ export async function POST(request: NextRequest) {
     ok: true,
     alreadyMember: false,
     emailSent,
-    member: { ...member, avatar_url: applicantProfile?.avatar_url ?? null },
+    member: {
+      ...member,
+      avatar_url: applicantProfile?.avatar_url ?? null,
+      phone: applicantProfile?.phone ?? null,
+    },
   })
 }

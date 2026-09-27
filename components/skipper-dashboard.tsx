@@ -129,6 +129,7 @@ type TeamMember = {
   email: string
   role: string
   avatar: string
+  phone?: string | null
   status: "active" | "invited"
 }
 
@@ -499,7 +500,7 @@ export function SkipperDashboard() {
       if (userIds.length > 0) {
         const { data: profilesData } = await supabase
           .from("users")
-          .select("id, full_name, avatar_url")
+          .select("id, full_name, avatar_url, phone")
           .in("id", userIds)
 
         ;(profilesData ?? []).forEach((profile: any) => {
@@ -520,6 +521,7 @@ export function SkipperDashboard() {
           email: member.email || "",
           role: resolvedRole,
           avatar: profile?.avatar_url || "/placeholder.svg",
+          phone: profile?.phone || null,
           status: resolvedStatus,
         }
       })
@@ -1874,6 +1876,7 @@ export function SkipperDashboard() {
           display_name: string | null
           role: string
           status: string
+          phone?: string | null
           avatar_url?: string | null
         }
       }
@@ -1889,6 +1892,7 @@ export function SkipperDashboard() {
         email: payload.member.email || applicant.email,
         role: payload.member.role || "Csapattag",
         avatar: payload.member.avatar_url || applicant.avatar || "/placeholder.svg",
+        phone: payload.member.phone ?? null,
         status: "active",
       }
 
@@ -2106,6 +2110,16 @@ export function SkipperDashboard() {
                         <p className="mt-0.5 break-all text-xs text-muted-foreground" title={member.email}>
                           {member.email}
                         </p>
+                        {member.status === "active" && member.phone ? (
+                          <a
+                            href={`tel:${member.phone.replace(/\s/g, "")}`}
+                            className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                            aria-label={`${member.name} telefonszáma: ${member.phone}`}
+                          >
+                            <Phone className="h-3 w-3" aria-hidden="true" />
+                            <span>{member.phone}</span>
+                          </a>
+                        ) : null}
                       </div>
                     </div>
 
