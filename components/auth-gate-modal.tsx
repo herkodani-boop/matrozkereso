@@ -1030,7 +1030,7 @@ export function AuthGateModal({
                     ? "Regisztráció"
                     : mode === "skipper"
                       ? "Profil mentése és Hajó regisztrációja"
-                      : "Profil mentése és Jelentkezés"}
+                      : "Profil létrehozása"}
               </Button>
 
               {formError ? (
