@@ -7,22 +7,23 @@ import { ArrowLeft, Save, RotateCcw, Trash2, UserRound, Camera, KeyRound } from 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RequireAuth } from "@/components/require-auth"
 import { supabase } from "@/lib/supabase"
-
-type UserRole = "mancsaft" | "sailor" | "kapitany" | "skipper" | string
 
 type ProfileRow = {
   full_name: string
   phone: string | null
   birthdate: string | null
-  role: UserRole
+  role: string
+  level: string | null
   avatar_url: string | null
 }
 
-function roleLabel(role?: string | null) {
-  if (role === "kapitany" || role === "skipper") return "Kapitány"
-  return "Mancsaft"
+const experienceLevelLabels: Record<string, string> = {
+  kezdo: "Kezdő",
+  halado: "Haladó",
+  profi: "Profi / Versenyző",
 }
 
 function toDateInputValue(value?: string | null) {
@@ -44,7 +45,8 @@ export default function ProfilPage() {
   const [fullName, setFullName] = useState("")
   const [phone, setPhone] = useState("")
   const [birthdate, setBirthdate] = useState("")
-  const [role, setRole] = useState<UserRole>("mancsaft")
+  const [role, setRole] = useState("mancsaft")
+  const [level, setLevel] = useState("kezdo")
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
 
   const [initial, setInitial] = useState<ProfileRow | null>(null)
@@ -90,7 +92,7 @@ export default function ProfilPage() {
 
       const { data, error: profileError } = await supabase
         .from("users")
-        .select("full_name, phone, birthdate, role, avatar_url")
+        .select("full_name, phone, birthdate, role, level, avatar_url")
         .eq("id", user.id)
         .maybeSingle()
 
@@ -107,6 +109,7 @@ export default function ProfilPage() {
         phone: data?.phone ?? "",
         birthdate: data?.birthdate ?? "",
         role: data?.role ?? "mancsaft",
+        level: data?.level ?? user.user_metadata?.level ?? "kezdo",
         avatar_url: data?.avatar_url ?? null,
       }
 
@@ -116,6 +119,7 @@ export default function ProfilPage() {
       setPhone(row.phone ?? "")
       setBirthdate(toDateInputValue(row.birthdate))
       setRole(row.role)
+      setLevel(row.level ?? "kezdo")
       setAvatarUrl(row.avatar_url)
       setInitial(row)
       setLoading(false)
@@ -135,17 +139,18 @@ export default function ProfilPage() {
       fullName !== (initial.full_name ?? "") ||
       phone !== (initial.phone ?? "") ||
       birthdate !== initialDate ||
+      level !== (initial.level ?? "kezdo") ||
       (avatarUrl ?? "") !== (initial.avatar_url ?? "") ||
       selectedFile !== null
     )
-  }, [initial, fullName, phone, birthdate, avatarUrl, selectedFile])
+  }, [initial, fullName, phone, birthdate, level, avatarUrl, selectedFile])
 
   function handleDiscard() {
     if (!initial) return
     setFullName(initial.full_name ?? "")
     setPhone(initial.phone ?? "")
     setBirthdate(toDateInputValue(initial.birthdate))
-    setRole(initial.role)
+    setLevel(initial.level ?? "kezdo")
     setAvatarUrl(initial.avatar_url)
     setSelectedFile(null)
     if (previewUrl) {
@@ -202,6 +207,7 @@ export default function ProfilPage() {
           full_name: fullName.trim(),
           phone: phone.trim() || null,
           birthdate: birthdate || null,
+          level,
           avatar_url: nextAvatarUrl,
         })
         .eq("id", userId)
@@ -216,6 +222,7 @@ export default function ProfilPage() {
         phone: phone.trim() || null,
         birthdate: birthdate || null,
         role,
+        level,
         avatar_url: nextAvatarUrl,
       }
 
@@ -401,10 +408,23 @@ export default function ProfilPage() {
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="profile-role">Szerep</Label>
-              <Input id="profile-role" value={roleLabel(role)} disabled className="h-11" />
-            </div>
+            {role !== "kapitany" && role !== "skipper" ? (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="profile-level">Tapasztalati szint</Label>
+                <Select value={level} onValueChange={(value) => setLevel(value as string)}>
+                  <SelectTrigger id="profile-level" className="h-11 w-full">
+                    <SelectValue>{(value: string) => experienceLevelLabels[value] ?? "Válassz szintet"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(experienceLevelLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">

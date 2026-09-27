@@ -29,12 +29,6 @@ const levelOptions: Record<string, string> = {
   profi: "Profi - Versenyző",
 }
 
-const postOptions: Record<string, string> = {
-  mancsaft: "Mancsaft",
-  kormanyos: "Kormányos",
-  mindegy: "Mindegy / Súlynak jövök",
-}
-
 const listingPostOptions: { value: string; label: string }[] = [
   { value: "kormanyos", label: "Kormányos" },
   { value: "taktikus", label: "Taktikus" },
@@ -124,7 +118,6 @@ export function AuthGateModal({
   const [phone, setPhone] = useState("")
   const [birthdate, setBirthdate] = useState("")
   const [level, setLevel] = useState<string>("kezdo")
-  const [post, setPost] = useState<string>("mancsaft")
   const [boatNameValue, setBoatNameValue] = useState("")
   const [boatClassValue, setBoatClassValue] = useState("")
   const [boatHarbor, setBoatHarbor] = useState("")
@@ -164,7 +157,6 @@ export function AuthGateModal({
     setPhone("")
     setBirthdate("")
     setLevel("kezdo")
-    setPost("mancsaft")
     setSubmitted(false)
     setSelectedFile(null)
     setPreviewUrl("")
@@ -335,7 +327,6 @@ export function AuthGateModal({
               birthdate: birthdate || null,
               role: "skipper",
               level: level || null,
-              post: post || null,
             },
           },
         })
@@ -449,7 +440,6 @@ export function AuthGateModal({
             birthdate: birthdate || null,
             role: "mancsaft",
             level: level || null,
-            post: post || null,
           },
         },
       })
@@ -505,6 +495,7 @@ export function AuthGateModal({
           phone: phone || null,
           birthdate: birthdate || null,
           role: "mancsaft",
+          level: level || null,
           avatar_url: avatarUrl,
         },
         { onConflict: "id" }
@@ -1023,21 +1014,6 @@ export function AuthGateModal({
                       </Select>
                     </div>
 
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="reg-post">Preferált posztok</Label>
-                      <Select value={post} onValueChange={(v) => setPost(v as string)}>
-                        <SelectTrigger id="reg-post" className="h-11 w-full">
-                          <SelectValue>{(v: string) => postOptions[v] ?? "Válassz"}</SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(postOptions).map(([value, label]) => (
-                            <SelectItem key={value} value={value}>
-                              {label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                   </>
                 )}
               </div>

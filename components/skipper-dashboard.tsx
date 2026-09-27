@@ -103,7 +103,7 @@ type EventItem = {
     userId: string
     name: string
     avatar: string
-    status: "confirmed" | "pending" | "declined"
+    status: "confirmed" | "pending" | "declined" | "unset"
     source?: "team" | "listing"
   }[]
 }
@@ -150,7 +150,7 @@ function calculateAge(birthdate: string) {
   return age
 }
 
-function experienceLevelLabel(level?: string) {
+function experienceLevelLabel(level?: string): Applicant["level"] {
   switch (level) {
     case "kezdo":
       return "Kezdő"
@@ -376,6 +376,11 @@ export function SkipperDashboard() {
   const [boatLoading, setBoatLoading] = useState(true)
   const [boatLoadError, setBoatLoadError] = useState<string | null>(null)
   const [confirmRemoveMemberId, setConfirmRemoveMemberId] = useState<string | null>(null)
+  const [eventApplicantToRemove, setEventApplicantToRemove] = useState<{
+    eventId: string
+    userId: string
+    name: string
+  } | null>(null)
   const [confirmRevokeApplicantId, setConfirmRevokeApplicantId] = useState<string | null>(null)
 
   const [loadingListings, setLoadingListings] = useState(false)
@@ -618,10 +623,12 @@ export function SkipperDashboard() {
         })
       }
 
-      const attendeesByEventId = new Map<string, { userId: string; name: string; avatar: string; status: "confirmed" | "pending" | "declined" }[]>()
+      const attendeesByEventId = new Map<string, { userId: string; name: string; avatar: string; status: "confirmed" | "pending" | "declined" | "unset" }[]>()
       ;(attendeeRows ?? []).forEach((row: any) => {
         const profile = row.user_id ? profilesByUserId.get(row.user_id) : null
-        const status = row.status === "pending" || row.status === "declined" || row.status === "confirmed" ? row.status : "confirmed"
+        const status = row.status === "pending" || row.status === "declined" || row.status === "confirmed" || row.status === "unset"
+          ? row.status
+          : "unset"
         const attendee = {
           userId: row.user_id ? String(row.user_id) : "",
           name: profile?.full_name || "Résztvevő",
@@ -827,6 +834,7 @@ export function SkipperDashboard() {
           phone: userData?.phone ?? "Nincs megadva",
           email: userData?.email ?? "Nincs megadva",
           avatar: resolveAvatarUrl(userData),
+            level: experienceLevelLabel(userData?.level),
           contactShared: Boolean(application.captain_contact_shared_at),
           applicationMessage:
             typeof application.message === "string" && application.message.trim().length > 0
@@ -846,7 +854,6 @@ export function SkipperDashboard() {
             ...listing,
             applicants: rawApplicants.map((applicant) => ({
               ...applicant,
-              level: "Kezdő" as const,
               position: defaultPosition,
             })),
           }
@@ -1294,16 +1301,16 @@ export function SkipperDashboard() {
   async function setEventParticipantStatus(
     eventId: string,
     userId: string,
-    nextStatus: "confirmed" | "pending" | "declined" | null,
-  ) {
-    if (!userId) return
+    nextStatus: "confirmed" | "pending" | "declined" | "unset" | null,
+  ): Promise<boolean> {
+    if (!userId) return false
 
     const event = events.find((item) => item.id === eventId)
     const currentParticipant = event?.participants.find((participant) => participant.userId === userId)
     const mutationKey = `${eventId}:${userId}`
 
-    if (!event || participantMutationRef.current.has(mutationKey)) return
-    if (currentParticipant?.status === nextStatus || (!currentParticipant && nextStatus === null)) return
+    if (!event || participantMutationRef.current.has(mutationKey)) return false
+    if ((nextStatus === null && !currentParticipant) || currentParticipant?.status === nextStatus) return false
 
     participantMutationRef.current.add(mutationKey)
     setParticipantSaving((prev) => ({ ...prev, [mutationKey]: true }))
@@ -1320,14 +1327,14 @@ export function SkipperDashboard() {
             .select("id")
             .maybeSingle()
         : currentParticipant
-          ? await supabase
-              .from("boat_event_attendees")
-              .update({ status: nextStatus })
-              .eq("event_id", eventId)
-              .eq("user_id", userId)
-              .select("id")
-              .maybeSingle()
-          : await supabase.from("boat_event_attendees").upsert(
+        ? await supabase
+            .from("boat_event_attendees")
+            .update({ status: nextStatus })
+            .eq("event_id", eventId)
+            .eq("user_id", userId)
+            .select("id")
+            .maybeSingle()
+        : await supabase.from("boat_event_attendees").upsert(
               {
                 event_id: eventId,
                 user_id: userId,
@@ -1341,9 +1348,11 @@ export function SkipperDashboard() {
       if (result.error || !result.data) {
         console.error("Esemény résztvevő státusz mentési hiba:", result.error)
         setActionError(result.error
-          ? "A résztvevő státuszának mentése nem sikerült. Próbáld újra."
+          ? nextStatus === null
+            ? "A jelentkező eltávolítása nem sikerült. Próbáld újra."
+            : "A résztvevő státuszának mentése nem sikerült. Próbáld újra."
           : "A résztvevő állapota időközben megváltozott. Töltsd újra az eseményt.")
-        return
+        return false
       }
 
       const matchingMember = teamMembers.find((member) => member.userId === userId)
@@ -1360,22 +1369,26 @@ export function SkipperDashboard() {
                     participant.userId === userId ? { ...participant, status: nextStatus } : participant,
                   )
                 : [
-                    ...item.participants,
-                    {
-                      userId,
-                      name: matchingMember?.name || "Résztvevő",
-                      avatar: matchingMember?.avatar || "/placeholder.svg",
-                      status: nextStatus,
-                      source: matchingMember ? "team" : "listing",
-                    },
-                  ],
+                  ...item.participants,
+                  {
+                    userId,
+                    name: matchingMember?.name || "Résztvevő",
+                    avatar: matchingMember?.avatar || "/placeholder.svg",
+                    status: nextStatus,
+                    source: matchingMember ? "team" : "listing",
+                  },
+                ],
           }
         }),
       )
-      setActionNotice(nextStatus === null ? "A résztvevő eltávolítva az eseményről." : "A részvételi státusz frissítve.")
+      setActionNotice(nextStatus === null ? "A jelentkező eltávolítva az eseményről." : "A részvételi státusz frissítve.")
+      return true
     } catch (error) {
       console.error("Esemény résztvevő státusz mentési hiba:", error)
-      setActionError("A résztvevő státuszának mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+      setActionError(nextStatus === null
+        ? "A jelentkező eltávolítása nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra."
+        : "A résztvevő státuszának mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+      return false
     } finally {
       participantMutationRef.current.delete(mutationKey)
       setParticipantSaving((prev) => ({ ...prev, [mutationKey]: false }))
@@ -1940,7 +1953,7 @@ export function SkipperDashboard() {
 
                 {events.map((event) => {
               const isExpanded = expandedEventId === event.id
-              const visibleParticipants = event.participants.filter((participant) => participant.status !== "declined")
+              const visibleParticipants = event.participants.filter((participant) => participant.status === "confirmed")
 
               return (
                 <div key={event.id} className="border-b border-border last:border-b-0">
@@ -1978,7 +1991,7 @@ export function SkipperDashboard() {
                     <div className="text-sm text-muted-foreground md:text-sm">{event.location}</div>
                     <div className="flex min-h-8 items-center gap-2">
                       {visibleParticipants.length === 0 ? (
-                        <span className="text-xs text-muted-foreground/70">Nincs még résztvevő</span>
+                        <span className="text-xs text-muted-foreground/70">Még nincs visszaigazolt résztvevő</span>
                       ) : (
                         <>
                           <div className="flex -space-x-2">
@@ -2083,15 +2096,66 @@ export function SkipperDashboard() {
                               return <p className="text-sm text-muted-foreground">Még nincs csapattag a hajón.</p>
                             }
 
+                            const statusLabels = {
+                              confirmed: "Részt vesz",
+                              pending: "Válaszra vár",
+                              declined: "Nem vesz részt",
+                              unset: "Nincs beállítva",
+                            }
+                            const statusStyles = {
+                              confirmed: {
+                                dot: "bg-emerald-500",
+                                row: "border-l-emerald-500",
+                                trigger: "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
+                                summary: "border-emerald-200 bg-emerald-50 text-emerald-900",
+                              },
+                              pending: {
+                                dot: "bg-amber-500",
+                                row: "border-l-amber-500",
+                                trigger: "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100",
+                                summary: "border-amber-200 bg-amber-50 text-amber-900",
+                              },
+                              declined: {
+                                dot: "bg-rose-500",
+                                row: "border-l-rose-500",
+                                trigger: "border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100",
+                                summary: "border-rose-200 bg-rose-50 text-rose-900",
+                              },
+                              unset: {
+                                dot: "bg-slate-400",
+                                row: "border-l-slate-300",
+                                trigger: "border-border bg-secondary/50 text-muted-foreground hover:bg-secondary",
+                                summary: "border-border bg-secondary/40 text-muted-foreground",
+                              },
+                            }
+                            const statusCounts = rosterMembers.reduce(
+                              (counts, person) => {
+                                const status = person.participant?.status ?? "unset"
+                                counts[status] += 1
+                                return counts
+                              },
+                              { confirmed: 0, pending: 0, declined: 0, unset: 0 },
+                            )
+
                             return (
+                              <>
+                              <div className="mb-3 flex flex-wrap gap-2" aria-label="Részvételi státuszok összesítése">
+                                {(["confirmed", "pending", "declined", "unset"] as const).map((status) => (
+                                  <span
+                                    key={status}
+                                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs ${statusStyles[status].summary}`}
+                                  >
+                                    <span className={`h-2 w-2 rounded-full ${statusStyles[status].dot}`} aria-hidden="true" />
+                                    <span>{statusLabels[status]}</span>
+                                    <strong className="font-semibold">{statusCounts[status]}</strong>
+                                  </span>
+                                ))}
+                              </div>
                               <div className="divide-y divide-border border-y border-border">
                                 {rosterMembers.map((person) => {
-                                  const statusLabels = {
-                                    confirmed: "Részt vesz",
-                                    pending: "Válaszra vár",
-                                    declined: "Nem vesz részt",
-                                  }
                                   const status = person.participant?.status ?? null
+                                  const statusKey = status ?? "unset"
+                                  const statusStyle = statusStyles[statusKey]
                                   const mutationKey = `${event.id}:${person.id}`
                                   const isSavingParticipant = participantSaving[mutationKey] ?? false
                                   const isListingOrigin = person.source === "listing" || person.participant?.source === "listing"
@@ -2099,7 +2163,7 @@ export function SkipperDashboard() {
                                   return (
                                     <div
                                       key={`${event.id}-${person.id}`}
-                                      className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                                      className={`flex flex-col gap-3 border-l-2 py-3 pl-3 sm:flex-row sm:items-center sm:justify-between ${statusStyle.row}`}
                                     >
                                       <div className="flex min-w-0 items-center gap-3">
                                         <span className="relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full border border-border bg-secondary">
@@ -2127,33 +2191,52 @@ export function SkipperDashboard() {
                                           disabled={isSavingParticipant || !person.id}
                                           onValueChange={(value) => {
                                             const nextStatus = value === "unset"
-                                              ? null
+                                              ? "unset"
                                               : value as "confirmed" | "pending" | "declined"
                                             void setEventParticipantStatus(event.id, person.id, nextStatus)
                                           }}
                                         >
                                           <SelectTrigger
-                                            className="h-9 w-44 bg-background"
+                                            className={`h-9 w-44 ${statusStyle.trigger}`}
                                             aria-label={`Részvételi státusz: ${person.name}`}
                                           >
                                             <SelectValue>
                                               {(value: string) => value === "unset"
-                                                ? "Nincs beállítva"
+                                                ? isListingOrigin ? "Válassz státuszt" : "Nincs beállítva"
                                                 : statusLabels[value as keyof typeof statusLabels] ?? "Válassz státuszt"}
                                             </SelectValue>
                                           </SelectTrigger>
                                           <SelectContent align="end">
-                                            <SelectItem value="unset">Nincs beállítva</SelectItem>
+                                            {!isListingOrigin ? <SelectItem value="unset">Nincs beállítva</SelectItem> : null}
                                             <SelectItem value="confirmed">Részt vesz</SelectItem>
                                             <SelectItem value="pending">Válaszra vár</SelectItem>
                                             <SelectItem value="declined">Nem vesz részt</SelectItem>
                                           </SelectContent>
                                         </Select>
+                                        {isListingOrigin ? (
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="icon-sm"
+                                            title="Jelentkező eltávolítása az eseményről"
+                                            aria-label={`Jelentkező eltávolítása az eseményről: ${person.name}`}
+                                            disabled={isSavingParticipant}
+                                            onClick={() => setEventApplicantToRemove({
+                                              eventId: event.id,
+                                              userId: person.id,
+                                              name: person.name,
+                                            })}
+                                            className="shrink-0 text-muted-foreground hover:border-destructive hover:text-destructive"
+                                          >
+                                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                          </Button>
+                                        ) : null}
                                       </div>
                                     </div>
                                   )
                                 })}
                               </div>
+                              </>
                             )
                           })()}
                         </div>
@@ -2687,6 +2770,61 @@ export function SkipperDashboard() {
                 onClick={() => confirmEventDeleteId && void deleteEvent(confirmEventDeleteId)}
               >
                 Igen, törlöm
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!eventApplicantToRemove}
+        onOpenChange={(open) => {
+          const mutationKey = eventApplicantToRemove
+            ? `${eventApplicantToRemove.eventId}:${eventApplicantToRemove.userId}`
+            : ""
+          if (!open && !participantSaving[mutationKey]) setEventApplicantToRemove(null)
+        }}
+      >
+        <DialogContent className="max-w-sm gap-0 rounded-2xl p-0">
+          <div className="flex flex-col gap-4 p-6">
+            <DialogHeader className="gap-2">
+              <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
+                Jelentkező eltávolítása az eseményről
+              </DialogTitle>
+              <DialogDescription className="text-pretty leading-relaxed">
+                {eventApplicantToRemove
+                  ? `${eventApplicantToRemove.name} lekerül erről az eseményről. A hirdetésre beadott jelentkezése ettől még megmarad.`
+                  : "A jelentkező lekerül az eseményről, de a hirdetésre beadott jelentkezése megmarad."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                disabled={Boolean(eventApplicantToRemove && participantSaving[`${eventApplicantToRemove.eventId}:${eventApplicantToRemove.userId}`])}
+                onClick={() => setEventApplicantToRemove(null)}
+              >
+                Mégse
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="flex-1"
+                disabled={Boolean(eventApplicantToRemove && participantSaving[`${eventApplicantToRemove.eventId}:${eventApplicantToRemove.userId}`])}
+                onClick={async () => {
+                  if (!eventApplicantToRemove) return
+                  const removed = await setEventParticipantStatus(
+                    eventApplicantToRemove.eventId,
+                    eventApplicantToRemove.userId,
+                    null,
+                  )
+                  if (removed) setEventApplicantToRemove(null)
+                }}
+              >
+                {eventApplicantToRemove && participantSaving[`${eventApplicantToRemove.eventId}:${eventApplicantToRemove.userId}`]
+                  ? "Eltávolítás..."
+                  : "Eltávolítás"}
               </Button>
             </div>
           </div>

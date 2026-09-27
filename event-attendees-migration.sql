@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS boat_event_attendees (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id uuid NOT NULL REFERENCES boat_events(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  status text NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'pending', 'declined')),
+  status text NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'pending', 'declined', 'unset')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (event_id, user_id),
