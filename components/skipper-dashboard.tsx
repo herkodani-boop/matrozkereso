@@ -1502,9 +1502,13 @@ export function SkipperDashboard() {
     setActionError(null)
     setActionNotice(null)
     const previousStatus = statuses[id] ?? "pending"
-    const expectedStatus = status === "pending" ? "accepted" : "pending"
+    const isRevokingAcceptedContact = status === "pending" && previousStatus === "accepted"
+    const isReopeningRejectedApplication = status === "pending" && previousStatus === "rejected"
+    const expectedStatus = status === "pending" ? previousStatus : "pending"
 
-    if (previousStatus !== expectedStatus) {
+    if (status === "pending"
+      ? !isRevokingAcceptedContact && !isReopeningRejectedApplication
+      : previousStatus !== expectedStatus) {
       applicantMutationRef.current.delete(id)
       setActionError("A jelentkezés állapota időközben megváltozott. Frissítsd az oldalt.")
       return
@@ -1514,30 +1518,41 @@ export function SkipperDashboard() {
     setStatusSaving((prev) => ({ ...prev, [id]: true }))
 
     try {
-      const updateValues = status === "pending"
-        ? {
-            status,
-            captain_contact_shared_at: null,
-            captain_contact_name: null,
-            captain_contact_email: null,
-            captain_contact_phone: null,
-          }
-        : { status }
-
-      const { data, error } = await supabase
-        .from("applications")
-        .update(updateValues)
-        .eq("id", id)
-        .eq("status", expectedStatus)
-        .select("id")
-        .maybeSingle()
+      const matchingEvent = isRevokingAcceptedContact
+        ? events.find((event) => isMatchingListingToEvent(selected, event))
+        : undefined
+      const result = isRevokingAcceptedContact
+        ? await supabase.rpc("revoke_application_contact", {
+            p_application_id: id,
+            p_event_id: matchingEvent?.id ?? null,
+          })
+        : await supabase
+            .from("applications")
+            .update(status === "pending"
+              ? {
+                  status,
+                  captain_contact_shared_at: null,
+                  captain_contact_name: null,
+                  captain_contact_email: null,
+                  captain_contact_phone: null,
+                }
+              : { status })
+            .eq("id", id)
+            .eq("status", expectedStatus)
+            .select("id")
+            .maybeSingle()
+      const { data, error } = result
 
       if (error || !data) {
         if (error) console.error("Jelentkezés státusz mentési hiba:", error)
         setStatuses((prev) => ({ ...prev, [id]: previousStatus }))
-        setActionError(error
-          ? "A döntés mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra."
-          : "A jelentkezés állapota időközben megváltozott. Frissítsd az oldalt.")
+        const revokeRpcMissing = isRevokingAcceptedContact && error &&
+          (error.code === "PGRST202" || error.code === "42883" || error.code === "42501")
+        setActionError(revokeRpcMissing
+          ? "A kapcsolat-visszavonás adatbázis-migrációja nincs telepítve vagy engedélyezve. Futtasd le a revoke-application-contact-migration.sql fájlt a Supabase SQL Editorban."
+          : error
+            ? "A döntés mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra."
+            : "A jelentkezés állapota időközben megváltozott. Frissítsd az oldalt.")
         return
       }
 
@@ -1553,12 +1568,26 @@ export function SkipperDashboard() {
             : listing,
           ),
         )
+        if (matchingEvent) {
+          const applicant = selected.applicants.find((item) => item.id === id)
+          setEvents((prev) =>
+            prev.map((event) => event.id === matchingEvent.id
+              ? {
+                  ...event,
+                  participants: event.participants.filter((participant) => participant.userId !== applicant?.userId),
+                }
+              : event,
+            ),
+          )
+        }
       }
 
       setActionNotice(status === "accepted"
         ? "A kapcsolatfelvétel kezdeményezhető. Ez még nem jelenti azt, hogy a jelentkező biztosan részt vesz az eseményen."
         : status === "pending"
-          ? "A kapcsolatfelvétel visszavonva. A jelentkezés visszakerült elbírálás alá."
+          ? isReopeningRejectedApplication
+            ? "Az elutasítást visszavontad. A jelentkezés újra elbírálás alatt van."
+            : "A kapcsolatfelvétel visszavonva. A jelentkezés visszakerült elbírálás alá."
           : "Jelentkezés elutasítva.")
     } catch (error) {
       console.error("Jelentkezés státusz mentési hiba:", error)
@@ -2634,6 +2663,20 @@ export function SkipperDashboard() {
                             title="Kapcsolatfelvétel visszavonása"
                           >
                             <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                          </Button>
+                        ) : null}
+                        {status === "rejected" && !selected.isHistorical ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isSaving || listingMutatingId === selected.id}
+                            onClick={() => void decide(applicant.id, "pending")}
+                            aria-label={`Elutasítás visszavonása: ${applicant.name}`}
+                            title="Jelentkezés újra elbírálása"
+                          >
+                            <RotateCcw className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                            Újra elbírálom
                           </Button>
                         ) : null}
                       </div>
