@@ -1884,7 +1884,7 @@ export function SkipperDashboard() {
                     className="h-10"
                   >
                     <PencilLine className="h-4 w-4" aria-hidden="true" />
-                    Hajó adatai szerkesztése
+                    Hajó adatainak szerkesztése
                   </Button>
                 </div>
               </div>
@@ -2530,7 +2530,7 @@ export function SkipperDashboard() {
                   <Anchor className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
                   <div>
                     <p className="font-medium text-foreground">Még nincs hirdetésed</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Add fel első szabad helyed, hogy elérhetlő legyen a vitorlázók számára.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Add fel első szabad helyed, hogy elérhető legyen a vitorlázók számára.</p>
                   </div>
                   <Button
                     type="button"

@@ -24,6 +24,7 @@ type ListingPost = "kormanyos" | "taktikus" | "main-trim" | "jib-trim" | "mast" 
 
 type ListingRow = {
   id: string
+  isOwnListing: boolean
   boatName: string
   image: string
   commitment: Commitment
@@ -180,6 +181,11 @@ export function BrowseBoats() {
   const [openDetailsIds, setOpenDetailsIds] = useState<string[]>([])
 
   function handleApply(listing: ListingRow, applicationMessage?: string) {
+    if (listing.isOwnListing) {
+      setApplyError("A saját hirdetésedre nem jelentkezhetsz.")
+      return
+    }
+
     if (!user) {
       setSelectedBoat(listing.boatName)
       setAuthOpen(true)
@@ -398,6 +404,7 @@ export function BrowseBoats() {
 
         return {
           id: ad.id,
+          isOwnListing: Boolean(user?.id && ad.user_id === user.id),
           boatName: ad.boat?.name ?? "Névtelen hajó",
           image: ad.boat?.image_url ?? "/placeholder.svg",
           commitment: (ad.commitment === "szezon" ? "szezon" : "egy-verseny") as Commitment,
@@ -683,6 +690,9 @@ function BoatCard({
               {listing.applicationCount} jelentkezés
             </Badge>
           ) : null}
+          {listing.isOwnListing ? (
+            <Badge className="border-0 bg-secondary text-secondary-foreground">Saját hirdetés</Badge>
+          ) : null}
           {listing.applied ? (
             <Badge className="bg-accent text-accent-foreground">Már jelentkeztem</Badge>
           ) : null}
@@ -727,7 +737,7 @@ function BoatCard({
           </div>
         ) : null}
 
-        {!listing.applied ? (
+        {!listing.applied && !listing.isOwnListing ? (
           <div className="mt-4">
             <button
               type="button"
@@ -773,6 +783,10 @@ function BoatCard({
             className="mt-6 h-11 w-full text-base text-destructive! hover:bg-destructive/10! hover:text-destructive!"
           >
             {cancelingId === listing.id ? "Visszavonás..." : "Jelentkezés visszavonása"}
+          </Button>
+        ) : listing.isOwnListing ? (
+          <Button size="lg" disabled className="mt-6 h-11 w-full">
+            Saját hirdetés
           </Button>
         ) : (
           <Button
