@@ -1611,12 +1611,36 @@ export function SkipperDashboard() {
       const matchingEvent = isRevokingAcceptedContact
         ? events.find((event) => isMatchingListingToEvent(selected, event))
         : undefined
-      const result = isRevokingAcceptedContact
-        ? await supabase.rpc("revoke_application_contact", {
-            p_application_id: id,
-            p_event_id: matchingEvent?.id ?? null,
-          })
-        : await supabase
+      let mutationError: string | null = null
+      let mutationSucceeded = false
+
+      if (status === "accepted") {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          throw new Error("A jelentkezés elfogadásához be kell jelentkezned.")
+        }
+
+        const response = await fetch("/api/applications/accept", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ applicationId: id }),
+        })
+        const payload = (await response.json()) as { ok?: boolean; error?: string }
+        if (!response.ok || !payload.ok) {
+          mutationError = payload.error || "A jelentkezést nem sikerült elfogadni."
+        } else {
+          mutationSucceeded = true
+        }
+      } else {
+        const result = isRevokingAcceptedContact
+          ? await supabase.rpc("revoke_application_contact", {
+              p_application_id: id,
+              p_event_id: matchingEvent?.id ?? null,
+            })
+          : await supabase
             .from("applications")
             .update(status === "pending"
               ? {
@@ -1631,18 +1655,17 @@ export function SkipperDashboard() {
             .eq("status", expectedStatus)
             .select("id")
             .maybeSingle()
-      const { data, error } = result
+        if (result.error) {
+          mutationError = result.error.message
+        } else {
+          mutationSucceeded = Boolean(result.data)
+        }
+      }
 
-      if (error || !data) {
-        if (error) console.error("Jelentkezés státusz mentési hiba:", error)
+      if (mutationError || !mutationSucceeded) {
+        if (mutationError) console.error("Jelentkezés státusz mentési hiba:", mutationError)
         setStatuses((prev) => ({ ...prev, [id]: previousStatus }))
-        const revokeRpcMissing = isRevokingAcceptedContact && error &&
-          (error.code === "PGRST202" || error.code === "42883" || error.code === "42501")
-        setActionError(revokeRpcMissing
-          ? "A kapcsolat-visszavonás adatbázis-migrációja nincs telepítve vagy engedélyezve. Futtasd le a revoke-application-contact-migration.sql fájlt a Supabase SQL Editorban."
-          : error
-            ? "A döntés mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra."
-            : "A jelentkezés állapota időközben megváltozott. Frissítsd az oldalt.")
+        setActionError(mutationError ?? "A jelentkezés állapota időközben megváltozott. Frissítsd az oldalt.")
         return
       }
 
