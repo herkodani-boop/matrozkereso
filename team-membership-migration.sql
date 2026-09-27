@@ -122,7 +122,7 @@ BEGIN
   SET user_id = p_user_id,
       email = invitation_record.invitee_email,
       status = 'active',
-      display_name = COALESCE(display_name, joined_user_name),
+      display_name = joined_user_name,
       accepted_at = now(),
       invited_by = COALESCE(invited_by, invitation_record.inviter_id),
       role = 'Csapattag'
@@ -135,7 +135,7 @@ BEGIN
     UPDATE boat_team_members
     SET user_id = p_user_id,
         status = 'active',
-        display_name = COALESCE(display_name, joined_user_name),
+      display_name = joined_user_name,
         accepted_at = now(),
         invited_by = COALESCE(invited_by, invitation_record.inviter_id),
         role = 'Csapattag'

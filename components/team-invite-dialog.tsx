@@ -73,7 +73,6 @@ export function TeamInviteDialog({
 
         setStatus("success")
         setMessage("Sikeresen csatlakoztál a csapathoz.")
-        onAccepted?.()
       } catch (error) {
         setStatus("error")
         setMessage(error instanceof Error ? error.message : "A meghívás elfogadása nem sikerült.")
@@ -85,9 +84,12 @@ export function TeamInviteDialog({
 
   const handleClose = () => {
     if (status === "success") {
-      onAccepted?.()
-      onOpenChange(false)
-      router.push("/kapitany-dashboard")
+      if (onAccepted) {
+        onAccepted()
+      } else {
+        onOpenChange(false)
+        router.push("/kapitany-dashboard")
+      }
       return
     }
 
