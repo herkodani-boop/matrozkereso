@@ -1514,9 +1514,19 @@ export function SkipperDashboard() {
     setStatusSaving((prev) => ({ ...prev, [id]: true }))
 
     try {
+      const updateValues = status === "pending"
+        ? {
+            status,
+            captain_contact_shared_at: null,
+            captain_contact_name: null,
+            captain_contact_email: null,
+            captain_contact_phone: null,
+          }
+        : { status }
+
       const { data, error } = await supabase
         .from("applications")
-        .update({ status })
+        .update(updateValues)
         .eq("id", id)
         .eq("status", expectedStatus)
         .select("id")
@@ -1529,6 +1539,20 @@ export function SkipperDashboard() {
           ? "A döntés mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra."
           : "A jelentkezés állapota időközben megváltozott. Frissítsd az oldalt.")
         return
+      }
+
+      if (status === "pending") {
+        setListings((prev) =>
+          prev.map((listing) => listing.id === selected.id
+            ? {
+                ...listing,
+                applicants: listing.applicants.map((applicant) =>
+                  applicant.id === id ? { ...applicant, contactShared: false } : applicant,
+                ),
+              }
+            : listing,
+          ),
+        )
       }
 
       setActionNotice(status === "accepted"
@@ -2522,6 +2546,10 @@ export function SkipperDashboard() {
                 const status = statuses[applicant.id] ?? "pending"
                 const isSaving = statusSaving[applicant.id] ?? false
                 const isExpanded = expandedApplicantIds[applicant.id] ?? false
+                const matchingEvent = events.find((event) => isMatchingListingToEvent(selected, event))
+                const isAlreadyInEvent = Boolean(
+                  matchingEvent?.participants.some((participant) => participant.userId === applicant.userId),
+                )
                 return (
                   <div
                     key={applicant.id}
@@ -2682,14 +2710,24 @@ export function SkipperDashboard() {
                                 ? "Elérhetőségek megosztva"
                                 : "Elérhetőségeim megosztása a jelentkezővel"}
                           </Button>
-                          {events.some((event) => isMatchingListingToEvent(selected, event)) ? (
+                          {matchingEvent ? (
                             <Button
+                              type="button"
                               size="sm"
+                              disabled={isAlreadyInEvent}
                               onClick={() => void addAcceptedApplicantToEvent(applicant.id)}
-                              className="h-auto min-h-10 w-full justify-start whitespace-normal bg-emerald-700! px-3 py-2 text-left leading-snug text-white! hover:bg-emerald-800!"
+                              className={`h-auto min-h-10 w-full justify-start whitespace-normal px-3 py-2 text-left leading-snug ${
+                                isAlreadyInEvent
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800 opacity-100"
+                                  : "bg-emerald-700! text-white! hover:bg-emerald-800!"
+                              }`}
                             >
-                              <Users className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
-                              Jelentkező hozzáadása az eseményhez
+                              {isAlreadyInEvent ? (
+                                <Check className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+                              ) : (
+                                <Users className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+                              )}
+                              {isAlreadyInEvent ? "Már hozzáadva az eseményhez" : "Jelentkező hozzáadása az eseményhez"}
                             </Button>
                           ) : null}
                         </div>
