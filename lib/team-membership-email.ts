@@ -24,6 +24,23 @@ function getSafeImageUrl(value: string | null | undefined) {
   }
 }
 
+function getAppBaseUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
+  if (!configuredUrl || /localhost|127\.0\.0\.1/i.test(configuredUrl)) {
+    return "https://www.matrozkereso.com"
+  }
+
+  try {
+    const url = new URL(configuredUrl)
+    if (url.protocol === "https:" || url.protocol === "http:") {
+      return url.toString().replace(/\/$/, "")
+    }
+    return "https://www.matrozkereso.com"
+  } catch {
+    return "https://www.matrozkereso.com"
+  }
+}
+
 export async function sendTeamMembershipEmail({
   email,
   memberName,
@@ -61,6 +78,7 @@ export async function sendTeamMembershipEmail({
   const safeCaptainPhone = captainPhone ? escapeHtml(captainPhone) : null
   const captainAvatar = getSafeImageUrl(captainAvatarUrl)
   const logoImageUrl = "https://www.matrozkereso.com/matrozkereso-logo-csomag/png/matrozkereso-logo-512.png"
+  const appBaseUrl = getAppBaseUrl()
   const captainAvatarMarkup = captainAvatar
     ? `<img src="${escapeHtml(captainAvatar)}" alt="${safeCaptainName} profilképe" width="52" height="52" style="display: block; width: 52px; height: 52px; border-radius: 50%; object-fit: cover;" />`
     : `<div style="width: 52px; height: 52px; border-radius: 50%; background: #dbeafe; color: #1d4ed8; text-align: center; line-height: 52px; font-size: 20px; font-weight: 700;">${escapeHtml(captainName.charAt(0).toUpperCase() || "K")}</div>`
@@ -95,11 +113,12 @@ export async function sendTeamMembershipEmail({
                 </tr></tbody>
               </table>
             </div>
+            <p style="margin: 22px 0 0;"><a href="${escapeHtml(appBaseUrl)}" style="display: inline-block; padding: 10px 16px; border-radius: 6px; background: #087f5b; color: #ffffff; font-weight: 700; text-decoration: none;">Matrózkereső megnyitása</a></p>
             <p style="margin: 22px 0 0;">Üdvözlettel,<br /><strong>a Matrózkereső csapata</strong></p>
           </div>
         </div>
       `,
-      text: `Sikeresen csatlakoztál a csapathoz\n\nKedves ${memberName}!\n\nMostantól a(z) ${boatName} csapatának tagja vagy.\n\nA kapitány: ${captainName}${textContact ? `\nElérhetőségek: ${textContact}` : ""}\n\nÜdvözlettel,\na Matrózkereső csapata`,
+      text: `Sikeresen csatlakoztál a csapathoz\n\nKedves ${memberName}!\n\nMostantól a(z) ${boatName} csapatának tagja vagy.\n\nA kapitány: ${captainName}${textContact ? `\nElérhetőségek: ${textContact}` : ""}\n\nMatrózkereső megnyitása: ${appBaseUrl}\n\nÜdvözlettel,\na Matrózkereső csapata`,
     })
 
     if (error) {
