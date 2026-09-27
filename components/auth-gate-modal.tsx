@@ -533,9 +533,6 @@ export function AuthGateModal({
       }
 
       handleOpenChange(false)
-      if (!teamInvite) {
-        await router.push("/bongeszes")
-      }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Ismeretlen hiba történt.")
     } finally {
