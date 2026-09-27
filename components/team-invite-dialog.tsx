@@ -59,7 +59,7 @@ export function TeamInviteDialog({
             },
             body: JSON.stringify({ token }),
           })
-          const payload = (await response.json()) as { ok?: boolean; error?: string; code?: string }
+          const payload = (await response.json()) as { ok?: boolean; error?: string; code?: string; emailSent?: boolean | null }
           return { response, payload }
         }
 
@@ -98,7 +98,9 @@ export function TeamInviteDialog({
         }
 
         setStatus("success")
-        setMessage("Sikeresen csatlakoztál a csapathoz.")
+        setMessage(payload.emailSent === false
+          ? "Sikeresen csatlakoztál a csapathoz, de az értesítő email küldése nem sikerült."
+          : "Sikeresen csatlakoztál a csapathoz. Értesítő emailt küldtünk neked.")
       } catch (error) {
         setStatus("error")
         setMessage(error instanceof Error ? error.message : "A meghívás elfogadása nem sikerült.")

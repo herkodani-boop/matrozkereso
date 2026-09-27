@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { sendTeamMembershipEmail } from "@/lib/team-membership-email"
 
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -142,9 +143,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "A jelentkezőt nem sikerült csapattaggá tenni." }, { status: 500 })
   }
 
+  const { data: boat, error: boatNameError } = await adminClient
+    .from("boats")
+    .select("name")
+    .eq("id", listing.boat_id)
+    .maybeSingle()
+
+  if (boatNameError) {
+    console.error("Hajónév lekérdezési hiba az értesítő emailhez:", boatNameError)
+  }
+
+  const emailSent = boat?.name
+    ? await sendTeamMembershipEmail({
+        email: applicantEmail,
+        memberName: applicantName,
+        boatName: boat.name,
+      })
+    : false
+
   return NextResponse.json({
     ok: true,
     alreadyMember: false,
+    emailSent,
     member: { ...member, avatar_url: applicantProfile?.avatar_url ?? null },
   })
 }

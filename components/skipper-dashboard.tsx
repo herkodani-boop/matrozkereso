@@ -1865,6 +1865,7 @@ export function SkipperDashboard() {
       const payload = (await response.json()) as {
         ok?: boolean
         alreadyMember?: boolean
+        emailSent?: boolean
         error?: string
         member?: {
           id: string
@@ -1897,7 +1898,9 @@ export function SkipperDashboard() {
       ])
       setActionNotice(payload.alreadyMember
         ? `${applicant.name} már csapattag.`
-        : `${applicant.name} hozzáadva a csapathoz.`)
+        : payload.emailSent === false
+          ? `${applicant.name} hozzáadva a csapathoz, de az értesítő email küldése nem sikerült.`
+          : `${applicant.name} hozzáadva a csapathoz, értesítő email elküldve.`)
     } catch (error) {
       console.error("Jelentkező csapathoz adási hiba:", error)
       setActionError(error instanceof Error ? error.message : "A jelentkezőt nem sikerült csapattaggá tenni.")

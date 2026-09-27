@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { sendTeamMembershipEmail } from "@/lib/team-membership-email"
 
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
 
   const { data: invitation, error: invitationError } = await adminClient
     .from("boat_team_invitations")
-    .select("invitee_email")
+    .select("invitee_email, boat_id")
     .eq("token", rawToken)
     .maybeSingle()
 
@@ -72,6 +73,19 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  const { data: existingMembership, error: membershipLookupError } = await adminClient
+    .from("boat_team_members")
+    .select("id")
+    .eq("boat_id", invitation.boat_id)
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .maybeSingle()
+
+  if (membershipLookupError) {
+    console.error("Meglévő csapattagság lekérdezési hiba:", membershipLookupError)
+    return NextResponse.json({ error: "A meglévő csapattagság ellenőrzése nem sikerült." }, { status: 500 })
+  }
+
   const { data, error } = await adminClient.rpc("accept_boat_team_invitation", {
     p_token: rawToken,
     p_user_id: user.id,
@@ -81,5 +95,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
-  return NextResponse.json({ ok: true, memberId: data })
+  let emailSent: boolean | null = null
+  if (!existingMembership) {
+    const [{ data: boat, error: boatError }, { data: profile, error: profileError }] = await Promise.all([
+      adminClient.from("boats").select("name").eq("id", invitation.boat_id).maybeSingle(),
+      adminClient.from("users").select("full_name").eq("id", user.id).maybeSingle(),
+    ])
+
+    if (boatError) console.error("Hajónév lekérdezési hiba az értesítő emailhez:", boatError)
+    if (profileError) console.error("Csapattag profil lekérdezési hiba az értesítő emailhez:", profileError)
+
+    emailSent = boat?.name
+      ? await sendTeamMembershipEmail({
+          email: signedInEmail,
+          memberName: profile?.full_name || user.user_metadata?.full_name || signedInEmail.split("@")[0],
+          boatName: boat.name,
+        })
+      : false
+  }
+
+  return NextResponse.json({ ok: true, memberId: data, emailSent })
 }
