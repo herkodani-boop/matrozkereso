@@ -108,7 +108,7 @@ export function AuthGateModalTrigger() {
         onAccepted={() => {
           setInviteToken(null)
           setInviteOpen(false)
-          router.push("/kapitany-dashboard")
+          router.replace("/", { scroll: false })
         }}
       />
     </>

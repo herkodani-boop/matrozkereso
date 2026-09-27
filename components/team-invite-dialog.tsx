@@ -114,7 +114,6 @@ export function TeamInviteDialog({
         onAccepted()
       } else {
         onOpenChange(false)
-        router.push("/kapitany-dashboard")
       }
       return
     }
@@ -189,7 +188,7 @@ export function TeamInviteDialog({
 
           {status === "success" ? (
             <Button onClick={handleClose} className="w-full">
-              Vissza a dashboardra
+              Rendben
             </Button>
           ) : null}
 
