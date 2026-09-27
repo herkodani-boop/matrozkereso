@@ -1,6 +1,7 @@
 import { Suspense } from "react"
 import { AuthGateModalTrigger } from "@/components/auth-gate-modal-trigger"
 import { HeroSection } from "@/components/hero-section"
+import { HomeEventsHub } from "@/components/home-events-hub"
 import { CoreOptions } from "@/components/core-options"
 import { LatestListings } from "@/components/latest-listings"
 import { MyApplications } from "@/components/my-applications"
@@ -15,6 +16,7 @@ export default function Page() {
       <div className="flex min-h-screen flex-col bg-background">
         <main className="flex-1">
           <HeroSection />
+          <HomeEventsHub />
           <CoreOptions />
           <LatestListings />
           <MyApplications />
