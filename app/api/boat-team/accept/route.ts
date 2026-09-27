@@ -38,7 +38,10 @@ export async function POST(request: NextRequest) {
   } = await userClient.auth.getUser(token)
 
   if (userError || !user) {
-    return NextResponse.json({ error: "Érvénytelen vagy lejárt session." }, { status: 401 })
+    return NextResponse.json(
+      { code: "SESSION_INVALID", error: "Érvénytelen vagy lejárt session." },
+      { status: 401 },
+    )
   }
 
   const { data: invitation, error: invitationError } = await adminClient

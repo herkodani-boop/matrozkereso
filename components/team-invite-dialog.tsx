@@ -39,31 +39,57 @@ export function TeamInviteDialog({
       setStatus("loading")
       setMessage("A meghívás feldolgozása folyamatban...")
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      if (!session?.access_token) {
-        setStatus("signed-out")
-        setMessage("A csapathoz való csatlakozáshoz jelentkezz be, vagy regisztrálj.")
-        return
-      }
-
       try {
-        const response = await fetch("/api/boat-team/accept", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({ token }),
-        })
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
 
-        const payload = (await response.json()) as { ok?: boolean; error?: string; code?: string }
+        if (!session?.access_token) {
+          setStatus("signed-out")
+          setMessage("A csapathoz való csatlakozáshoz jelentkezz be, vagy regisztrálj.")
+          return
+        }
+
+        const sendAcceptance = async (accessToken: string) => {
+          const response = await fetch("/api/boat-team/accept", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ token }),
+          })
+          const payload = (await response.json()) as { ok?: boolean; error?: string; code?: string }
+          return { response, payload }
+        }
+
+        let result = await sendAcceptance(session.access_token)
+
+        if (result.response.status === 401 && result.payload.code === "SESSION_INVALID") {
+          const { data, error: refreshError } = await supabase.auth.refreshSession()
+
+          if (refreshError || !data.session?.access_token) {
+            await supabase.auth.signOut({ scope: "local" })
+            setStatus("signed-out")
+            setMessage("A bejelentkezés lejárt, és nem sikerült megújítani. Jelentkezz be vagy regisztrálj a meghívott e-mail-címmel.")
+            return
+          }
+
+          result = await sendAcceptance(data.session.access_token)
+        }
+
+        const { response, payload } = result
 
         if (response.status === 403 && payload.code === "INVITATION_EMAIL_MISMATCH") {
           setStatus("email-mismatch")
           setMessage(payload.error || "Ez a meghívó másik e-mail-címre szól.")
+          return
+        }
+
+        if (response.status === 401 && payload.code === "SESSION_INVALID") {
+          await supabase.auth.signOut({ scope: "local" })
+          setStatus("signed-out")
+          setMessage("A munkamenetet nem sikerült megújítani. Jelentkezz be újra a meghívott e-mail-címmel.")
           return
         }
 
