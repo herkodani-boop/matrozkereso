@@ -16,6 +16,7 @@ import {
   Check,
   X,
   Share2,
+  ChevronLeft,
   ChevronRight,
   Phone,
   Mail,
@@ -337,6 +338,7 @@ async function optimizeBoatImage(file: File): Promise<File> {
 
 export function SkipperDashboard() {
   const router = useRouter()
+  const [activeDashboardTab, setActiveDashboardTab] = useState<"team" | "events" | "listings">("events")
   const [listings, setListings] = useState<Listing[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [newTeamMemberEmail, setNewTeamMemberEmail] = useState("")
@@ -366,6 +368,7 @@ export function SkipperDashboard() {
     notes: "",
   })
   const [selectedId, setSelectedId] = useState<string>("")
+  const [mobileListingView, setMobileListingView] = useState<"list" | "applicants">("list")
   const [showPreviousListings, setShowPreviousListings] = useState(false)
   const [expandedApplicantIds, setExpandedApplicantIds] = useState<Record<string, boolean>>({})
   const [statuses, setStatuses] = useState<Record<string, ApplicantStatus>>({})
@@ -414,6 +417,13 @@ export function SkipperDashboard() {
   } | null>(null)
   const [nonce, setNonce] = useState(0)
   const [listingsRefreshKey, setListingsRefreshKey] = useState(0)
+
+  const selectListingForApplicants = (listingId: string) => {
+    setSelectedId(listingId)
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      setMobileListingView("applicants")
+    }
+  }
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -767,11 +777,6 @@ export function SkipperDashboard() {
 
     void fetchBoat()
   }, [user, listingsRefreshKey])
-
-  const totalPending = useMemo(
-    () => Object.values(pendingCountsMap).reduce((sum, n) => sum + n, 0),
-    [pendingCountsMap],
-  )
 
   const activeListingId = selectedId
 
@@ -2006,18 +2011,85 @@ export function SkipperDashboard() {
           </div>
         </section>
 
+        <div
+          role="tablist"
+          aria-label="Kapitányi dashboard"
+          onKeyDown={(event) => {
+            const tabs = ["team", "events", "listings"] as const
+            const currentIndex = tabs.indexOf(activeDashboardTab)
+            const nextIndex = event.key === "ArrowRight"
+              ? (currentIndex + 1) % tabs.length
+              : event.key === "ArrowLeft"
+                ? (currentIndex - 1 + tabs.length) % tabs.length
+                : event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? tabs.length - 1
+                    : -1
+
+            if (nextIndex < 0) return
+
+            event.preventDefault()
+            const nextTab = tabs[nextIndex]
+            setActiveDashboardTab(nextTab)
+            document.getElementById(`dashboard-tab-${nextTab}`)?.focus()
+          }}
+          className="mb-6 grid grid-cols-3 gap-1 rounded-xl border border-border bg-card p-1"
+        >
+          <button
+            id="dashboard-tab-team"
+            type="button"
+            role="tab"
+            aria-selected={activeDashboardTab === "team"}
+            aria-controls="dashboard-panel-team"
+            tabIndex={activeDashboardTab === "team" ? 0 : -1}
+            onClick={() => setActiveDashboardTab("team")}
+            className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs font-medium transition-colors sm:flex-row sm:gap-2 sm:px-4 sm:py-2.5 sm:text-sm ${activeDashboardTab === "team" ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}`}
+          >
+            <Users className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="whitespace-nowrap">Csapat</span>
+          </button>
+          <button
+            id="dashboard-tab-events"
+            type="button"
+            role="tab"
+            aria-selected={activeDashboardTab === "events"}
+            aria-controls="dashboard-panel-events"
+            tabIndex={activeDashboardTab === "events" ? 0 : -1}
+            onClick={() => setActiveDashboardTab("events")}
+            className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs font-medium transition-colors sm:flex-row sm:gap-2 sm:px-4 sm:py-2.5 sm:text-sm ${activeDashboardTab === "events" ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}`}
+          >
+            <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="whitespace-nowrap">Események</span>
+          </button>
+          <button
+            id="dashboard-tab-listings"
+            type="button"
+            role="tab"
+            aria-selected={activeDashboardTab === "listings"}
+            aria-controls="dashboard-panel-listings"
+            tabIndex={activeDashboardTab === "listings" ? 0 : -1}
+            onClick={() => setActiveDashboardTab("listings")}
+            className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs font-medium transition-colors sm:flex-row sm:gap-2 sm:px-4 sm:py-2.5 sm:text-sm ${activeDashboardTab === "listings" ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}`}
+          >
+            <Anchor className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="whitespace-nowrap">Hirdetések</span>
+          </button>
+        </div>
+
+        <div
+          id="dashboard-panel-team"
+          role="tabpanel"
+          aria-labelledby="dashboard-tab-team"
+          tabIndex={0}
+          hidden={activeDashboardTab !== "team"}
+        >
         <section className="mb-10" aria-labelledby="team-section">
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 id="team-section" className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h2 id="team-section" className="text-base font-semibold text-foreground">
                 Csapatom
               </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {teamMembers.filter((member) => member.status === "active").length} aktív tag
-                {teamMembers.some((member) => member.status === "invited")
-                  ? ` · ${teamMembers.filter((member) => member.status === "invited").length} függő meghívó`
-                  : ""}
-              </p>
             </div>
           </div>
 
@@ -2163,30 +2235,33 @@ export function SkipperDashboard() {
             </div>
           </div>
         </section>
+        </div>
 
+        <div
+          id="dashboard-panel-events"
+          role="tabpanel"
+          aria-labelledby="dashboard-tab-events"
+          tabIndex={0}
+          hidden={activeDashboardTab !== "events"}
+        >
         <section className="mb-10" aria-labelledby="events">
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 id="events" className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h2 id="events" className="text-base font-semibold text-foreground">
                 Események
               </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Versenyek, edzések és egyéb hajóhoz kapcsolódó programok.
-              </p>
             </div>
-            {events.length > 0 ? (
-              <Button
-                type="button"
-                className="h-10 bg-accent! text-accent-foreground! hover:bg-accent/90!"
-                onClick={() => {
-                  resetNewEventForm()
-                  setIsNewEventModalOpen(true)
-                }}
-              >
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                Új esemény hozzáadása
-              </Button>
-            ) : null}
+            <Button
+              type="button"
+              className="h-10 bg-accent! text-accent-foreground! hover:bg-accent/90!"
+              onClick={() => {
+                resetNewEventForm()
+                setIsNewEventModalOpen(true)
+              }}
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Új esemény hozzáadása
+            </Button>
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
@@ -2216,17 +2291,6 @@ export function SkipperDashboard() {
                     Hozz létre versenyeket, edzéseket vagy egyéb hajózási programokat, majd itt nyomon követheted a csapattagok részvételét.
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  className="h-10 bg-accent! text-accent-foreground! hover:bg-accent/90!"
-                  onClick={() => {
-                    resetNewEventForm()
-                    setIsNewEventModalOpen(true)
-                  }}
-                >
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  Új esemény hozzáadása
-                </Button>
               </div>
             ) : events.length > 0 ? (
               <>
@@ -2588,25 +2652,33 @@ export function SkipperDashboard() {
             ) : null}
           </div>
         </section>
+        </div>
 
-        {/* SECTION B + C */}
+        <div
+          id="dashboard-panel-listings"
+          role="tabpanel"
+          aria-labelledby="dashboard-tab-listings"
+          tabIndex={0}
+          hidden={activeDashboardTab !== "listings"}
+        >
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-5">
           {/* SECTION B: Listings */}
-          <section className="lg:col-span-2" aria-labelledby="active-listings">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 id="active-listings" className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          <section
+            className={`lg:col-span-2 ${mobileListingView === "applicants" ? "hidden lg:block" : ""}`}
+            aria-labelledby="active-listings"
+          >
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 id="active-listings" className="text-base font-semibold text-foreground">
                 Hirdetéseim
               </h2>
-              {listings.length > 0 ? (
-                <Button
-                  type="button"
-                  className="h-10 bg-accent! text-accent-foreground! hover:bg-accent/90!"
-                  onClick={() => openModal("listing")}
-                >
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  Hirdetés feladása
-                </Button>
-              ) : null}
+              <Button
+                type="button"
+                className="h-10 bg-accent! text-accent-foreground! hover:bg-accent/90!"
+                onClick={() => openModal("listing")}
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Hirdetés feladása
+              </Button>
             </div>
             {pendingCountsError ? (
               <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
@@ -2660,15 +2732,6 @@ export function SkipperDashboard() {
                     <p className="font-medium text-foreground">Még nincs hirdetésed</p>
                     <p className="mt-1 text-sm text-muted-foreground">Add fel első szabad helyed, hogy elérhető legyen a vitorlázók számára.</p>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-9 bg-accent! text-accent-foreground! hover:bg-accent/90!"
-                    onClick={() => openModal("listing")}
-                  >
-                    <Plus className="h-4 w-4" aria-hidden="true" />
-                    Hirdetés feladása
-                  </Button>
                 </div>
               ) : displayedListings.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">
@@ -2680,14 +2743,14 @@ export function SkipperDashboard() {
                 const count = pendingCountsMap[listing.id] ?? pendingCount(listing)
                 const expiryDate = formatListingExpiryDate(listing.expiryDate)
                 const expiryLabel = !listing.isActive
-                  ? "Eredeti automatikus lejárat:"
+                  ? "Eredeti lejárat:"
                   : listing.isHistorical
-                    ? "Automatikusan lejárt:"
-                    : "Automatikusan lejár:"
+                    ? "Lejárt:"
+                    : "Lejár:"
                 return (
                   <div
                     key={listing.id}
-                    onClick={() => setSelectedId(listing.id)}
+                    onClick={() => selectListingForApplicants(listing.id)}
                     className={`group relative rounded-xl border bg-card p-4 text-left transition-all ${
                       isActive
                         ? "cursor-pointer border-accent ring-1 ring-accent"
@@ -2699,7 +2762,7 @@ export function SkipperDashboard() {
                         <button
                           type="button"
                           aria-pressed={isActive}
-                          onClick={() => setSelectedId(listing.id)}
+                          onClick={() => selectListingForApplicants(listing.id)}
                           className="text-left hover:text-accent focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-accent"
                         >
                           {listing.event}
@@ -2764,10 +2827,7 @@ export function SkipperDashboard() {
                     </div>
                     {expiryDate ? (
                       <p className="mt-2 text-xs text-muted-foreground">
-                        {expiryLabel} {expiryDate}. {listing.isActive
-                          ? "A dátum után a hirdetés automatikusan eltűnik a böngészésből; külön lezárás nem szükséges."
-                          : "A hirdetés kapitányi döntéssel lett lezárva."
-                        }
+                        {expiryLabel} {expiryDate}
                       </p>
                     ) : null}
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -2812,15 +2872,29 @@ export function SkipperDashboard() {
           </section>
 
           {/* SECTION C: Applicants */}
-          <section className="lg:col-span-3" aria-labelledby="applicants">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 id="applicants" className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Jelentkezők
-              </h2>
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Users className="h-3.5 w-3.5" aria-hidden="true" />
-                {selected.id ? selected.event : "Nincs kiválasztott hirdetés"}
-              </span>
+          <section
+            className={`lg:col-span-3 ${mobileListingView === "list" ? "hidden lg:block" : ""}`}
+            aria-labelledby="applicants"
+          >
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="lg:hidden"
+                onClick={() => setMobileListingView("list")}
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                Hirdetések
+              </Button>
+              <div>
+                {selected.id ? (
+                  <p className="text-[11px] font-semibold uppercase text-muted-foreground">Jelentkezők</p>
+                ) : null}
+                <h2 id="applicants" className="text-base font-semibold text-foreground">
+                  {selected.id ? selected.event : "Jelentkezők"}
+                </h2>
+              </div>
             </div>
 
             {selected.id && selected.isHistorical ? (
@@ -3099,6 +3173,7 @@ export function SkipperDashboard() {
               </div>
             </div>
           </section>
+        </div>
         </div>
       </>
         ) : (
