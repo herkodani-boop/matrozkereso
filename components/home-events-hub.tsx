@@ -7,6 +7,7 @@ import { ArrowRight, CalendarDays, Check, Compass, LoaderCircle, MapPin, Ship, U
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { supabase } from "@/lib/supabase"
+import { EventDetailsModal, type EventDetailsSummary } from "@/components/event-details-modal"
 
 type PersonalEvent = {
   id: string
@@ -33,6 +34,19 @@ type EventOpportunity = {
 function getTodayKey() {
   const today = new Date()
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`
+}
+
+function formatFullEventDate(dateValue: string) {
+  const parsed = new Date(`${dateValue}T12:00:00`)
+  if (Number.isNaN(parsed.getTime())) return dateValue
+  return new Intl.DateTimeFormat("hu-HU", { year: "numeric", month: "long", day: "numeric" }).format(parsed)
+}
+
+function formatFullEventDateRange(startDate: string, endDate: string | null) {
+  if (!endDate || endDate === startDate) {
+    return formatFullEventDate(startDate)
+  }
+  return `${formatFullEventDate(startDate)} – ${formatFullEventDate(endDate)}`
 }
 
 function EventDateBadge({ startDate, endDate }: { startDate: string; endDate: string | null }) {
@@ -96,6 +110,7 @@ export function HomeEventsHub() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [respondingEventId, setRespondingEventId] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  const [detailsEvent, setDetailsEvent] = useState<EventDetailsSummary | null>(null)
 
   useEffect(() => {
     let active = true
@@ -318,6 +333,44 @@ export function HomeEventsHub() {
     setRespondingEventId(null)
   }
 
+  async function cancelEventParticipation(eventId: string) {
+    if (!user || respondingEventId) return
+
+    setRespondingEventId(eventId)
+    setActionError(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error("A részvétel törléséhez be kell jelentkezned.")
+      }
+
+      const response = await fetch("/api/events/respond", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ eventId, status: "declined" }),
+      })
+      const result = (await response.json()) as { ok?: boolean; error?: string }
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || "A részvétel törlése nem sikerült.")
+      }
+    } catch (error) {
+      console.error("Részvétel törlési hiba:", error)
+      setActionError(error instanceof Error ? error.message : "A részvétel törlése nem sikerült. Próbáld újra.")
+      setRespondingEventId(null)
+      return
+    }
+
+    setOpportunities((previous) => previous.map((item) => (item.id === eventId ? { ...item, response: "declined" } : item)))
+    setEvents((previous) => previous.filter((item) => item.id !== eventId))
+    setRespondingEventId(null)
+    setDetailsEvent(null)
+  }
+
   if (!authResolved || !user) return null
   if (!loading && profileMissing) return null
 
@@ -391,7 +444,7 @@ export function HomeEventsHub() {
               {events.length > 0 ? (
                 <ul className="divide-y divide-border border-y border-border">
                   {events.map((event) => (
-                    <li key={event.id} className="flex items-start gap-3 py-3">
+                    <li key={event.id} className="flex items-center gap-3 py-3">
                       <EventDateBadge startDate={event.startDate} endDate={event.endDate} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">{event.title}</p>
@@ -401,6 +454,24 @@ export function HomeEventsHub() {
                           <span>{event.participation}</span>
                         </p>
                       </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        aria-label={`Részletek: ${event.title}`}
+                        title="Részletek"
+                        className="h-8 shrink-0 gap-1.5 rounded-full bg-accent/10 px-3 text-xs font-medium text-accent hover:bg-accent/20 hover:text-accent"
+                        onClick={() =>
+                          setDetailsEvent({
+                            id: event.id,
+                            title: event.title,
+                            date: formatFullEventDateRange(event.startDate, event.endDate),
+                            location: event.location,
+                            boatName: event.boatName,
+                          })
+                        }
+                      >
+                        Részletek
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -480,6 +551,24 @@ export function HomeEventsHub() {
                             </Button>
                           </>
                         )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          aria-label={`Részletek: ${opportunity.title}`}
+                          title="Részletek"
+                          className="h-8 gap-1.5 rounded-full bg-accent/10 px-3 text-xs font-medium text-accent hover:bg-accent/20 hover:text-accent"
+                          onClick={() =>
+                            setDetailsEvent({
+                              id: opportunity.id,
+                              title: opportunity.title,
+                              date: formatFullEventDateRange(opportunity.startDate, opportunity.endDate),
+                              location: opportunity.location,
+                              boatName: opportunity.boatName,
+                            })
+                          }
+                        >
+                          Részletek
+                        </Button>
                       </div>
                     </li>
                   ))}
@@ -493,6 +582,18 @@ export function HomeEventsHub() {
           </div>
         )}
       </div>
+
+      <EventDetailsModal
+        event={detailsEvent}
+        open={detailsEvent !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setDetailsEvent(null)
+        }}
+        currentUserId={user?.id ?? null}
+        onCancelParticipation={detailsEvent ? () => void cancelEventParticipation(detailsEvent.id) : undefined}
+        canceling={detailsEvent !== null && respondingEventId === detailsEvent.id}
+        actionError={actionError}
+      />
     </section>
   )
 }

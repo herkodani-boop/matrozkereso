@@ -106,6 +106,7 @@ export function AuthGateModal({
   boatName,
   mode = "sailor",
   teamInvite = false,
+  inviteEmail = null,
   initialView,
   boatId,
   userId,
@@ -117,6 +118,7 @@ export function AuthGateModal({
   boatName?: string
   mode?: Mode
   teamInvite?: boolean
+  inviteEmail?: string | null
   initialView?: View
   boatId?: string
   userId?: string
@@ -223,6 +225,10 @@ export function AuthGateModal({
 
     resetFormState()
     setView(initialView ?? (mode === "skipper" ? "register" : "login"))
+
+    if (inviteEmail) {
+      setEmail(inviteEmail)
+    }
 
     if (prefill) {
       setListingEventId(prefill.eventId ?? null)
@@ -741,9 +747,13 @@ export function AuthGateModal({
                       placeholder="nev@example.hu"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="h-11 pl-9"
+                      readOnly={teamInvite && Boolean(inviteEmail)}
+                      className={`h-11 pl-9 ${teamInvite && inviteEmail ? "bg-secondary/60" : ""}`}
                     />
                   </div>
+                  {teamInvite && inviteEmail ? (
+                    <p className="text-xs text-muted-foreground">Ezt az e-mail címet a meghívó alapján töltöttük ki, nem módosítható.</p>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -973,8 +983,12 @@ export function AuthGateModal({
                     placeholder="nev@example.hu"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="h-11"
+                    readOnly={teamInvite && Boolean(inviteEmail)}
+                    className={`h-11 ${teamInvite && inviteEmail ? "bg-secondary/60" : ""}`}
                   />
+                  {teamInvite && inviteEmail ? (
+                    <p className="text-xs text-muted-foreground">Ezt az e-mail címet a meghívó alapján töltöttük ki, nem módosítható.</p>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-col gap-1.5">

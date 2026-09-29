@@ -13,6 +13,30 @@ export function AuthGateModalTrigger() {
   const [authView, setAuthView] = useState<"login" | "register">("login")
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteToken, setInviteToken] = useState<string | null>(null)
+  const [inviteEmail, setInviteEmail] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!inviteToken) {
+      setInviteEmail(null)
+      return
+    }
+
+    let active = true
+    void fetch(`/api/boat-team/invite-info?token=${encodeURIComponent(inviteToken)}`)
+      .then((response) => response.json())
+      .then((payload: { ok?: boolean; invitedEmail?: string }) => {
+        if (active && payload.ok && payload.invitedEmail) {
+          setInviteEmail(payload.invitedEmail)
+        }
+      })
+      .catch((error) => {
+        console.error("Meghívó email cím lekérdezése nem sikerült:", error)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [inviteToken])
 
   useEffect(() => {
     const authValue = searchParams.get("auth")
@@ -93,6 +117,7 @@ export function AuthGateModalTrigger() {
         }}
         initialView={authView}
         teamInvite={Boolean(inviteToken)}
+        inviteEmail={inviteEmail}
       />
       <TeamInviteDialog
         open={inviteOpen}
@@ -104,6 +129,7 @@ export function AuthGateModalTrigger() {
           }
         }}
         token={inviteToken}
+        invitedEmail={inviteEmail}
         onRequestAuth={openAuthModal}
         onAccepted={() => {
           setInviteToken(null)

@@ -17,12 +17,14 @@ export function TeamInviteDialog({
   open,
   onOpenChange,
   token,
+  invitedEmail = null,
   onRequestAuth,
   onAccepted,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   token: string | null
+  invitedEmail?: string | null
   onRequestAuth: (view: "login" | "register") => void
   onAccepted?: () => void
 }) {
@@ -46,7 +48,11 @@ export function TeamInviteDialog({
 
         if (!session?.access_token) {
           setStatus("signed-out")
-          setMessage("A csapathoz való csatlakozáshoz jelentkezz be, vagy regisztrálj.")
+          setMessage(
+            invitedEmail
+              ? `A csapathoz való csatlakozáshoz jelentkezz be, vagy regisztrálj a(z) ${invitedEmail} e-mail-címmel.`
+              : "A csapathoz való csatlakozáshoz jelentkezz be, vagy regisztrálj.",
+          )
           return
         }
 
@@ -82,7 +88,11 @@ export function TeamInviteDialog({
 
         if (response.status === 403 && payload.code === "INVITATION_EMAIL_MISMATCH") {
           setStatus("email-mismatch")
-          setMessage(payload.error || "Ez a meghívó másik e-mail-címre szól.")
+          setMessage(
+            invitedEmail
+              ? `Ez a meghívó a(z) ${invitedEmail} e-mail-címre szól. Jelentkezz be vagy regisztrálj ezzel a címmel a folytatáshoz.`
+              : payload.error || "Ez a meghívó másik e-mail-címre szól.",
+          )
           return
         }
 
