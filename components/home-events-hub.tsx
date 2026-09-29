@@ -87,6 +87,7 @@ export function HomeEventsHub() {
   const [user, setUser] = useState<User | null>(null)
   const [authResolved, setAuthResolved] = useState(false)
   const [role, setRole] = useState<string | null>(null)
+  const [profileMissing, setProfileMissing] = useState(false)
   const [isTeamMember, setIsTeamMember] = useState(false)
   const [events, setEvents] = useState<PersonalEvent[]>([])
   const [opportunities, setOpportunities] = useState<EventOpportunity[]>([])
@@ -118,6 +119,7 @@ export function HomeEventsHub() {
   useEffect(() => {
     if (!user) {
       setRole(null)
+      setProfileMissing(false)
       setIsTeamMember(false)
       setEvents([])
       setOpportunities([])
@@ -141,6 +143,8 @@ export function HomeEventsHub() {
         .filter(Boolean)
       queryErrors.forEach((error) => console.error("Főoldali eseményblokk lekérdezési hiba:", error))
 
+      // Hiányzó profilsor törölt/árva auth munkamenetre utal (pl. a felhasználó közvetlenül az adatbázisból lett törölve).
+      const profileIsMissing = !profileResult.error && !profileResult.data
       const profileRole = profileResult.data?.role ?? null
       const ownedBoatIds = (boatsResult.data ?? []).map((boat) => String(boat.id))
       const teamBoatIds = (membershipsResult.data ?? []).map((member) => String(member.boat_id))
@@ -238,6 +242,7 @@ export function HomeEventsHub() {
 
       if (!active) return
       setRole(profileRole)
+      setProfileMissing(profileIsMissing)
       setIsTeamMember(teamBoatIds.length > 0)
       setEvents(nextEvents)
       setOpportunities(availableEvents)
@@ -314,6 +319,7 @@ export function HomeEventsHub() {
   }
 
   if (!authResolved || !user) return null
+  if (!loading && profileMissing) return null
 
   const isCaptain = role === "skipper" || role === "kapitany"
   const isCrewRole = role === "sailor" || role === "mancsaft"
