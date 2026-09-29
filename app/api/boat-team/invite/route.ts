@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { Resend } from "resend"
+import sharp from "sharp"
 import { escapeHtml, getSafeImageUrl } from "@/lib/email-html"
 
 function normalizeEmail(value: unknown) {
@@ -34,6 +35,41 @@ function getAppBaseUrl() {
   }
 
   return configuredUrl.replace(/\/$/, "")
+}
+
+async function createEmailBoatImage(imageUrl: string, supabaseUrl: string) {
+  // A hajókép Storage-ban WebP formátumú, amit sok email kliens nem jelenít meg; JPEG-re konvertáljuk a küldés előtt.
+  try {
+    const parsedImageUrl = new URL(imageUrl)
+    const parsedSupabaseUrl = new URL(supabaseUrl)
+    const maxSourceBytes = 12 * 1024 * 1024
+
+    if (
+      parsedImageUrl.origin !== parsedSupabaseUrl.origin ||
+      !parsedImageUrl.pathname.includes("/storage/v1/object/public/boats/")
+    ) {
+      return null
+    }
+
+    const response = await fetch(parsedImageUrl, { signal: AbortSignal.timeout(10000) })
+    if (!response.ok || Number(response.headers.get("content-length") ?? 0) > maxSourceBytes) {
+      return null
+    }
+
+    const source = Buffer.from(await response.arrayBuffer())
+    if (source.length === 0 || source.length > maxSourceBytes) {
+      return null
+    }
+
+    return await sharp(source)
+      .rotate()
+      .resize({ width: 1200, height: 360, fit: "cover", withoutEnlargement: true })
+      .jpeg({ quality: 82 })
+      .toBuffer()
+  } catch (error) {
+    console.warn("Hajókép emailhez alakítása nem sikerült:", error)
+    return null
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -146,10 +182,12 @@ export async function POST(request: NextRequest) {
   const fromAddress = `${senderName} <${senderEmail}>`
   const logoImageUrl = "https://www.matrozkereso.com/matrozkereso-logo-csomag/png/matrozkereso-logo-512.png"
   const boatImageUrl = getSafeImageUrl(ownerBoat?.image_url) ?? "https://www.matrozkereso.com/placeholder.svg"
+  const boatImageAttachment = await createEmailBoatImage(boatImageUrl, supabaseUrl)
+  const emailBoatImageSource = boatImageAttachment ? "cid:boat-image" : boatImageUrl
   const safeBoatImageMarkup = `
     <div style="width: 100%; max-width: 600px; height: 180px; overflow: hidden; background: #e2e8f0; border-radius: 12px 12px 0 0;">
       <img
-        src="${boatImageUrl}"
+        src="${emailBoatImageSource}"
         alt="Hajó kép"
         width="600"
         height="180"
@@ -166,6 +204,9 @@ export async function POST(request: NextRequest) {
     headers: {
       "List-Unsubscribe": `mailto:${senderEmail}?subject=Unsubscribe`,
     },
+    attachments: boatImageAttachment
+      ? [{ filename: "boat-image.jpg", content: boatImageAttachment, contentType: "image/jpeg", contentId: "boat-image" }]
+      : undefined,
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #111827; max-width: 660px; margin: 0 auto; background: #f8fafc; padding: 24px;">
         <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);">

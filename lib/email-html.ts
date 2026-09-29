@@ -23,3 +23,20 @@ export function getSafeImageUrl(value: string | null | undefined) {
     return null
   }
 }
+
+export function getAppBaseUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
+  if (!configuredUrl || /localhost|127\.0\.0\.1/i.test(configuredUrl)) {
+    return "https://www.matrozkereso.com"
+  }
+
+  try {
+    const url = new URL(configuredUrl)
+    if (url.protocol === "https:" || url.protocol === "http:") {
+      return url.toString().replace(/\/$/, "")
+    }
+    return "https://www.matrozkereso.com"
+  } catch {
+    return "https://www.matrozkereso.com"
+  }
+}

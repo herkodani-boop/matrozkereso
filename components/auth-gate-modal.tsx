@@ -38,6 +38,26 @@ const listingPostOptions: { value: string; label: string }[] = [
   { value: "fordeck", label: "Fordeck" },
 ]
 
+async function triggerWelcomeEmail() {
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) return
+
+    await fetch("/api/auth/welcome", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    })
+  } catch (error) {
+    console.error("Üdvözlő email kiváltása nem sikerült:", error)
+  }
+}
+
 const commitmentOptions: Record<string, string> = {
   "egy-verseny": "Csak egy konkrét versenyre / hétvégére",
   szezon: "Hosszú távra / Szezoncsapatba",
@@ -418,6 +438,7 @@ export function AuthGateModal({
           await supabase.auth.setSession(session)
         }
 
+        void triggerWelcomeEmail()
         await router.push("/kapitany-dashboard")
         handleOpenChange(false)
         return
@@ -532,6 +553,7 @@ export function AuthGateModal({
         await supabase.auth.setSession(session)
       }
 
+      void triggerWelcomeEmail()
       handleOpenChange(false)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Ismeretlen hiba történt.")
