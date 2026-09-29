@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
     .from("ads")
     .update({ is_active: false, ...(isDeleted ? { is_deleted: true } : {}) })
     .eq("id", listingId)
+    .eq("user_id", user.id)
     .select("id")
     .maybeSingle()
 

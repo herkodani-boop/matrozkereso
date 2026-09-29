@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { Resend } from "resend"
+import { escapeHtml, getSafeImageUrl } from "@/lib/email-html"
 
 function normalizeEmail(value: unknown) {
   if (typeof value !== "string") return null
@@ -134,6 +135,8 @@ export async function POST(request: NextRequest) {
   const baseUrl = getAppBaseUrl()
   const inviteLink = tokenValue ? `${baseUrl}/accept-team-invite?token=${tokenValue}` : null
   const inviterDisplayName = user.user_metadata?.full_name || user.email?.split("@")[0] || "A hajós csapat"
+  const safeInviterDisplayName = escapeHtml(inviterDisplayName)
+  const safeBoatName = escapeHtml(ownerBoat.name)
 
   if (!inviteLink) {
     return NextResponse.json({ error: "A meghívó link generálása nem sikerült." }, { status: 500 })
@@ -142,10 +145,7 @@ export async function POST(request: NextRequest) {
   const resend = new Resend(resendApiKey)
   const fromAddress = `${senderName} <${senderEmail}>`
   const logoImageUrl = "https://www.matrozkereso.com/matrozkereso-logo-csomag/png/matrozkereso-logo-512.png"
-  const boatImageUrl =
-    ownerBoat?.image_url && /^https?:\/\//.test(ownerBoat.image_url)
-      ? ownerBoat.image_url
-      : "https://www.matrozkereso.com/placeholder.svg"
+  const boatImageUrl = getSafeImageUrl(ownerBoat?.image_url) ?? "https://www.matrozkereso.com/placeholder.svg"
   const safeBoatImageMarkup = `
     <div style="width: 100%; max-width: 600px; height: 180px; overflow: hidden; background: #e2e8f0; border-radius: 12px 12px 0 0;">
       <img
@@ -179,14 +179,14 @@ export async function POST(request: NextRequest) {
 
             <p style="margin: 0 0 10px; font-size: 16px; color: #334155;">Kedves Címzett!</p>
             <p style="margin: 0 0 22px; font-size: 16px; color: #334155; line-height: 1.7;">
-              <strong>${inviterDisplayName}</strong> meghívott a csapatába, amelyet a lenti gomb megnyomásával tudsz elfogadni.
+              <strong>${safeInviterDisplayName}</strong> meghívott a csapatába, amelyet a lenti gomb megnyomásával tudsz elfogadni.
             </p>
 
             <div style="margin: 0 0 20px; display: block; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
               ${safeBoatImageMarkup}
               <div style="padding: 18px 18px 12px;">
                 <div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 6px;">Hajó</div>
-                <div style="font-size: 22px; font-weight: 700; color: #0f172a;">${ownerBoat.name}</div>
+                <div style="font-size: 22px; font-weight: 700; color: #0f172a;">${safeBoatName}</div>
               </div>
             </div>
 

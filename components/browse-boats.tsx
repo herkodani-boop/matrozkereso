@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import type { User } from "@supabase/supabase-js"
 import Image from "next/image"
@@ -63,6 +63,7 @@ const levelLabels: Record<Level, string> = {
 }
 
 const ALL = "osszes"
+const PAGE_SIZE = 24
 
 const commitmentFilterLabels: Record<string, string> = {
   [ALL]: "Összes",
@@ -83,6 +84,11 @@ const postFilterLabels: Record<string, string> = {
 const levelFilterLabels: Record<string, string> = {
   [ALL]: "Mindegy",
   ...levelLabels,
+}
+
+function toIlikeValue(term: string) {
+  const escaped = term.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_").replace(/"/g, '\\"')
+  return `"%${escaped}%"`
 }
 
 function normalizePost(positionRaw: unknown): ListingPost {
@@ -115,12 +121,14 @@ export function BrowseBoats() {
   const [commitment, setCommitmentState] = useState<string>(() => searchParams.get("commitment") ?? ALL)
   const [posts, setPostsState] = useState<ListingPost[]>(() => Array.from(new Set(initialPosts)))
   const [level, setLevelState] = useState<string>(() => searchParams.get("level") ?? ALL)
+  const [searchInput, setSearchInput] = useState<string>(() => searchParams.get("q") ?? "")
+  const [search, setSearch] = useState<string>(() => searchParams.get("q") ?? "")
   const [postDropdownOpen, setPostDropdownOpen] = useState(false)
   const postDropdownRef = useRef<HTMLDivElement | null>(null)
 
   function setCommitment(v: string) {
     setCommitmentState(v)
-    updateUrl({ commitment: v, posts, level })
+    updateUrl({ commitment: v, posts, level, q: search })
   }
 
   function togglePost(v: ListingPost) {
@@ -129,23 +137,34 @@ export function BrowseBoats() {
       : [...posts, v]
 
     setPostsState(nextPosts)
-    updateUrl({ commitment, posts: nextPosts, level })
+    updateUrl({ commitment, posts: nextPosts, level, q: search })
   }
 
   function setLevel(v: string) {
     setLevelState(v)
-    updateUrl({ commitment, posts, level: v })
+    updateUrl({ commitment, posts, level: v, q: search })
   }
 
-  function updateUrl(filters: { commitment: string; posts: ListingPost[]; level: string }) {
+  function updateUrl(filters: { commitment: string; posts: ListingPost[]; level: string; q: string }) {
     const params = new URLSearchParams()
     if (filters.commitment !== ALL) params.set("commitment", filters.commitment)
     if (filters.posts.length > 0) params.set("post", filters.posts.join(","))
     if (filters.level !== ALL) params.set("level", filters.level)
+    if (filters.q.trim()) params.set("q", filters.q.trim())
 
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSearch(searchInput)
+      updateUrl({ commitment, posts, level, q: searchInput })
+    }, 300)
+
+    return () => window.clearTimeout(timeoutId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -179,6 +198,10 @@ export function BrowseBoats() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadingAds, setLoadingAds] = useState(true)
   const [openDetailsIds, setOpenDetailsIds] = useState<string[]>([])
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [totalCount, setTotalCount] = useState<number | null>(null)
+  const [nextPage, setNextPage] = useState(0)
 
   function handleApply(listing: ListingRow, applicationMessage?: string) {
     if (listing.isOwnListing) {
@@ -317,18 +340,68 @@ export function BrowseBoats() {
     return () => subscription.unsubscribe()
   }, [])
 
-  useEffect(() => {
-    async function fetchAds() {
-      setLoadingAds(true)
+  const loadAdsPage = useCallback(
+    async (pageIndex: number, options: { append: boolean }) => {
+      if (options.append) {
+        setLoadingMore(true)
+      } else {
+        setLoadingAds(true)
+      }
       setLoadError(null)
+
       const adsBaseSelect = "id, user_id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url), applications(id, user_id)"
+      const from = pageIndex * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+
+      const trimmedSearch = search.trim()
+      let matchingBoatIds: string[] = []
+
+      if (trimmedSearch) {
+        const { data: matchingBoats, error: boatSearchError } = await supabase
+          .from("boats")
+          .select("id")
+          .ilike("name", `%${trimmedSearch}%`)
+
+        if (boatSearchError) {
+          console.error("Hajónév keresési hiba:", boatSearchError)
+        } else {
+          matchingBoatIds = (matchingBoats ?? []).map((boat: any) => String(boat.id))
+        }
+      }
+
+      function applyFilters<T>(query: T): T {
+        let next = (query as any).eq("is_active", true)
+
+        if (commitment !== ALL) {
+          next = next.eq("commitment", commitment)
+        }
+
+        if (level !== ALL) {
+          next = next.eq("experience_level", level)
+        }
+
+        if (posts.length > 0) {
+          next = next.overlaps("positions", posts)
+        }
+
+        if (trimmedSearch) {
+          const ilikeValue = toIlikeValue(trimmedSearch)
+          const orParts = [`title.ilike.${ilikeValue}`, `location.ilike.${ilikeValue}`, `captain_note.ilike.${ilikeValue}`]
+          if (matchingBoatIds.length > 0) {
+            orParts.push(`boat_id.in.(${matchingBoatIds.join(",")})`)
+          }
+          next = next.or(orParts.join(","))
+        }
+
+        return next.order("created_at", { ascending: false }).range(from, to)
+      }
 
       let data: any[] | null = null
-      const { data: adsWithNote, error: adsWithNoteError } = await supabase
-        .from("ads")
-        .select(`${adsBaseSelect}, captain_note`)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
+      let count: number | null = null
+
+      const { data: adsWithNote, count: countWithNote, error: adsWithNoteError } = await applyFilters(
+        supabase.from("ads").select(`${adsBaseSelect}, captain_note`, { count: "exact" }),
+      )
 
       if (adsWithNoteError) {
         const noteColumnMissing = String(adsWithNoteError.code ?? "") === "42703" || /captain_note/i.test(adsWithNoteError.message ?? "")
@@ -337,25 +410,37 @@ export function BrowseBoats() {
           console.error("Hirdetések lekérdezési hiba:", adsWithNoteError)
           setLoadError("A hirdetések betöltése nem sikerült. Próbáld újra később.")
           setLoadingAds(false)
+          setLoadingMore(false)
           return
         }
 
-        const { data: adsWithoutNote, error: adsWithoutNoteError } = await supabase
-          .from("ads")
-          .select(adsBaseSelect)
-          .eq("is_active", true)
-          .order("created_at", { ascending: false })
+        // A captain_note oszlop hiányzik (régebbi migráció), a keresésből is kihagyjuk
+        const fallbackOrParts = trimmedSearch
+          ? [`title.ilike.${toIlikeValue(trimmedSearch)}`, `location.ilike.${toIlikeValue(trimmedSearch)}`, ...(matchingBoatIds.length > 0 ? [`boat_id.in.(${matchingBoatIds.join(",")})`] : [])]
+          : null
+
+        let fallbackQuery: any = supabase.from("ads").select(adsBaseSelect, { count: "exact" }).eq("is_active", true)
+        if (commitment !== ALL) fallbackQuery = fallbackQuery.eq("commitment", commitment)
+        if (level !== ALL) fallbackQuery = fallbackQuery.eq("experience_level", level)
+        if (posts.length > 0) fallbackQuery = fallbackQuery.overlaps("positions", posts)
+        if (fallbackOrParts) fallbackQuery = fallbackQuery.or(fallbackOrParts.join(","))
+        fallbackQuery = fallbackQuery.order("created_at", { ascending: false }).range(from, to)
+
+        const { data: adsWithoutNote, count: countWithoutNote, error: adsWithoutNoteError } = await fallbackQuery
 
         if (adsWithoutNoteError) {
           console.error("Hirdetések lekérdezési hiba:", adsWithoutNoteError)
           setLoadError("A hirdetések betöltése nem sikerült. Próbáld újra később.")
           setLoadingAds(false)
+          setLoadingMore(false)
           return
         }
 
         data = adsWithoutNote ?? []
+        count = countWithoutNote ?? null
       } else {
         data = adsWithNote ?? []
+        count = countWithNote ?? null
       }
 
       const userIds = Array.from(new Set((data ?? []).map((ad: any) => ad.user_id).filter(Boolean)))
@@ -422,22 +507,24 @@ export function BrowseBoats() {
         }
       })
 
-      setListingsData(mapped)
-      setOpenDetailsIds((prev) => prev.filter((id) => mapped.some((listing) => listing.id === id)))
+      setListingsData((prev) => (options.append ? [...prev, ...mapped] : mapped))
+      if (!options.append) {
+        setOpenDetailsIds((prev) => prev.filter((id) => mapped.some((listing) => listing.id === id)))
+      }
+      setTotalCount(count)
+      setHasMore(count !== null ? from + data!.length < count : data!.length === PAGE_SIZE)
+      setNextPage(pageIndex + 1)
       setLoadingAds(false)
-    }
+      setLoadingMore(false)
+    },
+    [user, commitment, posts, level, search],
+  )
 
-    void fetchAds()
-  }, [user])
-
-  const filtered = useMemo(() => {
-    return listingsData.filter((l) => {
-      if (commitment !== ALL && l.commitment !== commitment) return false
-      if (posts.length > 0 && !l.roles.some((role) => posts.includes(role))) return false
-      if (level !== ALL && l.level !== level) return false
-      return true
-    })
-  }, [commitment, posts, level, listingsData])
+  useEffect(() => {
+    setNextPage(0)
+    setHasMore(true)
+    void loadAdsPage(0, { append: false })
+  }, [loadAdsPage])
 
   const selectedPostsLabel = useMemo(() => {
     if (posts.length === 0) return postFilterLabels[ALL]
@@ -460,6 +547,17 @@ export function BrowseBoats() {
       </div>
 
       <div className="mt-8 flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-end">
+        <FilterField label="Keresés">
+          <input
+            type="search"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Hajónév, esemény vagy helyszín..."
+            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:w-56"
+            aria-label="Keresés hajónév, esemény vagy helyszín alapján"
+          />
+        </FilterField>
+
         <FilterField label="Elköteleződés típusa">
           <Select value={commitment} onValueChange={(v) => setCommitment(v as string)}>
             <SelectTrigger className={filterTriggerClass}>
@@ -495,7 +593,7 @@ export function BrowseBoats() {
                   type="button"
                   onClick={() => {
                     setPostsState([])
-                    updateUrl({ commitment, posts: [], level })
+                    updateUrl({ commitment, posts: [], level, q: search })
                   }}
                   className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent/10"
                 >
@@ -541,7 +639,11 @@ export function BrowseBoats() {
         </FilterField>
 
         <p className="text-sm text-muted-foreground sm:ml-auto sm:pb-2.5">
-          {loadingAds ? "…" : `${filtered.length} szabad hely`}
+          {loadingAds
+            ? "…"
+            : totalCount !== null && totalCount > listingsData.length
+              ? `${totalCount} szabad hely (${listingsData.length} betöltve)`
+              : `${listingsData.length} szabad hely`}
         </p>
       </div>
 
@@ -572,9 +674,9 @@ export function BrowseBoats() {
             </div>
           ))}
         </div>
-      ) : filtered.length > 0 ? (
+      ) : listingsData.length > 0 ? (
         <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((listing) => (
+          {listingsData.map((listing) => (
             <BoatCard
               key={listing.id}
               listing={listing}
@@ -598,6 +700,19 @@ export function BrowseBoats() {
           <p className="mt-1 text-sm text-muted-foreground">Próbálj lazítani a szűrési feltételeken.</p>
         </div>
       )}
+
+      {!loadingAds && hasMore ? (
+        <div className="mt-8 flex justify-center">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={loadingMore}
+            onClick={() => void loadAdsPage(nextPage, { append: true })}
+          >
+            {loadingMore ? "Betöltés..." : "További hirdetések betöltése"}
+          </Button>
+        </div>
+      ) : null}
 
       {applyError ? (
         <div className="mt-6 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
