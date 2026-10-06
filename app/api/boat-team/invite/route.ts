@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { Resend } from "resend"
-import sharp from "sharp"
 import { escapeHtml, getSafeImageUrl } from "@/lib/email-html"
 
 function normalizeEmail(value: unknown) {
@@ -60,6 +59,10 @@ async function createEmailBoatImage(imageUrl: string, supabaseUrl: string) {
     if (source.length === 0 || source.length > maxSourceBytes) {
       return null
     }
+
+    // Dinamikus import: ha a natív sharp binding hiányzik/összeférhetetlen a futtatókörnyezettel,
+    // ez egy elkapható Promise-elutasítást ad, nem egy modulszintű crash-t az egész route-nak.
+    const { default: sharp } = await import("sharp")
 
     return await sharp(source)
       .rotate()
