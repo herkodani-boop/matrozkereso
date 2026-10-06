@@ -729,10 +729,15 @@ export function SkipperDashboard() {
         }),
       })
 
-      const payload = (await response.json()) as {
-        ok?: boolean
-        error?: string
-        sent?: boolean
+      let payload: { ok?: boolean; error?: string; sent?: boolean }
+      try {
+        payload = (await response.json()) as { ok?: boolean; error?: string; sent?: boolean }
+      } catch {
+        throw new Error(
+          response.status === 504
+            ? "A meghívás küldése túl sokáig tartott. Próbáld újra néhány másodperc múlva."
+            : "A szerver váratlan hibát adott vissza. Próbáld újra néhány másodperc múlva.",
+        )
       }
 
       if (!response.ok || !payload.ok || !payload.sent) {

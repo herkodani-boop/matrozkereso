@@ -51,7 +51,7 @@ async function createEmailBoatImage(imageUrl: string, supabaseUrl: string) {
       return null
     }
 
-    const response = await fetch(parsedImageUrl, { signal: AbortSignal.timeout(10000) })
+    const response = await fetch(parsedImageUrl, { signal: AbortSignal.timeout(6000) })
     if (!response.ok || Number(response.headers.get("content-length") ?? 0) > maxSourceBytes) {
       return null
     }
@@ -72,7 +72,19 @@ async function createEmailBoatImage(imageUrl: string, supabaseUrl: string) {
   }
 }
 
+// Vercel default function timeout is too short for fetch+sharp+email in one request; give it headroom.
+export const maxDuration = 30
+
 export async function POST(request: NextRequest) {
+  try {
+    return await handleInvite(request)
+  } catch (error) {
+    console.error("Váratlan hiba a csapatmeghívó küldése közben:", error)
+    return NextResponse.json({ error: "Váratlan hiba történt a meghívás küldése közben." }, { status: 500 })
+  }
+}
+
+async function handleInvite(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
