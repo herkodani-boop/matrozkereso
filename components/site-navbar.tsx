@@ -160,6 +160,10 @@ export function SiteNavbar() {
     }
 
     fetchUser()
+    const handleProfileUpdated = () => {
+      void fetchUser()
+    }
+    window.addEventListener("profile-updated", handleProfileUpdated)
 
     const {
       data: { subscription },
@@ -172,7 +176,10 @@ export function SiteNavbar() {
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      window.removeEventListener("profile-updated", handleProfileUpdated)
+      subscription.unsubscribe()
+    }
   }, [])
 
   return (

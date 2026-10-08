@@ -29,6 +29,19 @@ const levelOptions: Record<string, string> = {
   profi: "Profi - Versenyző",
 }
 
+function getTodayDateInputValue() {
+  const today = new Date()
+  const month = String(today.getMonth() + 1).padStart(2, "0")
+  const day = String(today.getDate()).padStart(2, "0")
+  return `${today.getFullYear()}-${month}-${day}`
+}
+
+function isValidPhoneNumber(value: string) {
+  const phone = value.trim()
+  const digitCount = phone.replace(/\D/g, "").length
+  return /^\+?[0-9\s().-]+$/.test(phone) && digitCount >= 7 && digitCount <= 15
+}
+
 const listingPostOptions: { value: string; label: string }[] = [
   { value: "kormanyos", label: "Kormányos" },
   { value: "taktikus", label: "Taktikus" },
@@ -340,6 +353,19 @@ export function AuthGateModal({
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
+    if (password.length < 8) {
+      setFormError("A jelszónak legalább 8 karakter hosszúnak kell lennie.")
+      return
+    }
+    if (!birthdate) {
+      setFormError("A születési dátum megadása kötelező.")
+      return
+    }
+    if (birthdate && birthdate > getTodayDateInputValue()) {
+      setFormError("A születési dátum nem lehet a jövőben.")
+      return
+    }
+
     if (mode === "skipper") {
       setLoading(true)
       try {
@@ -997,6 +1023,7 @@ export function AuthGateModal({
                     id="reg-password"
                     type="password"
                     required
+                    minLength={8}
                     autoComplete="new-password"
                     placeholder="••••••••"
                     value={password}
@@ -1010,10 +1037,21 @@ export function AuthGateModal({
                   <Input
                     id="reg-phone"
                     type="tel"
+                    required
+                    pattern={"\\+?[0-9\\s().-]{7,25}"}
+                    title="Adj meg egy érvényes telefonszámot (7–15 számjegy)."
                     autoComplete="tel"
                     placeholder="+36..."
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      setPhone(value)
+                      e.currentTarget.setCustomValidity(
+                        value.trim() && !isValidPhoneNumber(value)
+                          ? "Adj meg egy érvényes telefonszámot (7–15 számjegy)."
+                          : ""
+                      )
+                    }}
                     className="h-11"
                   />
                 </div>
@@ -1023,6 +1061,8 @@ export function AuthGateModal({
                   <Input
                     id="reg-birthdate"
                     type="date"
+                    required
+                    max={getTodayDateInputValue()}
                     value={birthdate}
                     onChange={(e) => setBirthdate(e.target.value)}
                     className="h-11"
@@ -1075,7 +1115,11 @@ export function AuthGateModal({
               <div className="text-center">
                 <button
                   type="button"
-                  onClick={() => setView("login")}
+                  onClick={() => {
+                    setPassword("")
+                    setFormError(null)
+                    setView("login")
+                  }}
                   className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />

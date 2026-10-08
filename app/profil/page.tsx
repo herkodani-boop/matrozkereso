@@ -33,6 +33,19 @@ function toDateInputValue(value?: string | null) {
   return d.toISOString().slice(0, 10)
 }
 
+function getTodayDateInputValue() {
+  const today = new Date()
+  const month = String(today.getMonth() + 1).padStart(2, "0")
+  const day = String(today.getDate()).padStart(2, "0")
+  return `${today.getFullYear()}-${month}-${day}`
+}
+
+function isValidPhoneNumber(value: string) {
+  const phone = value.trim()
+  const digitCount = phone.replace(/\D/g, "").length
+  return /^\+?[0-9\s().-]+$/.test(phone) && digitCount >= 7 && digitCount <= 15
+}
+
 export default function ProfilPage() {
   const router = useRouter()
 
@@ -62,6 +75,8 @@ export default function ProfilPage() {
   const [newPassword, setNewPassword] = useState("")
   const [confirmNewPassword, setConfirmNewPassword] = useState("")
   const [passwordSaving, setPasswordSaving] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordNotice, setPasswordNotice] = useState<string | null>(null)
 
   useEffect(() => {
     return () => {
@@ -179,10 +194,19 @@ export default function ProfilPage() {
     e.preventDefault()
     if (!userId) return
 
-    setSaving(true)
     setError(null)
     setNotice(null)
 
+    if (!birthdate) {
+      setError("A születési dátum megadása kötelező.")
+      return
+    }
+    if (birthdate > getTodayDateInputValue()) {
+      setError("A születési dátum nem lehet a jövőben.")
+      return
+    }
+
+    setSaving(true)
     try {
       let nextAvatarUrl = initial?.avatar_url ?? null
 
@@ -228,6 +252,7 @@ export default function ProfilPage() {
 
       setInitial(updated)
       setAvatarUrl(nextAvatarUrl)
+      window.dispatchEvent(new Event("profile-updated"))
       setSelectedFile(null)
       if (previewUrl) {
         URL.revokeObjectURL(previewUrl)
@@ -280,16 +305,16 @@ export default function ProfilPage() {
 
   async function handlePasswordUpdate(e: React.FormEvent) {
     e.preventDefault()
-    setError(null)
-    setNotice(null)
+    setPasswordError(null)
+    setPasswordNotice(null)
 
     if (!newPassword || newPassword.length < 8) {
-      setError("Az új jelszónak legalább 8 karakter hosszúnak kell lennie.")
+      setPasswordError("Az új jelszónak legalább 8 karakter hosszúnak kell lennie.")
       return
     }
 
     if (newPassword !== confirmNewPassword) {
-      setError("A két új jelszó nem egyezik.")
+      setPasswordError("A két új jelszó nem egyezik.")
       return
     }
 
@@ -300,13 +325,13 @@ export default function ProfilPage() {
       })
 
       if (passwordError) {
-        setError(passwordError.message)
+        setPasswordError(passwordError.message)
         return
       }
 
       setNewPassword("")
       setConfirmNewPassword("")
-      setNotice("Jelszó sikeresen módosítva.")
+      setPasswordNotice("Jelszó sikeresen módosítva.")
     } finally {
       setPasswordSaving(false)
     }
@@ -339,12 +364,6 @@ export default function ProfilPage() {
         {error ? (
           <div className="mb-4 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             {error}
-          </div>
-        ) : null}
-
-        {notice ? (
-          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-100">
-            {notice}
           </div>
         ) : null}
 
@@ -390,8 +409,20 @@ export default function ProfilPage() {
               <Label htmlFor="profile-phone">Telefonszám</Label>
               <Input
                 id="profile-phone"
+                type="tel"
+                required
+                pattern={"\\+?[0-9\\s().-]{7,25}"}
+                title="Adj meg egy érvényes telefonszámot (7–15 számjegy)."
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setPhone(value)
+                  e.currentTarget.setCustomValidity(
+                    value.trim() && !isValidPhoneNumber(value)
+                      ? "Adj meg egy érvényes telefonszámot (7–15 számjegy)."
+                      : ""
+                  )
+                }}
                 className="h-11"
                 placeholder="+36 ..."
               />
@@ -402,9 +433,11 @@ export default function ProfilPage() {
               <Input
                 id="profile-birthdate"
                 type="date"
+                required
+                max={getTodayDateInputValue()}
                 value={birthdate}
                 onChange={(e) => setBirthdate(e.target.value)}
-                className="h-11"
+                className="h-11 min-h-11"
               />
             </div>
 
@@ -412,7 +445,7 @@ export default function ProfilPage() {
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="profile-level">Tapasztalati szint</Label>
                 <Select value={level} onValueChange={(value) => setLevel(value as string)}>
-                  <SelectTrigger id="profile-level" className="h-11 w-full">
+                  <SelectTrigger id="profile-level" className="h-11 min-h-11 w-full">
                     <SelectValue>{(value: string) => experienceLevelLabels[value] ?? "Válassz szintet"}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -426,6 +459,12 @@ export default function ProfilPage() {
               </div>
             ) : null}
           </div>
+
+          {notice ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-100">
+              {notice}
+            </div>
+          ) : null}
 
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button type="submit" disabled={saving || !isDirty} className="h-11 bg-accent! text-accent-foreground! hover:bg-accent/90!">
@@ -472,6 +511,23 @@ export default function ProfilPage() {
               />
             </div>
           </div>
+
+          {passwordError ? (
+            <div
+              className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+              role="alert"
+            >
+              {passwordError}
+            </div>
+          ) : null}
+          {passwordNotice ? (
+            <div
+              className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-100"
+              role="status"
+            >
+              {passwordNotice}
+            </div>
+          ) : null}
 
           <Button
             type="submit"
