@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Image from "next/image"
-import { CalendarDays, LoaderCircle, MapPin, MessageSquareText, Ship, UserX, Users } from "lucide-react"
+import { CalendarDays, LoaderCircle, MapPin, MessageSquareText, ShipWheel, UserX, Users } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -32,9 +32,9 @@ type Participant = {
 
 const statusLabels: Record<Participant["status"], string> = {
   confirmed: "Részt vesz",
-  pending: "Válaszra vár",
+  pending: "Nem döntött",
   declined: "Nem vesz részt",
-  unset: "Nincs beállítva",
+  unset: "Nem döntött",
 }
 
 const statusDotClass: Record<Participant["status"], string> = {
@@ -176,7 +176,7 @@ export function EventDetailsModal({
         <div className="flex flex-col gap-5 p-6">
           <DialogHeader className="gap-1.5">
             <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-accent">
-              <Ship className="h-3.5 w-3.5" aria-hidden="true" />
+              <ShipWheel className="h-3.5 w-3.5" aria-hidden="true" />
               {event?.boatName}
             </p>
             <DialogTitle className="text-balance text-xl font-bold tracking-tight text-foreground">

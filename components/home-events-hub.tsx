@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import type { User } from "@supabase/supabase-js"
-import { ArrowRight, CalendarDays, Check, Compass, LoaderCircle, MapPin, Ship, Users, X } from "lucide-react"
+import { ArrowRight, CalendarDays, Check, Compass, LoaderCircle, MapPin, ShipWheel, Users, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { supabase } from "@/lib/supabase"
@@ -392,7 +392,7 @@ export function HomeEventsHub() {
               href="/kapitany-dashboard"
               className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
-              <Ship className="h-4 w-4" aria-hidden="true" />
+              <ShipWheel className="h-4 w-4" aria-hidden="true" />
               Kapitányi dashboard
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
@@ -449,7 +449,7 @@ export function HomeEventsHub() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">{event.title}</p>
                         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                          <span className="inline-flex items-center gap-1"><Ship className="h-3 w-3" aria-hidden="true" />{event.boatName}</span>
+                          <span className="inline-flex items-center gap-1"><ShipWheel className="h-3 w-3" aria-hidden="true" />{event.boatName}</span>
                           {event.location ? <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" aria-hidden="true" />{event.location}</span> : null}
                           <span>{event.participation}</span>
                         </p>

@@ -1,15 +1,16 @@
 "use client"
 
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { type User } from "@supabase/supabase-js"
 import { supabase } from "@/lib/supabase"
-import { ImagePlus, Ship } from "lucide-react"
+import { ImagePlus } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { Boat } from "./types"
 import { crewTypeOptions } from "./format-utils"
+import { ImageCropDialog } from "./image-crop-dialog"
 import { MAX_BOAT_IMAGE_UPLOAD_SIZE_BYTES, getBoatImageStoragePath, optimizeBoatImage } from "./image-optimization"
 
 /*
@@ -47,6 +48,14 @@ export function BoatRegistrationModal({
   const [crewSize, setCrewSize] = useState<string | number>("")
   const [crewType, setCrewType] = useState("")
   const [boatPhoto, setBoatPhoto] = useState<File | null>(null)
+  const [pendingPhoto, setPendingPhoto] = useState<File | null>(null)
+  const photoPreviewUrl = useMemo(() => (boatPhoto ? URL.createObjectURL(boatPhoto) : null), [boatPhoto])
+  useEffect(() => {
+    return () => {
+      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl)
+    }
+  }, [photoPreviewUrl])
+  const currentPhotoUrl = photoPreviewUrl ?? existingBoat?.image_url ?? null
   const [isSaving, setIsSaving] = useState(false)
   const [isOptimizingImage, setIsOptimizingImage] = useState(false)
   const [errors, setErrors] = useState<{
@@ -250,20 +259,17 @@ export function BoatRegistrationModal({
         if (!isSaving) onOpenChange(nextOpen)
       }}
     >
-      <DialogContent showCloseButton className="max-w-lg gap-0 rounded-2xl p-0 sm:max-w-xl">
+      <DialogContent showCloseButton initialFocus={false} className="max-w-lg gap-0 rounded-2xl p-0 sm:max-w-xl">
         <div className="flex flex-col gap-6 p-6 sm:p-8">
-          <DialogHeader className="gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <Ship className="h-5 w-5" aria-hidden="true" />
-            </div>
+          <DialogHeader className="gap-1.5">
             <DialogTitle className="text-balance text-xl font-bold tracking-tight text-foreground sm:text-2xl">
               {mode === "edit" ? "Hajó adatok szerkesztése" : "Hajó regisztrációja"}
             </DialogTitle>
-            <DialogDescription className="text-pretty leading-relaxed">
-              {mode === "edit"
-                ? "Frissítsd a hajó adatait a meglévő profilhoz igazítva."
-                : "Add meg a hajód adatait. Mentés után visszatérsz a kapitányi felületre, ahol külön adhatod fel az első hirdetést."}
-            </DialogDescription>
+            {mode === "create" ? (
+              <DialogDescription className="text-pretty leading-relaxed">
+                Add meg a hajód adatait. Mentés után visszatérsz a kapitányi felületre, ahol külön adhatod fel az első hirdetést.
+              </DialogDescription>
+            ) : null}
           </DialogHeader>
 
           <form onSubmit={handleBoatSubmit} className="flex flex-col gap-4">
@@ -272,6 +278,53 @@ export function BoatRegistrationModal({
                 {errors.submit}
               </div>
             ) : null}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="boat-photo">Hajó fotó (opcionális)</Label>
+              <label
+                htmlFor="boat-photo"
+                className="group relative flex aspect-[3/1] cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border bg-secondary/40 text-center text-muted-foreground transition-colors hover:border-brand hover:text-brand"
+              >
+                {currentPhotoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={currentPhotoUrl} alt="Hajókép" className="absolute inset-0 h-full w-full object-cover" />
+                ) : null}
+                <span
+                  className={
+                    currentPhotoUrl
+                      ? "absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-brand shadow-sm"
+                      : "flex flex-col items-center gap-2 px-4"
+                  }
+                >
+                  <ImagePlus className={currentPhotoUrl ? "h-4 w-4" : "h-6 w-6"} aria-hidden="true" />
+                  <span className={currentPhotoUrl ? "" : "text-sm font-medium"}>
+                    {currentPhotoUrl ? "Kép cseréje" : "Kép feltöltése a hajóról"}
+                  </span>
+                  {currentPhotoUrl ? null : (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      Fekvő fotó a legjobb, feltöltés után kiválaszthatod a látható részt.
+                    </span>
+                  )}
+                </span>
+                <input
+                  id="boat-photo"
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={(e) => {
+                    setPendingPhoto(e.target.files?.[0] ?? null)
+                    e.target.value = ""
+                    if (errors.boatPhoto) {
+                      setErrors((prev) => ({ ...prev, boatPhoto: undefined }))
+                    }
+                  }}
+                />
+              </label>
+              {errors.boatPhoto ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.boatPhoto}
+                </p>
+              ) : null}
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="boat-name">Hajó neve</Label>
@@ -306,7 +359,7 @@ export function BoatRegistrationModal({
                       setErrors((prev) => ({ ...prev, type: undefined }))
                     }
                   }}
-                  placeholder="Pl. X-35 — Versenycirkáló"
+                  placeholder="Pl. Bavaria 34, Dehler 30, X-35"
                   className="h-11"
                   aria-invalid={!!errors.type}
                 />
@@ -366,39 +419,6 @@ export function BoatRegistrationModal({
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="boat-photo">Hajó fotó (opcionális)</Label>
-              <label
-                htmlFor="boat-photo"
-                className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-secondary/40 px-4 py-6 text-center text-muted-foreground transition-colors hover:border-accent hover:text-accent"
-              >
-                <ImagePlus className="h-6 w-6" aria-hidden="true" />
-                <span className="text-sm font-medium">
-                  {boatPhoto ? boatPhoto.name : "Kép feltöltése a hajóról"}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  Később is hozzáadható. A feltöltött kép automatikusan optimalizálva lesz a gyors betöltéshez.
-                </span>
-                <input
-                  id="boat-photo"
-                  type="file"
-                  accept="image/*"
-                  className="sr-only"
-                  onChange={(e) => {
-                    setBoatPhoto(e.target.files?.[0] ?? null)
-                    if (errors.boatPhoto) {
-                      setErrors((prev) => ({ ...prev, boatPhoto: undefined }))
-                    }
-                  }}
-                />
-              </label>
-              {errors.boatPhoto ? (
-                <p className="text-sm text-destructive" role="alert">
-                  {errors.boatPhoto}
-                </p>
-              ) : null}
-            </div>
-
             <div className="flex flex-col gap-2">
               <Label>Csapat jellege</Label>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -409,16 +429,16 @@ export function BoatRegistrationModal({
                       key={option.value}
                       className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition-colors ${
                         active
-                          ? "border-accent bg-accent/10 text-foreground"
-                          : "border-border bg-card text-foreground hover:border-accent/60"
+                          ? "border-brand bg-brand-tint text-foreground"
+                          : "border-border bg-card text-foreground hover:border-brand/60"
                       }`}
                     >
                       <span
                         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                          active ? "border-accent" : "border-muted-foreground"
+                          active ? "border-brand" : "border-muted-foreground"
                         }`}
                       >
-                        {active ? <span className="h-2 w-2 rounded-full bg-accent" /> : null}
+                        {active ? <span className="h-2 w-2 rounded-full bg-brand" /> : null}
                       </span>
                       <input
                         type="radio"
@@ -449,7 +469,7 @@ export function BoatRegistrationModal({
               type="submit"
               size="lg"
               disabled={isSaving || isOptimizingImage}
-              className="mt-2 h-11 bg-accent! text-accent-foreground! hover:bg-accent/90! disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-2 h-11 bg-brand! text-white! hover:bg-brand/90! disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isOptimizingImage
                 ? "Kép optimalizálása..."
@@ -461,6 +481,14 @@ export function BoatRegistrationModal({
             </Button>
           </form>
         </div>
+        <ImageCropDialog
+          file={pendingPhoto}
+          onCancel={() => setPendingPhoto(null)}
+          onConfirm={(cropped) => {
+            setBoatPhoto(cropped)
+            setPendingPhoto(null)
+          }}
+        />
       </DialogContent>
       </Dialog>
   )

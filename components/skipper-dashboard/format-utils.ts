@@ -3,7 +3,7 @@ import type { Applicant, EventItem, Listing } from "./types"
 export function getEventTypeBadgeClass(type: EventItem["type"]) {
   switch (type) {
     case "Verseny":
-      return "border-0 bg-cyan-500 text-white shadow-sm"
+      return "border-0 bg-brand text-white shadow-sm"
     case "Edzés":
       return "border-0 bg-emerald-500 text-white shadow-sm"
     case "Egyéb":

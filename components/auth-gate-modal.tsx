@@ -164,6 +164,7 @@ export function AuthGateModal({
   const [listingPosts, setListingPosts] = useState<string[]>([])
   const [listingLevel, setListingLevel] = useState<string>("kezdo")
   const [listingNote, setListingNote] = useState("")
+  const [listingMaxApplicants, setListingMaxApplicants] = useState<string>("25")
   const [listingTitle, setListingTitle] = useState("")
   const [listingLocation, setListingLocation] = useState("")
   const [listingStartDate, setListingStartDate] = useState("")
@@ -213,6 +214,7 @@ export function AuthGateModal({
     setListingPosts([])
     setListingLevel("kezdo")
     setListingNote("")
+    setListingMaxApplicants("25")
     setListingErrors({})
     setIsListingSaving(false)
   }
@@ -671,6 +673,7 @@ export function AuthGateModal({
         positions,
         experience_level: listingLevel,
         captain_note: listingNote.trim() || null,
+        max_applicants: listingMaxApplicants === "unlimited" ? null : Number(listingMaxApplicants),
         created_at: new Date().toISOString(),
       }
 
@@ -690,6 +693,7 @@ export function AuthGateModal({
           {
             ...listingPayload,
             captain_note: undefined,
+            max_applicants: undefined,
           },
         ])
 
@@ -1511,6 +1515,32 @@ export function AuthGateModal({
                       {listingErrors.level}
                     </p>
                   ) : null}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="listing-max-applicants">Maximum jelentkezők száma</Label>
+                  <Select value={listingMaxApplicants} onValueChange={(v) => setListingMaxApplicants(v as string)}>
+                    <SelectTrigger id="listing-max-applicants" className="h-11 w-full">
+                      <SelectValue>{(v: string) => (v === "unlimited" ? "Korlátlan" : `${v} jelentkező`)}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["10", "25", "50", "unlimited"].map((value) => (
+                        <SelectItem key={value} value={value}>
+                          <span className="flex w-full items-center justify-between gap-3">
+                            {value === "unlimited" ? "Korlátlan" : `${value} jelentkező`}
+                            {value === "50" || value === "unlimited" ? (
+                              <span className="rounded-md bg-brand-orange px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-brand">
+                                Pro
+                              </span>
+                            ) : null}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Az elutasított jelentkezők nem számítanak bele. Betelés után nem lehet újra jelentkezni. A „Pro” opciók egyelőre demó jelleggel ingyenesen kiválaszthatók.
+                  </p>
                 </div>
               </div>
 

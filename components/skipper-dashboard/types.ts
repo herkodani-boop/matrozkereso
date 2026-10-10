@@ -84,6 +84,6 @@ export type TeamMember = {
 
 export const levelStyles: Record<Applicant["level"], string> = {
   Kezdő: "bg-secondary text-secondary-foreground",
-  Haladó: "border border-cyan-300 bg-cyan-100 text-cyan-950 dark:border-cyan-700 dark:bg-cyan-950 dark:text-cyan-100",
+  Haladó: "border border-brand-tint-strong bg-brand-tint text-brand dark:border-brand-teal dark:bg-brand/30 dark:text-white",
   "Profi / Versenyző": "bg-primary text-primary-foreground",
 }

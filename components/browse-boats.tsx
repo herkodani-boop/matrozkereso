@@ -39,6 +39,8 @@ type ListingRow = {
   captainName: string
   captainAvatar: string | null
   captainNote: string | null
+  maxApplicants: number | null
+  activeApplicationCount: number
 }
 
 const commitmentLabels: Record<Commitment, string> = {
@@ -266,7 +268,7 @@ export function BrowseBoats() {
       setListingsData((prev) =>
         prev.map((listing) =>
           listing.id === adId
-            ? { ...listing, applied: false, applicationId: null, applicationCount: Math.max(0, listing.applicationCount - 1) }
+            ? { ...listing, applied: false, applicationId: null, applicationCount: Math.max(0, listing.applicationCount - 1), activeApplicationCount: Math.max(0, listing.activeApplicationCount - 1) }
             : listing,
         ),
       )
@@ -310,6 +312,7 @@ export function BrowseBoats() {
                 applied: true,
                 applicationId: insertedApplication?.id ?? listing.applicationId,
                 applicationCount: listing.applicationCount + 1,
+                activeApplicationCount: listing.activeApplicationCount + 1,
               }
             : listing,
         ),
@@ -349,7 +352,7 @@ export function BrowseBoats() {
       }
       setLoadError(null)
 
-      const adsBaseSelect = "id, user_id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url), applications(id, user_id)"
+      const adsBaseSelect = "id, user_id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url), applications(id, user_id, status)"
       const from = pageIndex * PAGE_SIZE
       const to = from + PAGE_SIZE - 1
 
@@ -400,11 +403,11 @@ export function BrowseBoats() {
       let count: number | null = null
 
       const { data: adsWithNote, count: countWithNote, error: adsWithNoteError } = await applyFilters(
-        supabase.from("ads").select(`${adsBaseSelect}, captain_note`, { count: "exact" }),
+        supabase.from("ads").select(`${adsBaseSelect}, captain_note, max_applicants`, { count: "exact" }),
       )
 
       if (adsWithNoteError) {
-        const noteColumnMissing = String(adsWithNoteError.code ?? "") === "42703" || /captain_note/i.test(adsWithNoteError.message ?? "")
+        const noteColumnMissing = String(adsWithNoteError.code ?? "") === "42703" || /captain_note|max_applicants/i.test(adsWithNoteError.message ?? "")
 
         if (!noteColumnMissing) {
           console.error("Hirdetések lekérdezési hiba:", adsWithNoteError)
@@ -504,6 +507,8 @@ export function BrowseBoats() {
           captainName: captainData?.full_name?.trim() || "Ismeretlen kapitány",
           captainAvatar: captainData?.avatar_url ?? null,
           captainNote: typeof ad.captain_note === "string" && ad.captain_note.trim() ? ad.captain_note.trim() : null,
+          maxApplicants: typeof ad.max_applicants === "number" ? ad.max_applicants : null,
+          activeApplicationCount: (ad.applications ?? []).filter((application: any) => application.status !== "rejected").length,
         }
       })
 
@@ -753,6 +758,7 @@ function BoatCard({
 }) {
   const [showMessageField, setShowMessageField] = useState(false)
   const [applicationMessage, setApplicationMessage] = useState("")
+  const isFull = listing.maxApplicants !== null && listing.activeApplicationCount >= listing.maxApplicants
 
   return (
     <article className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-accent">
@@ -811,6 +817,11 @@ function BoatCard({
           {listing.applied ? (
             <Badge className="bg-accent text-accent-foreground">Már jelentkeztem</Badge>
           ) : null}
+          {listing.maxApplicants !== null && !isFull ? (
+            <Badge className="border-0 bg-secondary text-secondary-foreground">
+              Még {listing.maxApplicants - listing.activeApplicationCount} szabad hely
+            </Badge>
+          ) : null}
         </div>
 
         <button
@@ -852,7 +863,7 @@ function BoatCard({
           </div>
         ) : null}
 
-        {!listing.applied && !listing.isOwnListing ? (
+        {!listing.applied && !listing.isOwnListing && !isFull ? (
           <div className="mt-4">
             <button
               type="button"
@@ -907,10 +918,10 @@ function BoatCard({
           <Button
             size="lg"
             onClick={() => onApply(listing, applicationMessage)}
-            disabled={listing.applied || applyingId === listing.id}
+            disabled={listing.applied || applyingId === listing.id || isFull}
             className="mt-6 h-11 w-full bg-accent! text-base text-accent-foreground! hover:bg-accent/90! disabled:cursor-not-allowed disabled:bg-muted"
           >
-            {applyingId === listing.id ? "Jelentkezés..." : "Jelentkezem a hajóra"}
+            {applyingId === listing.id ? "Jelentkezés..." : isFull ? "Betelt – nincs több hely" : "Jelentkezem a hajóra"}
           </Button>
         )}
       </div>

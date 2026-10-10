@@ -21,6 +21,11 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-brand: #0e3f57;
+  --color-brand-teal: #3e8fa8;
+  --color-brand-tint: #e7edf0;
+  --color-brand-tint-strong: #d3dde3;
+  --color-brand-orange: #e8833a;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
