@@ -100,6 +100,37 @@ const postFilterLabels: Record<string, string> = {
   fordeck: "Fordeck",
 }
 
+type SortMode = "soon" | "newest"
+
+const sortLabels: Record<SortMode, string> = {
+  soon: "Legközelebbi esemény",
+  newest: "Legújabb hirdetés",
+}
+
+// Server-side mirror of isAdVisibleByDate, so pages and the total count only include ads that can be shown.
+function onlyVisibleByDate<T>(query: T): T {
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+  return (query as any).or(
+    [
+      `and(commitment.eq.egy-verseny,or(start_date.is.null,start_date.gte.${today}))`,
+      `and(commitment.eq.szezon,or(end_date.is.null,end_date.gte.${today}))`,
+      "commitment.is.null",
+      "commitment.not.in.(egy-verseny,szezon)",
+    ].join(","),
+  ) as T
+}
+
+// Soonest first; ads without a start date and ties fall back to the newest listing.
+function applySort<T>(query: T, sort: SortMode): T {
+  const q: any = query
+  return (
+    sort === "soon"
+      ? q.order("start_date", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false })
+      : q.order("created_at", { ascending: false })
+  ) as T
+}
+
 const levelFilterLabels: Record<string, string> = {
   [ALL]: "Mindegy",
   ...levelLabels,
@@ -140,6 +171,8 @@ export function BrowseBoats() {
   const [commitment, setCommitmentState] = useState<string>(() => searchParams.get("commitment") ?? ALL)
   const [posts, setPostsState] = useState<ListingPost[]>(() => Array.from(new Set(initialPosts)))
   const [level, setLevelState] = useState<string>(() => searchParams.get("level") ?? ALL)
+  const [sort, setSortState] = useState<SortMode>(() => (searchParams.get("sort") === "newest" ? "newest" : "soon"))
+  const sortRef = useRef<SortMode>(sort)
   const [searchInput, setSearchInput] = useState<string>(() => searchParams.get("q") ?? "")
   const [search, setSearch] = useState<string>(() => searchParams.get("q") ?? "")
   const [postDropdownOpen, setPostDropdownOpen] = useState(false)
@@ -164,12 +197,19 @@ export function BrowseBoats() {
     updateUrl({ commitment, posts, level: v, q: search })
   }
 
+  function setSort(v: SortMode) {
+    sortRef.current = v
+    setSortState(v)
+    updateUrl({ commitment, posts, level, q: search })
+  }
+
   function updateUrl(filters: { commitment: string; posts: ListingPost[]; level: string; q: string }) {
     const params = new URLSearchParams()
     if (filters.commitment !== ALL) params.set("commitment", filters.commitment)
     if (filters.posts.length > 0) params.set("post", filters.posts.join(","))
     if (filters.level !== ALL) params.set("level", filters.level)
     if (filters.q.trim()) params.set("q", filters.q.trim())
+    if (sortRef.current !== "soon") params.set("sort", sortRef.current)
 
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
@@ -393,7 +433,7 @@ export function BrowseBoats() {
       }
 
       function applyFilters<T>(query: T): T {
-        let next = (query as any).eq("is_active", true)
+        let next = onlyVisibleByDate((query as any).eq("is_active", true))
 
         if (commitment !== ALL) {
           next = next.eq("commitment", commitment)
@@ -416,7 +456,7 @@ export function BrowseBoats() {
           next = next.or(orParts.join(","))
         }
 
-        return next.order("created_at", { ascending: false }).range(from, to)
+        return applySort(next, sort).range(from, to)
       }
 
       let data: any[] | null = null
@@ -442,12 +482,12 @@ export function BrowseBoats() {
           ? [`title.ilike.${toIlikeValue(trimmedSearch)}`, `location.ilike.${toIlikeValue(trimmedSearch)}`, ...(matchingBoatIds.length > 0 ? [`boat_id.in.(${matchingBoatIds.join(",")})`] : [])]
           : null
 
-        let fallbackQuery: any = supabase.from("ads").select(adsBaseSelect, { count: "exact" }).eq("is_active", true)
+        let fallbackQuery: any = onlyVisibleByDate(supabase.from("ads").select(adsBaseSelect, { count: "exact" }).eq("is_active", true))
         if (commitment !== ALL) fallbackQuery = fallbackQuery.eq("commitment", commitment)
         if (level !== ALL) fallbackQuery = fallbackQuery.eq("experience_level", level)
         if (posts.length > 0) fallbackQuery = fallbackQuery.overlaps("positions", posts)
         if (fallbackOrParts) fallbackQuery = fallbackQuery.or(fallbackOrParts.join(","))
-        fallbackQuery = fallbackQuery.order("created_at", { ascending: false }).range(from, to)
+        fallbackQuery = applySort(fallbackQuery, sort).range(from, to)
 
         const { data: adsWithoutNote, count: countWithoutNote, error: adsWithoutNoteError } = await fallbackQuery
 
@@ -541,7 +581,7 @@ export function BrowseBoats() {
       setLoadingAds(false)
       setLoadingMore(false)
     },
-    [user, commitment, posts, level, search],
+    [user, commitment, posts, level, search, sort],
   )
 
   useEffect(() => {
@@ -658,6 +698,18 @@ export function BrowseBoats() {
               <SelectItem value="kezdo">Kezdő</SelectItem>
               <SelectItem value="halado">Haladó</SelectItem>
               <SelectItem value="profi">Profi / Versenyző</SelectItem>
+            </SelectContent>
+          </Select>
+        </FilterField>
+
+        <FilterField label="Rendezés">
+          <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
+            <SelectTrigger className={filterTriggerClass}>
+              <SelectValue>{(v: string) => sortLabels[v as SortMode] ?? sortLabels.soon}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="soon">{sortLabels.soon}</SelectItem>
+              <SelectItem value="newest">{sortLabels.newest}</SelectItem>
             </SelectContent>
           </Select>
         </FilterField>
