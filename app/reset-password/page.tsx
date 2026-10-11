@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { supabase } from "@/lib/supabase"
+import { clearHungarianValidationMessage, setHungarianValidationMessage } from "@/lib/hungarian-form-validation"
 
 function extractHashParams(hash: string) {
   const raw = hash.startsWith("#") ? hash.slice(1) : hash
@@ -159,7 +160,7 @@ function ResetPasswordContent() {
             <Button className="h-11" onClick={() => router.push("/")}>Bejelentkezés</Button>
           </div>
         ) : ready ? (
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="new-password">Új jelszó</Label>
               <Input

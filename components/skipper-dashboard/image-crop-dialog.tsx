@@ -15,10 +15,12 @@ export function ImageCropDialog({
   file,
   onCancel,
   onConfirm,
+  onError,
 }: {
   file: File | null
   onCancel: () => void
   onConfirm: (cropped: File) => void
+  onError: (message: string) => void
 }) {
   const frameRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
@@ -49,8 +51,10 @@ export function ImageCropDialog({
         setImage(result.image)
         setSrc(result.image.src)
       })
-      .catch(() => {
-        if (!cancelled) onCancel()
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          onError(error instanceof Error ? error.message : "A hajókép betöltése nem sikerült.")
+        }
       })
     return () => {
       cancelled = true
@@ -123,11 +127,13 @@ export function ImageCropDialog({
       ctx.drawImage(image, sx, sy, sw, sh, 0, 0, outWidth, outHeight)
 
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.9))
-      if (!blob) throw new Error("blob")
+      if (!blob || blob.type !== "image/webp") {
+        throw new Error("A kivágott hajókép WebP formátumba alakítása nem sikerült.")
+      }
       const safeName = file.name.replace(/\.[^.]+$/, "") || "boat-photo"
       onConfirm(new File([blob], `${safeName}.webp`, { type: "image/webp" }))
-    } catch {
-      onCancel()
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "A hajókép kivágása nem sikerült.")
     } finally {
       setIsSaving(false)
     }

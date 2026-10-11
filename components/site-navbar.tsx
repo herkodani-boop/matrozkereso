@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { AuthGateModal } from "@/components/auth-gate-modal"
 import { supabase } from "@/lib/supabase"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
+import { clearHungarianValidationMessage, setHungarianValidationMessage } from "@/lib/hungarian-form-validation"
 
 type UserProfile = {
   full_name: string
@@ -196,6 +197,8 @@ export function SiteNavbar() {
           {isTestMode && (
             <form
               onSubmit={submitFeedback}
+              onInvalidCapture={setHungarianValidationMessage}
+              onInputCapture={clearHungarianValidationMessage}
               className="order-3 flex w-full items-center gap-2 sm:order-none sm:mx-auto sm:w-auto sm:min-w-[280px] sm:max-w-md sm:flex-1"
             >
               <Input

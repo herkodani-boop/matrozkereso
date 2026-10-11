@@ -1,27 +1,57 @@
 export const MAX_BOAT_IMAGE_DIMENSION = 1600
 export const TARGET_BOAT_IMAGE_SIZE_BYTES = 900 * 1024
 export const MAX_BOAT_IMAGE_UPLOAD_SIZE_BYTES = 12 * 1024 * 1024
+export const MAX_BOAT_IMAGE_SOURCE_PIXELS = 40_000_000
+
+const supportedBoatImageTypes = new Set(["image/jpeg", "image/png", "image/webp"])
 
 export async function loadImageElement(file: File): Promise<{ image: HTMLImageElement; revoke: () => void }> {
   const objectUrl = URL.createObjectURL(file)
 
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new window.Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error("A kép betöltése sikertelen."))
-    img.src = objectUrl
-  })
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new window.Image()
+      img.onload = () => resolve(img)
+      img.onerror = () => reject(new Error("A kép nem olvasható vagy sérült. Válassz másik képet."))
+      img.src = objectUrl
+    })
 
-  return {
-    image,
-    revoke: () => URL.revokeObjectURL(objectUrl),
+    return {
+      image,
+      revoke: () => URL.revokeObjectURL(objectUrl),
+    }
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl)
+    throw error
+  }
+}
+
+export async function validateBoatImage(file: File): Promise<void> {
+  if (!supportedBoatImageTypes.has(file.type)) {
+    throw new Error("Csak JPG, PNG vagy WebP formátumú hajókép tölthető fel.")
+  }
+
+  if (file.size > MAX_BOAT_IMAGE_UPLOAD_SIZE_BYTES) {
+    throw new Error("A kiválasztott kép nagyobb 12 MB-nál. Válassz kisebb képet.")
+  }
+
+  const { image, revoke } = await loadImageElement(file)
+  try {
+    const width = image.naturalWidth || image.width
+    const height = image.naturalHeight || image.height
+    if (!width || !height) {
+      throw new Error("A kép felbontása nem olvasható.")
+    }
+    if (width * height > MAX_BOAT_IMAGE_SOURCE_PIXELS) {
+      throw new Error("A kép felbontása túl nagy. Válassz legfeljebb 40 megapixeles képet.")
+    }
+  } finally {
+    revoke()
   }
 }
 
 export async function optimizeBoatImage(file: File): Promise<File> {
-  if (!file.type.startsWith("image/")) {
-    return file
-  }
+  await validateBoatImage(file)
 
   const { image, revoke } = await loadImageElement(file)
 
@@ -30,52 +60,45 @@ export async function optimizeBoatImage(file: File): Promise<File> {
     const height = image.naturalHeight || image.height
 
     if (!width || !height) {
-      return file
+      throw new Error("A kép felbontása nem olvasható.")
     }
-
-    const scale = Math.min(1, MAX_BOAT_IMAGE_DIMENSION / Math.max(width, height))
-    const targetWidth = Math.max(1, Math.round(width * scale))
-    const targetHeight = Math.max(1, Math.round(height * scale))
 
     const canvas = document.createElement("canvas")
-    canvas.width = targetWidth
-    canvas.height = targetHeight
-
     const ctx = canvas.getContext("2d")
     if (!ctx) {
-      return file
+      throw new Error("A kép feldolgozása nem sikerült ebben a böngészőben.")
     }
 
-    ctx.drawImage(image, 0, 0, targetWidth, targetHeight)
-
-    const qualities = [0.82, 0.74, 0.66, 0.58]
     let bestBlob: Blob | null = null
+    const scale = Math.min(1, MAX_BOAT_IMAGE_DIMENSION / Math.max(width, height))
+    const baseWidth = Math.max(1, Math.round(width * scale))
+    const baseHeight = Math.max(1, Math.round(height * scale))
 
-    for (const quality of qualities) {
-      const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob(resolve, "image/webp", quality)
-      })
+    for (const sizeScale of [1, 0.875, 0.75, 0.625, 0.5]) {
+      canvas.width = Math.max(1, Math.round(baseWidth * sizeScale))
+      canvas.height = Math.max(1, Math.round(baseHeight * sizeScale))
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
 
-      if (!blob) {
-        continue
-      }
+      for (const quality of [0.82, 0.72, 0.62, 0.52, 0.42]) {
+        const blob = await new Promise<Blob | null>((resolve) => {
+          canvas.toBlob(resolve, "image/webp", quality)
+        })
 
-      if (!bestBlob || blob.size < bestBlob.size) {
-        bestBlob = blob
-      }
+        if (!blob || blob.type !== "image/webp") continue
+        if (!bestBlob || blob.size < bestBlob.size) bestBlob = blob
 
-      if (blob.size <= TARGET_BOAT_IMAGE_SIZE_BYTES) {
-        bestBlob = blob
-        break
+        if (blob.size <= TARGET_BOAT_IMAGE_SIZE_BYTES) {
+          const safeName = file.name.replace(/\.[^.]+$/, "") || "boat-photo"
+          return new File([blob], `${safeName}.webp`, { type: "image/webp" })
+        }
       }
     }
 
-    if (!bestBlob || bestBlob.size >= file.size) {
-      return file
+    if (!bestBlob) {
+      throw new Error("A kép WebP formátumba alakítása nem sikerült ebben a böngészőben.")
     }
 
-    const safeName = file.name.replace(/\.[^.]+$/, "") || "boat-photo"
-    return new File([bestBlob], `${safeName}.webp`, { type: "image/webp" })
+    throw new Error("A hajókép tömörítés után is túl nagy. Válassz kisebb vagy egyszerűbb képet.")
   } finally {
     revoke()
   }
