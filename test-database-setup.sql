@@ -29,6 +29,7 @@ create table if not exists public.boats (
   max_crew_size integer not null,
   team_type text not null,
   image_url text,
+  original_image_url text,
   user_id uuid not null references public.users(id) on delete cascade,
   created_at timestamptz default now()
 );

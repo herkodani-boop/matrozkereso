@@ -9,10 +9,8 @@ import { loadImageElement } from "./image-optimization"
 const OUTPUT_WIDTH = 1600
 const MIN_RECOMMENDED_WIDTH = 1200
 const MAX_ZOOM = 3
-// The crop frame follows each photo's own proportions (clamped so the dialog stays usable),
-// instead of forcing every boat photo into a single fixed aspect ratio.
-const MIN_FRAME_ASPECT = 0.6
-const MAX_FRAME_ASPECT = 2.4
+// A hajókép mindenhol (dashboard fejléc, űrlap) 3:1 arányban jelenik meg, ezért a kivágó is ezt mutatja.
+const FRAME_ASPECT = 3
 
 export function ImageCropDialog({
   file,
@@ -78,7 +76,7 @@ export function ImageCropDialog({
 
   const nw = image?.naturalWidth ?? 0
   const nh = image?.naturalHeight ?? 0
-  const frameAspect = nw && nh ? Math.min(MAX_FRAME_ASPECT, Math.max(MIN_FRAME_ASPECT, nw / nh)) : 16 / 9
+  const frameAspect = FRAME_ASPECT
   const baseScale = nw && nh && frame.w ? Math.max(frame.w / nw, frame.h / nh) : 1
   const scale = baseScale * zoom
   const dw = nw * scale
@@ -161,8 +159,8 @@ export function ImageCropDialog({
           <DialogHeader className="gap-1">
             <DialogTitle className="text-lg font-bold">Hajókép beállítása</DialogTitle>
             <DialogDescription>
-              Húzd a képet a megfelelő pozícióba, nagyítsd a csúszkával. A keret a fotód saját arányát követi, így
-              semmi nem vész el belőle feleslegesen.
+              Húzd a képet a megfelelő pozícióba, nagyítsd a csúszkával. A keret a hajód fejlécének arányát mutatja,
+              pontosan ezt a kivágást fogja látni mindenki.
             </DialogDescription>
           </DialogHeader>
 

@@ -50,7 +50,9 @@ export function BoatRegistrationModal({
   const [crewSize, setCrewSize] = useState<string | number>("")
   const [crewType, setCrewType] = useState("")
   const [boatPhoto, setBoatPhoto] = useState<File | null>(null)
+  const [originalPhoto, setOriginalPhoto] = useState<File | null>(null)
   const [pendingPhoto, setPendingPhoto] = useState<File | null>(null)
+  const pendingIsRecropRef = useRef(false)
   const [imageError, setImageError] = useState<string | null>(null)
   const [isValidatingImage, setIsValidatingImage] = useState(false)
   const imageSelectionId = useRef(0)
@@ -83,6 +85,7 @@ export function BoatRegistrationModal({
       setCrewSize(existingBoat.max_crew_size ?? "")
       setCrewType(existingBoat.team_type ?? "")
       setBoatPhoto(null)
+      setOriginalPhoto(null)
       setErrors({})
       return
     }
@@ -93,6 +96,7 @@ export function BoatRegistrationModal({
     setCrewSize("")
     setCrewType("")
     setBoatPhoto(null)
+    setOriginalPhoto(null)
     setErrors({})
   }, [open, mode, existingBoat])
 
@@ -134,123 +138,108 @@ export function BoatRegistrationModal({
     setErrors({})
     setIsSaving(true)
 
-    let uploadedBoatPhotoPath: string | null = null
+    const uploadedPaths: string[] = []
     let boatRecordSaved = false
+
+    const uploadBoatFile = async (file: File, suffix: string) => {
+      const fileExt = file.name.split(".").pop() ?? "webp"
+      const filePath = `boats/${user?.id}-${Date.now()}${suffix}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage.from("boats").upload(filePath, file)
+      if (uploadError) throw new Error(uploadError.message)
+      uploadedPaths.push(filePath)
+
+      const { data: publicUrlData } = supabase.storage.from("boats").getPublicUrl(filePath)
+      if (!publicUrlData?.publicUrl) throw new Error("Nem sikerült lekérni a hajókép nyilvános URL-jét.")
+      return { path: filePath, url: publicUrlData.publicUrl }
+    }
 
     try {
       let imageUrl: string | null = existingBoat?.image_url ?? null
+      let originalImageUrl: string | null = existingBoat?.original_image_url ?? null
+      let uploadedOriginalPath: string | null = null
       if (boatPhoto) {
         setIsOptimizingImage(true)
-        let uploadFile: File
         try {
-          uploadFile = await optimizeBoatImage(boatPhoto)
+          const croppedFile = await optimizeBoatImage(boatPhoto)
+          imageUrl = (await uploadBoatFile(croppedFile, "")).url
+
+          if (originalPhoto) {
+            const originalFile = await optimizeBoatImage(originalPhoto)
+            const uploadedOriginal = await uploadBoatFile(originalFile, "-original")
+            originalImageUrl = uploadedOriginal.url
+            uploadedOriginalPath = uploadedOriginal.path
+          }
         } catch (error) {
           setBoatPhoto(null)
-          setImageError(error instanceof Error ? error.message : "A hajókép tömörítése nem sikerült.")
+          setOriginalPhoto(null)
+          setImageError(error instanceof Error ? error.message : "A hajókép feltöltése nem sikerült.")
           return
         } finally {
           setIsOptimizingImage(false)
         }
-
-        const fileExt = uploadFile.name.split(".").pop() ?? "webp"
-        const fileName = `${user?.id}-${Date.now()}.${fileExt}`
-        const filePath = `boats/${fileName}`
-
-        const { error: uploadError } = await supabase.storage
-          .from("boats")
-          .upload(filePath, uploadFile)
-
-        if (uploadError) {
-          setBoatPhoto(null)
-          setImageError(uploadError.message)
-          return
-        }
-        uploadedBoatPhotoPath = filePath
-
-        const { data: publicUrlData } = await supabase.storage
-          .from("boats")
-          .getPublicUrl(filePath)
-
-        if (!publicUrlData?.publicUrl) {
-          setBoatPhoto(null)
-          setImageError("Nem sikerült lekérni a hajókép nyilvános URL-jét.")
-          return
-        }
-
-        imageUrl = publicUrlData.publicUrl
       }
 
-      if (mode === "edit" && existingBoat) {
-        const { data: updatedBoat, error: updateError } = await supabase
-          .from("boats")
-          .update({
-            name: name.trim(),
-            type: type.trim(),
-            harbor: harbor.trim(),
-            max_crew_size: parseInt(String(crewSizeValue), 10),
-            team_type: crewType,
-            image_url: imageUrl,
-          })
-          .eq("id", existingBoat.id)
-          .select()
-          .single()
-
-        if (updateError || !updatedBoat) {
-          setErrors({ submit: updateError?.message ?? "Hiba történt a hajó mentése közben." })
-          return
-        }
-
-        boatRecordSaved = true
-        if (uploadedBoatPhotoPath && existingBoat.image_url) {
-          const oldImagePath = getBoatImageStoragePath(existingBoat.image_url)
-          if (oldImagePath && oldImagePath !== uploadedBoatPhotoPath) {
-            try {
-              const { error: oldImageRemoveError } = await supabase.storage.from("boats").remove([oldImagePath])
-              if (oldImageRemoveError) {
-                console.warn("Régi hajókép törlése nem sikerült:", oldImageRemoveError)
-              }
-            } catch (cleanupError) {
-              console.warn("Régi hajókép törlése hálózati hiba miatt nem sikerült:", cleanupError)
-            }
-          }
-        }
-
-        onBoatSaved(updatedBoat)
-        onOpenChange(false)
-        return
+      const boatFields = {
+        name: name.trim(),
+        type: type.trim(),
+        harbor: harbor.trim(),
+        max_crew_size: parseInt(String(crewSizeValue), 10),
+        team_type: crewType,
+        image_url: imageUrl,
       }
 
-      const { data: insertedBoat, error: insertError } = await supabase
-        .from("boats")
-        .insert([
-          {
-            name: name.trim(),
-            type: type.trim(),
-            harbor: harbor.trim(),
-            max_crew_size: parseInt(String(crewSizeValue), 10),
-            team_type: crewType,
-            image_url: imageUrl,
-            user_id: user!.id,
-          },
-        ])
-        .select()
-        .single()
+      const runSave = (payload: Record<string, unknown>) =>
+        mode === "edit" && existingBoat
+          ? supabase.from("boats").update(payload).eq("id", existingBoat.id).select().single()
+          : supabase.from("boats").insert([{ ...payload, user_id: user!.id }]).select().single()
 
-      if (insertError || !insertedBoat) {
-        setErrors({ submit: insertError?.message ?? "Hiba történt a hajó mentése közben." })
+      let savedResult = await runSave({ ...boatFields, original_image_url: originalImageUrl })
+      if (savedResult.error && /original_image_url/i.test(savedResult.error.message ?? "")) {
+        // Az eredeti kép oszlopa még nincs migrálva: mentés az eredeti kép nélkül.
+        savedResult = await runSave(boatFields)
+        if (!savedResult.error && uploadedOriginalPath) {
+          await supabase.storage.from("boats").remove([uploadedOriginalPath]).catch(() => undefined)
+        }
+      }
+
+      const { data: savedBoat, error: saveError } = savedResult
+      if (saveError || !savedBoat) {
+        setErrors({ submit: saveError?.message ?? "Hiba történt a hajó mentése közben." })
         return
       }
 
       boatRecordSaved = true
-      onBoatSaved(insertedBoat)
+
+      if (mode === "edit" && existingBoat) {
+        const oldPaths = [
+          boatPhoto ? existingBoat.image_url : null,
+          originalPhoto ? existingBoat.original_image_url : null,
+        ]
+          .map((url) => getBoatImageStoragePath(url))
+          .filter((path): path is string => Boolean(path) && !uploadedPaths.includes(path as string))
+
+        if (oldPaths.length > 0) {
+          try {
+            const { error: oldImageRemoveError } = await supabase.storage.from("boats").remove(oldPaths)
+            if (oldImageRemoveError) {
+              console.warn("Régi hajókép törlése nem sikerült:", oldImageRemoveError)
+            }
+          } catch (cleanupError) {
+            console.warn("Régi hajókép törlése hálózati hiba miatt nem sikerült:", cleanupError)
+          }
+        }
+      }
+
+      onBoatSaved(savedBoat)
       onOpenChange(false)
     } catch (error) {
       const message = error instanceof Error ? error.message : "Ismeretlen hiba történt a mentés közben."
       setErrors({ submit: message })
     } finally {
-      if (uploadedBoatPhotoPath && !boatRecordSaved) {
+      if (uploadedPaths.length > 0 && !boatRecordSaved) {
         try {
-          const { error: orphanCleanupError } = await supabase.storage.from("boats").remove([uploadedBoatPhotoPath])
+          const { error: orphanCleanupError } = await supabase.storage.from("boats").remove(uploadedPaths)
           if (orphanCleanupError) {
             console.warn("Sikertelen hajómentés után az új kép törlése nem sikerült:", orphanCleanupError)
           }
@@ -271,18 +260,41 @@ export function BoatRegistrationModal({
     const selectionId = ++imageSelectionId.current
     setPendingPhoto(null)
     setBoatPhoto(null)
+    setOriginalPhoto(null)
     setImageError(null)
     setIsValidatingImage(true)
 
     try {
       await validateBoatImage(file)
-      if (selectionId === imageSelectionId.current) setPendingPhoto(file)
+      if (selectionId === imageSelectionId.current) {
+        pendingIsRecropRef.current = false
+        setPendingPhoto(file)
+      }
     } catch (error) {
       if (selectionId === imageSelectionId.current) {
         setImageError(error instanceof Error ? error.message : "A hajókép ellenőrzése nem sikerült.")
       }
     } finally {
       if (selectionId === imageSelectionId.current) setIsValidatingImage(false)
+    }
+  }
+
+  async function handleRecropOriginal() {
+    const originalUrl = existingBoat?.original_image_url
+    if (!originalUrl || isValidatingImage) return
+
+    setImageError(null)
+    setIsValidatingImage(true)
+    try {
+      const response = await fetch(originalUrl)
+      if (!response.ok) throw new Error("Az eredeti kép betöltése nem sikerült.")
+      const blob = await response.blob()
+      pendingIsRecropRef.current = true
+      setPendingPhoto(new File([blob], "boat-original.webp", { type: blob.type || "image/webp" }))
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "Az eredeti kép betöltése nem sikerült.")
+    } finally {
+      setIsValidatingImage(false)
     }
   }
 
@@ -324,11 +336,11 @@ export function BoatRegistrationModal({
               <Label htmlFor="boat-photo">Hajó fotó (opcionális)</Label>
               <label
                 htmlFor="boat-photo"
-                className="group relative flex h-40 cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border bg-secondary/40 text-center text-muted-foreground transition-colors hover:border-brand hover:text-brand"
+                className={`group relative flex cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border bg-secondary/40 text-center text-muted-foreground transition-colors hover:border-brand hover:text-brand ${currentPhotoUrl ? "aspect-[3/1] w-full" : "h-40"}`}
               >
                 {currentPhotoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={currentPhotoUrl} alt="Hajókép" className="absolute inset-0 h-full w-full object-contain" />
+                  <img src={currentPhotoUrl} alt="Hajókép" className="absolute inset-0 h-full w-full object-cover" />
                 ) : null}
                 <span
                   className={
@@ -367,6 +379,16 @@ export function BoatRegistrationModal({
               ) : null}
               {isValidatingImage ? (
                 <p className="text-sm text-muted-foreground" role="status">Hajókép ellenőrzése...</p>
+              ) : null}
+              {mode === "edit" && existingBoat?.original_image_url && !originalPhoto ? (
+                <button
+                  type="button"
+                  onClick={() => void handleRecropOriginal()}
+                  disabled={isValidatingImage || isSaving}
+                  className="self-start text-sm font-medium text-brand underline-offset-4 hover:underline disabled:opacity-50"
+                >
+                  Kivágás módosítása az eredeti képen
+                </button>
               ) : null}
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -534,6 +556,7 @@ export function BoatRegistrationModal({
             setImageError(message)
           }}
           onConfirm={(cropped) => {
+            if (!pendingIsRecropRef.current) setOriginalPhoto(pendingPhoto)
             setBoatPhoto(cropped)
             setPendingPhoto(null)
           }}

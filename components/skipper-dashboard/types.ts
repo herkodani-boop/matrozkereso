@@ -42,6 +42,7 @@ export type Boat = {
   max_crew_size: number
   team_type: string
   image_url: string | null
+  original_image_url?: string | null
   user_id: string
 }
 

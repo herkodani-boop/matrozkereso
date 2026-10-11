@@ -413,6 +413,7 @@ export function BrowseBoats() {
       setLoadError(null)
 
       const adsBaseSelect = "id, user_id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url), applications(id, user_id, status)"
+      const adsExtendedBaseSelect = adsBaseSelect.replace("boat:boats(id, name, image_url)", "boat:boats(id, name, image_url, original_image_url)")
       const from = pageIndex * PAGE_SIZE
       const to = from + PAGE_SIZE - 1
 
@@ -463,11 +464,11 @@ export function BrowseBoats() {
       let count: number | null = null
 
       const { data: adsWithNote, count: countWithNote, error: adsWithNoteError } = await applyFilters(
-        supabase.from("ads").select(`${adsBaseSelect}, captain_note, max_applicants, image_focus_x, image_focus_y`, { count: "exact" }),
+        supabase.from("ads").select(`${adsExtendedBaseSelect}, captain_note, max_applicants, image_focus_x, image_focus_y`, { count: "exact" }),
       )
 
       if (adsWithNoteError) {
-        const noteColumnMissing = String(adsWithNoteError.code ?? "") === "42703" || /captain_note|max_applicants|image_focus/i.test(adsWithNoteError.message ?? "")
+        const noteColumnMissing = String(adsWithNoteError.code ?? "") === "42703" || /captain_note|max_applicants|image_focus|original_image_url/i.test(adsWithNoteError.message ?? "")
 
         if (!noteColumnMissing) {
           console.error("Hirdetések lekérdezési hiba:", adsWithNoteError)
@@ -554,7 +555,7 @@ export function BrowseBoats() {
           id: ad.id,
           isOwnListing: Boolean(user?.id && ad.user_id === user.id),
           boatName: ad.boat?.name ?? "Névtelen hajó",
-          image: ad.boat?.image_url ?? "/placeholder.svg",
+          image: ad.boat?.original_image_url ?? ad.boat?.image_url ?? "/placeholder.svg",
           imageFocusX: typeof ad.image_focus_x === "number" ? ad.image_focus_x : 50,
           imageFocusY: typeof ad.image_focus_y === "number" ? ad.image_focus_y : 50,
           commitment: (ad.commitment === "szezon" ? "szezon" : "egy-verseny") as Commitment,

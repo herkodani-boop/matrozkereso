@@ -373,6 +373,7 @@ export function HomeEventsHub() {
 
   if (!authResolved || !user) return null
   if (!loading && profileMissing) return null
+  if (loading || (!loadError && !actionError && events.length === 0 && opportunities.length === 0)) return null
 
   const isCaptain = role === "skipper" || role === "kapitany"
   const isCrewRole = role === "sailor" || role === "mancsaft"
