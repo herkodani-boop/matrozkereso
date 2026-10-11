@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { ArrowLeft, Save, RotateCcw, Trash2, UserRound, Camera, KeyRound } from "lucide-react"
@@ -10,6 +10,9 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RequireAuth } from "@/components/require-auth"
 import { supabase } from "@/lib/supabase"
+import { ImageUploadErrorDialog } from "@/components/image-upload-error-dialog"
+import { optimizeAvatarImage } from "@/lib/avatar-image-optimization"
+import { clearHungarianValidationMessage, setHungarianValidationMessage } from "@/lib/hungarian-form-validation"
 
 type ProfileRow = {
   full_name: string
@@ -66,6 +69,9 @@ export default function ProfilPage() {
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [avatarError, setAvatarError] = useState<string | null>(null)
+  const [avatarProcessing, setAvatarProcessing] = useState(false)
+  const avatarSelectionId = useRef(0)
 
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -156,12 +162,15 @@ export default function ProfilPage() {
       birthdate !== initialDate ||
       level !== (initial.level ?? "kezdo") ||
       (avatarUrl ?? "") !== (initial.avatar_url ?? "") ||
-      selectedFile !== null
+      selectedFile !== null ||
+      avatarProcessing
     )
-  }, [initial, fullName, phone, birthdate, level, avatarUrl, selectedFile])
+  }, [initial, fullName, phone, birthdate, level, avatarUrl, selectedFile, avatarProcessing])
 
   function handleDiscard() {
     if (!initial) return
+    avatarSelectionId.current += 1
+    setAvatarProcessing(false)
     setFullName(initial.full_name ?? "")
     setPhone(initial.phone ?? "")
     setBirthdate(toDateInputValue(initial.birthdate))
@@ -173,26 +182,42 @@ export default function ProfilPage() {
       setPreviewUrl(null)
     }
     setError(null)
+    setAvatarError(null)
     setNotice("A módosításaid elvetve.")
   }
 
-  function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl)
-    }
+    const input = e.currentTarget
+    input.value = ""
+    const selectionId = ++avatarSelectionId.current
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setSelectedFile(null)
+    setPreviewUrl(null)
+    setAvatarUrl(initial?.avatar_url ?? null)
+    setAvatarError(null)
+    setAvatarProcessing(true)
 
-    setSelectedFile(file)
-    const localUrl = URL.createObjectURL(file)
-    setPreviewUrl(localUrl)
-    setAvatarUrl(localUrl)
+    try {
+      const optimizedFile = await optimizeAvatarImage(file)
+      if (selectionId !== avatarSelectionId.current) return
+      const localUrl = URL.createObjectURL(optimizedFile)
+      setSelectedFile(optimizedFile)
+      setPreviewUrl(localUrl)
+      setAvatarUrl(localUrl)
+    } catch (error) {
+      if (selectionId !== avatarSelectionId.current) return
+      setAvatarError(error instanceof Error ? error.message : "A profilkép feldolgozása nem sikerült.")
+    } finally {
+      if (selectionId === avatarSelectionId.current) setAvatarProcessing(false)
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
-    if (!userId) return
+    if (!userId || avatarProcessing) return
 
     setError(null)
     setNotice(null)
@@ -217,7 +242,12 @@ export default function ProfilPage() {
 
         const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, selectedFile)
         if (uploadError) {
-          setError(uploadError.message)
+          avatarSelectionId.current += 1
+          setSelectedFile(null)
+          if (previewUrl) URL.revokeObjectURL(previewUrl)
+          setPreviewUrl(null)
+          setAvatarUrl(initial?.avatar_url ?? null)
+          setAvatarError(uploadError.message)
           return
         }
 
@@ -349,6 +379,7 @@ export default function ProfilPage() {
 
   return (
     <RequireAuth>
+      <ImageUploadErrorDialog message={avatarError} onClose={() => setAvatarError(null)} />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         <Button variant="ghost" className="mb-4" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -367,11 +398,11 @@ export default function ProfilPage() {
           </div>
         ) : null}
 
-        <form onSubmit={handleSave} className="flex flex-col gap-5">
+        <form onSubmit={handleSave} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative h-20 w-20 overflow-hidden rounded-full border border-border bg-secondary">
               {avatarUrl ? (
-                <Image src={avatarUrl} alt="Profilkép" fill className="object-cover" sizes="80px" />
+                <Image src={avatarUrl} alt="Profilkép" fill className="object-cover" sizes="80px" unoptimized={Boolean(previewUrl)} />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-muted-foreground">
                   <UserRound className="h-6 w-6" aria-hidden="true" />
@@ -385,7 +416,8 @@ export default function ProfilPage() {
                 Profilkép csere
               </span>
             </Label>
-            <Input id="profile-avatar" type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+            <Input id="profile-avatar" type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleAvatarChange} />
+            {avatarProcessing ? <p className="text-sm text-muted-foreground" role="status">Profilkép feldolgozása...</p> : null}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -467,7 +499,7 @@ export default function ProfilPage() {
           ) : null}
 
           <div className="flex flex-col gap-3 sm:flex-row">
-            <Button type="submit" disabled={saving || !isDirty} className="h-11 bg-accent! text-accent-foreground! hover:bg-accent/90!">
+            <Button type="submit" disabled={saving || avatarProcessing || !isDirty} className="h-11 bg-accent! text-accent-foreground! hover:bg-accent/90!">
               <Save className="h-4 w-4" aria-hidden="true" />
               {saving ? "Mentés..." : "Módosítások mentése"}
             </Button>
@@ -485,7 +517,7 @@ export default function ProfilPage() {
           <p className="mt-1 text-sm text-muted-foreground">Állíts be új jelszót a fiókodhoz.</p>
         </header>
 
-        <form onSubmit={handlePasswordUpdate} className="flex flex-col gap-4">
+        <form onSubmit={handlePasswordUpdate} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="profile-new-password">Új jelszó</Label>

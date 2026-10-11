@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Anchor, Mail, Lock, UserPlus, ArrowLeft, Camera, Sailboat, ImagePlus, CheckCircle2, KeyRound } from "lucide-react"
 import {
@@ -22,8 +22,14 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+<<<<<<< HEAD
 import { BoatCard, type ListingRow } from "@/components/browse-boats"
 import { ListingImageFocusPicker } from "@/components/listing-image-focus-picker"
+=======
+import { ImageUploadErrorDialog } from "@/components/image-upload-error-dialog"
+import { optimizeAvatarImage } from "@/lib/avatar-image-optimization"
+import { clearHungarianValidationMessage, setHungarianValidationMessage } from "@/lib/hungarian-form-validation"
+>>>>>>> origin/domi
 
 const levelOptions: Record<string, string> = {
   kezdo: "Kezdő",
@@ -158,6 +164,7 @@ export function AuthGateModal({
   const [fullName, setFullName] = useState("")
   const [phone, setPhone] = useState("")
   const [birthdate, setBirthdate] = useState("")
+  const [termsAccepted, setTermsAccepted] = useState(false)
   const [level, setLevel] = useState<string>("kezdo")
   const [boatNameValue, setBoatNameValue] = useState("")
   const [boatClassValue, setBoatClassValue] = useState("")
@@ -179,6 +186,9 @@ export function AuthGateModal({
   const [listingOneDay, setListingOneDay] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string>("")
+  const [avatarError, setAvatarError] = useState<string | null>(null)
+  const [avatarProcessing, setAvatarProcessing] = useState(false)
+  const avatarSelectionId = useRef(0)
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [forgotSent, setForgotSent] = useState(false)
@@ -194,15 +204,19 @@ export function AuthGateModal({
   }>({})
 
   function resetFormState() {
+    avatarSelectionId.current += 1
     setEmail("")
     setPassword("")
     setFullName("")
     setPhone("")
     setBirthdate("")
+    setTermsAccepted(false)
     setLevel("kezdo")
     setSubmitted(false)
     setSelectedFile(null)
     setPreviewUrl("")
+    setAvatarError(null)
+    setAvatarProcessing(false)
     setForgotSent(false)
     setLoading(false)
     setFormError(null)
@@ -330,7 +344,7 @@ export function AuthGateModal({
     }
   }
 
-  function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) {
       setSelectedFile(null)
@@ -338,12 +352,34 @@ export function AuthGateModal({
       return
     }
 
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl)
-    }
+    const input = e.currentTarget
+    input.value = ""
+    const selectionId = ++avatarSelectionId.current
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setSelectedFile(null)
+    setPreviewUrl("")
+    setAvatarError(null)
+    setAvatarProcessing(true)
 
-    setSelectedFile(file)
-    setPreviewUrl(URL.createObjectURL(file))
+    try {
+      const optimizedFile = await optimizeAvatarImage(file)
+      if (selectionId !== avatarSelectionId.current) return
+      setSelectedFile(optimizedFile)
+      setPreviewUrl(URL.createObjectURL(optimizedFile))
+    } catch (error) {
+      if (selectionId !== avatarSelectionId.current) return
+      setAvatarError(error instanceof Error ? error.message : "A profilkép feldolgozása nem sikerült.")
+    } finally {
+      if (selectionId === avatarSelectionId.current) setAvatarProcessing(false)
+    }
+  }
+
+  function discardSelectedAvatar() {
+    avatarSelectionId.current += 1
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setSelectedFile(null)
+    setPreviewUrl("")
+    setAvatarProcessing(false)
   }
 
   function formatDateText(startDate: string, endDate: string, oneDay: boolean) {
@@ -363,6 +399,10 @@ export function AuthGateModal({
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
+    if (!termsAccepted) {
+      setFormError("A regisztrációhoz el kell fogadnod az ÁSZF-et.")
+      return
+    }
     if (password.length < 8) {
       setFormError("A jelszónak legalább 8 karakter hosszúnak kell lennie.")
       return
@@ -419,7 +459,8 @@ export function AuthGateModal({
 
           if (uploadError) {
             console.error("Avatar feltöltési hiba:", uploadError)
-            setFormError(uploadError.message)
+            discardSelectedAvatar()
+            setAvatarError(uploadError.message)
             return
           }
 
@@ -431,7 +472,8 @@ export function AuthGateModal({
           if (!avatarUrl) {
             const errorMessage = "Nem sikerült lekérni az avatar nyilvános URL-jét."
             console.error(errorMessage, publicUrlData)
-            setFormError(errorMessage)
+            discardSelectedAvatar()
+            setAvatarError(errorMessage)
             return
           }
         }
@@ -533,7 +575,8 @@ export function AuthGateModal({
 
         if (uploadError) {
           console.error("Avatar feltöltési hiba:", uploadError)
-          setFormError(uploadError.message)
+          discardSelectedAvatar()
+          setAvatarError(uploadError.message)
           return
         }
 
@@ -545,7 +588,8 @@ export function AuthGateModal({
         if (!avatarUrl) {
           const errorMessage = "Nem sikerült lekérni az avatar nyilvános URL-jét."
           console.error(errorMessage, publicUrlData)
-          setFormError(errorMessage)
+          discardSelectedAvatar()
+          setAvatarError(errorMessage)
           return
         }
       }
@@ -768,6 +812,7 @@ export function AuthGateModal({
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton
@@ -804,7 +849,7 @@ export function AuthGateModal({
                 </DialogDescription>
               </DialogHeader>
 
-              <form onSubmit={handleLogin} className="flex flex-col gap-4">
+              <form onSubmit={handleLogin} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="auth-email">Email cím</Label>
                   <div className="relative">
@@ -939,7 +984,7 @@ export function AuthGateModal({
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleForgotPassword} className="flex flex-col gap-4">
+              <form onSubmit={handleForgotPassword} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
                 {formError ? (
                   <p className="text-sm text-destructive" role="alert">{formError}</p>
                 ) : null}
@@ -987,18 +1032,16 @@ export function AuthGateModal({
                 <UserPlus className="h-5 w-5" aria-hidden="true" />
               </div>
               <DialogTitle className="text-balance text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                {mode === "skipper" ? "Kapitány profil létrehozása" : "Mancsaft profil létrehozása"}
+                {mode === "skipper" ? "Kapitány profil létrehozása" : "Matrózkereső profil létrehozása"}
               </DialogTitle>
-              <DialogDescription className="text-pretty leading-relaxed">
-                {teamInvite
-                  ? "Hozd létre a fiókodat a csapathoz való csatlakozáshoz."
-                  : mode === "skipper"
-                  ? "Add meg az alapadataidat, majd a következő lépésben regisztráld a hajódat és a szabad helyet."
-                  : "Add meg a vitorlás profilod alapadatait, hogy a kapitányok láthassák a tapasztalatodat."}
-              </DialogDescription>
+              {mode === "skipper" ? (
+                <DialogDescription className="text-pretty leading-relaxed">
+                  Add meg az alapadataidat, majd a következő lépésben regisztráld a hajódat és a szabad helyet.
+                </DialogDescription>
+              ) : null}
             </DialogHeader>
 
-            <form onSubmit={handleRegister} className="flex flex-col gap-4">
+            <form onSubmit={handleRegister} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
               <div className="flex items-center gap-4 rounded-xl border border-border bg-secondary/40 p-4">
                 <label
                   htmlFor="reg-avatar"
@@ -1016,7 +1059,7 @@ export function AuthGateModal({
                   <input
                     id="reg-avatar"
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp"
                     className="sr-only"
                     onChange={handleAvatarChange}
                   />
@@ -1025,6 +1068,9 @@ export function AuthGateModal({
                   <label htmlFor="reg-avatar" className="cursor-pointer font-semibold text-foreground">
                     Profilkép hozzáadása
                   </label>
+                  {avatarProcessing ? (
+                    <p className="mt-0.5 text-sm text-muted-foreground" role="status">Profilkép feldolgozása...</p>
+                  ) : null}
                   <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">
                     Nem kötelező, de erősen ajánlott a jobb esélyekért!
                   </p>
@@ -1138,11 +1184,39 @@ export function AuthGateModal({
                 )}
               </div>
 
+              <div className="flex items-start gap-2 text-sm">
+                <input
+                  id="reg-terms"
+                  type="checkbox"
+                  required
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  aria-label="Kijelentem, hogy az Általános Szerződési Feltételeket elolvastam, megértettem és elfogadom."
+                  className="mt-1 h-4 w-4 shrink-0 accent-accent"
+                />
+                <p className="leading-relaxed">
+                  <label htmlFor="reg-terms" className="inline cursor-pointer font-normal">
+                    Kijelentem, hogy az{" "}
+                  </label>
+                  <a
+                    href="/aszf"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary underline underline-offset-4 hover:text-primary/80"
+                  >
+                    Általános Szerződési Feltételeket
+                  </a>{" "}
+                  <label htmlFor="reg-terms" className="inline cursor-pointer font-normal">
+                    elolvastam, megértettem és elfogadom.
+                  </label>
+                </p>
+              </div>
+
               <Button
                 type="submit"
                 size="lg"
                 className="mt-1 h-11 w-full bg-accent! text-base text-accent-foreground! hover:bg-accent/90!"
-                disabled={loading}
+                disabled={loading || avatarProcessing || !termsAccepted}
               >
                 {loading
                   ? "Regisztráció folyamatban…"
@@ -1189,7 +1263,7 @@ export function AuthGateModal({
               </DialogDescription>
             </DialogHeader>
 
-            <form onSubmit={handleBoatSubmit} className="flex flex-col gap-4">
+            <form onSubmit={handleBoatSubmit} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
                   <Label htmlFor="boat-name">Hajó neve</Label>
@@ -1370,7 +1444,7 @@ export function AuthGateModal({
               </DialogDescription>
             </DialogHeader>
 
-            <form onSubmit={handleListingSubmit} className="flex flex-col gap-4">
+            <form onSubmit={handleListingSubmit} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
               {listingErrors.submit ? (
                 <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                   {listingErrors.submit}
@@ -1654,5 +1728,7 @@ export function AuthGateModal({
         )}
       </DialogContent>
     </Dialog>
+    <ImageUploadErrorDialog message={avatarError} onClose={() => setAvatarError(null)} />
+    </>
   )
 }

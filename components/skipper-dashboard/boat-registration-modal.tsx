@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { type User } from "@supabase/supabase-js"
 import { supabase } from "@/lib/supabase"
 import { ImagePlus } from "lucide-react"
@@ -11,7 +11,9 @@ import { Label } from "@/components/ui/label"
 import type { Boat } from "./types"
 import { crewTypeOptions } from "./format-utils"
 import { ImageCropDialog } from "./image-crop-dialog"
-import { MAX_BOAT_IMAGE_UPLOAD_SIZE_BYTES, getBoatImageStoragePath, optimizeBoatImage } from "./image-optimization"
+import { getBoatImageStoragePath, optimizeBoatImage, validateBoatImage } from "./image-optimization"
+import { ImageUploadErrorDialog } from "@/components/image-upload-error-dialog"
+import { clearHungarianValidationMessage, setHungarianValidationMessage } from "@/lib/hungarian-form-validation"
 
 /*
 CREATE TABLE boats (
@@ -49,6 +51,9 @@ export function BoatRegistrationModal({
   const [crewType, setCrewType] = useState("")
   const [boatPhoto, setBoatPhoto] = useState<File | null>(null)
   const [pendingPhoto, setPendingPhoto] = useState<File | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
+  const [isValidatingImage, setIsValidatingImage] = useState(false)
+  const imageSelectionId = useRef(0)
   const photoPreviewUrl = useMemo(() => (boatPhoto ? URL.createObjectURL(boatPhoto) : null), [boatPhoto])
   useEffect(() => {
     return () => {
@@ -117,15 +122,11 @@ export function BoatRegistrationModal({
       newErrors.crewType = "Csapat jellegének kiválasztása kötelező."
     }
 
-    if (boatPhoto && boatPhoto.size > MAX_BOAT_IMAGE_UPLOAD_SIZE_BYTES) {
-      newErrors.boatPhoto = "A kép túl nagy. Maximum 12 MB méretű fájl tölthető fel."
-    }
-
     if (!user) {
       newErrors.submit = "Be kell jelentkezned, hogy el tudd menteni a hajót."
     }
 
-    if (Object.keys(newErrors).length > 0) {
+    if (Object.keys(newErrors).length > 0 || isValidatingImage) {
       setErrors(newErrors)
       return
     }
@@ -140,8 +141,16 @@ export function BoatRegistrationModal({
       let imageUrl: string | null = existingBoat?.image_url ?? null
       if (boatPhoto) {
         setIsOptimizingImage(true)
-        const uploadFile = await optimizeBoatImage(boatPhoto)
-        setIsOptimizingImage(false)
+        let uploadFile: File
+        try {
+          uploadFile = await optimizeBoatImage(boatPhoto)
+        } catch (error) {
+          setBoatPhoto(null)
+          setImageError(error instanceof Error ? error.message : "A hajókép tömörítése nem sikerült.")
+          return
+        } finally {
+          setIsOptimizingImage(false)
+        }
 
         const fileExt = uploadFile.name.split(".").pop() ?? "webp"
         const fileName = `${user?.id}-${Date.now()}.${fileExt}`
@@ -152,7 +161,8 @@ export function BoatRegistrationModal({
           .upload(filePath, uploadFile)
 
         if (uploadError) {
-          setErrors({ submit: uploadError.message })
+          setBoatPhoto(null)
+          setImageError(uploadError.message)
           return
         }
         uploadedBoatPhotoPath = filePath
@@ -162,7 +172,8 @@ export function BoatRegistrationModal({
           .getPublicUrl(filePath)
 
         if (!publicUrlData?.publicUrl) {
-          setErrors({ submit: "Nem sikerült lekérni a kép nyilvános URL-jét." })
+          setBoatPhoto(null)
+          setImageError("Nem sikerült lekérni a hajókép nyilvános URL-jét.")
           return
         }
 
@@ -252,11 +263,42 @@ export function BoatRegistrationModal({
     }
   }
 
+  async function handleBoatPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.currentTarget.files?.[0]
+    e.currentTarget.value = ""
+    if (!file) return
+
+    const selectionId = ++imageSelectionId.current
+    setPendingPhoto(null)
+    setBoatPhoto(null)
+    setImageError(null)
+    setIsValidatingImage(true)
+
+    try {
+      await validateBoatImage(file)
+      if (selectionId === imageSelectionId.current) setPendingPhoto(file)
+    } catch (error) {
+      if (selectionId === imageSelectionId.current) {
+        setImageError(error instanceof Error ? error.message : "A hajókép ellenőrzése nem sikerült.")
+      }
+    } finally {
+      if (selectionId === imageSelectionId.current) setIsValidatingImage(false)
+    }
+  }
+
   return (
+    <>
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!isSaving) onOpenChange(nextOpen)
+        if (!isSaving) {
+          if (!nextOpen) {
+            imageSelectionId.current += 1
+            setIsValidatingImage(false)
+            setPendingPhoto(null)
+          }
+          onOpenChange(nextOpen)
+        }
       }}
     >
       <DialogContent showCloseButton initialFocus={false} className="max-w-lg gap-0 rounded-2xl p-0 sm:max-w-xl">
@@ -272,7 +314,7 @@ export function BoatRegistrationModal({
             ) : null}
           </DialogHeader>
 
-          <form onSubmit={handleBoatSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleBoatSubmit} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
             {errors.submit ? (
               <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 {errors.submit}
@@ -308,11 +350,10 @@ export function BoatRegistrationModal({
                 <input
                   id="boat-photo"
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   className="sr-only"
                   onChange={(e) => {
-                    setPendingPhoto(e.target.files?.[0] ?? null)
-                    e.target.value = ""
+                    void handleBoatPhotoChange(e)
                     if (errors.boatPhoto) {
                       setErrors((prev) => ({ ...prev, boatPhoto: undefined }))
                     }
@@ -323,6 +364,9 @@ export function BoatRegistrationModal({
                 <p className="text-sm text-destructive" role="alert">
                   {errors.boatPhoto}
                 </p>
+              ) : null}
+              {isValidatingImage ? (
+                <p className="text-sm text-muted-foreground" role="status">Hajókép ellenőrzése...</p>
               ) : null}
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -468,7 +512,7 @@ export function BoatRegistrationModal({
             <Button
               type="submit"
               size="lg"
-              disabled={isSaving || isOptimizingImage}
+              disabled={isSaving || isOptimizingImage || isValidatingImage || Boolean(pendingPhoto)}
               className="mt-2 h-11 bg-brand! text-white! hover:bg-brand/90! disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isOptimizingImage
@@ -484,6 +528,11 @@ export function BoatRegistrationModal({
         <ImageCropDialog
           file={pendingPhoto}
           onCancel={() => setPendingPhoto(null)}
+          onError={(message) => {
+            setPendingPhoto(null)
+            setBoatPhoto(null)
+            setImageError(message)
+          }}
           onConfirm={(cropped) => {
             setBoatPhoto(cropped)
             setPendingPhoto(null)
@@ -491,5 +540,7 @@ export function BoatRegistrationModal({
         />
       </DialogContent>
       </Dialog>
+      <ImageUploadErrorDialog message={imageError} onClose={() => setImageError(null)} />
+      </>
   )
     }

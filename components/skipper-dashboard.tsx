@@ -38,6 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { AuthGateModal } from "@/components/auth-gate-modal"
 import { SiteFooter } from "@/components/site-footer"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
+import { clearHungarianValidationMessage, setHungarianValidationMessage } from "@/lib/hungarian-form-validation"
 import {
   type ApplicantStatus,
   type Applicant,
@@ -3408,6 +3409,8 @@ export function SkipperDashboard() {
       }}>
         <DialogContent className="max-w-md gap-0 rounded-2xl p-0">
           <form
+            onInvalidCapture={setHungarianValidationMessage}
+            onInputCapture={clearHungarianValidationMessage}
             onSubmit={(event) => {
               event.preventDefault()
               void handleInviteTeamMember()
@@ -3710,7 +3713,7 @@ export function SkipperDashboard() {
         }
       }}>
         <DialogContent className="max-w-2xl rounded-2xl p-0">
-          <form onSubmit={handleCreateEvent} className="flex flex-col gap-0">
+          <form onSubmit={handleCreateEvent} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-0">
             <div className="border-b border-border px-6 py-5">
               <DialogHeader className="gap-2">
                 <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
@@ -3846,7 +3849,7 @@ export function SkipperDashboard() {
         }
       }}>
         <DialogContent className="max-w-2xl rounded-2xl p-0">
-          <form onSubmit={handleUpdateEvent} className="flex flex-col gap-0">
+          <form onSubmit={handleUpdateEvent} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-0">
             <div className="border-b border-border px-6 py-5">
               <DialogHeader className="gap-2">
                 <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
