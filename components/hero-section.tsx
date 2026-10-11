@@ -1,7 +1,7 @@
 import Image from "next/image"
 
 export function HeroSection() {
-  const isPreview = process.env.NEXT_PUBLIC_VERCEL_ENV === "preview"
+  const isPreview = process.env.NEXT_PUBLIC_VERCEL_ENV !== "production"
   const isTestMode = isPreview || process.env.NEXT_PUBLIC_TEST_MODE === "true"
 
   return (
