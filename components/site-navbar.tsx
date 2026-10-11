@@ -39,7 +39,8 @@ export function SiteNavbar() {
   const [feedbackText, setFeedbackText] = useState("")
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null)
-  const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === "true"
+  const isTestMode =
+    process.env.NEXT_PUBLIC_VERCEL_ENV === "preview" || process.env.NEXT_PUBLIC_TEST_MODE === "true"
 
   async function fetchPendingCount(userId: string) {
     const { data: boats } = await supabase

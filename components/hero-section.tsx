@@ -1,7 +1,8 @@
 import Image from "next/image"
 
 export function HeroSection() {
-  const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === "true"
+  const isPreview = process.env.NEXT_PUBLIC_VERCEL_ENV === "preview"
+  const isTestMode = isPreview || process.env.NEXT_PUBLIC_TEST_MODE === "true"
 
   return (
     <section className="relative overflow-hidden border-b border-border bg-primary text-primary-foreground">
@@ -28,7 +29,13 @@ export function HeroSection() {
             A magyar nagyhajós vitorlázó közösség dedikált legénységi toborzó platformja. Keress legénységet vagy vitorlázz másokkal!
           </p>
           {isTestMode && (
-            <div className="mt-8 max-w-2xl rounded-2xl border border-amber-300/60 bg-amber-100 px-4 py-3 text-sm leading-relaxed text-amber-950 shadow-lg shadow-black/10 sm:px-5 sm:py-4 sm:text-base">
+            <div
+              className={
+                isPreview
+                  ? "mt-8 max-w-2xl rounded-2xl border border-red-300/60 bg-red-100 px-4 py-3 text-sm leading-relaxed text-red-950 shadow-lg shadow-black/10 sm:px-5 sm:py-4 sm:text-base"
+                  : "mt-8 max-w-2xl rounded-2xl border border-amber-300/60 bg-amber-100 px-4 py-3 text-sm leading-relaxed text-amber-950 shadow-lg shadow-black/10 sm:px-5 sm:py-4 sm:text-base"
+              }
+            >
               <p className="font-semibold tracking-wide">Tesztüzem</p>
               <p className="mt-1">
                 Az oldal jelenleg tesztüzemben működik, ezért a hirdetések csak minták, nem valós ajánlatok.
