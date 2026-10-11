@@ -171,7 +171,10 @@ export function BrowseBoats() {
   const [commitment, setCommitmentState] = useState<string>(() => searchParams.get("commitment") ?? ALL)
   const [posts, setPostsState] = useState<ListingPost[]>(() => Array.from(new Set(initialPosts)))
   const [level, setLevelState] = useState<string>(() => searchParams.get("level") ?? ALL)
-  const [sort, setSortState] = useState<SortMode>(() => (searchParams.get("sort") === "newest" ? "newest" : "soon"))
+  // Főoldali ?ad=<id> belépésnél a legújabb hirdetések vannak elöl, így a keresett tétel biztosan az első oldalon van.
+  const [sort, setSortState] = useState<SortMode>(() =>
+    searchParams.get("sort") === "newest" || searchParams.get("ad") ? "newest" : "soon",
+  )
   const sortRef = useRef<SortMode>(sort)
   const [searchInput, setSearchInput] = useState<string>(() => searchParams.get("q") ?? "")
   const [search, setSearch] = useState<string>(() => searchParams.get("q") ?? "")
@@ -591,6 +594,29 @@ export function BrowseBoats() {
     void loadAdsPage(0, { append: false })
   }, [loadAdsPage])
 
+  // A főoldali kártyák ?ad=<id> paraméterrel nyitják meg egy hirdetés részleteit.
+  const [focusAdId, setFocusAdId] = useState<string | null>(() => searchParams.get("ad"))
+  const focusAdFound = focusAdId ? listingsData.some((listing) => listing.id === focusAdId) : false
+
+  useEffect(() => {
+    if (!focusAdId || focusAdFound || loadingAds || loadingMore) return
+    if (hasMore) {
+      void loadAdsPage(nextPage, { append: true })
+    } else {
+      setFocusAdId(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusAdId, focusAdFound, loadingAds, loadingMore, hasMore, nextPage])
+
+  function consumeFocusAd() {
+    setFocusAdId(null)
+    const params = new URLSearchParams(window.location.search)
+    if (!params.has("ad")) return
+    params.delete("ad")
+    const qs = params.toString()
+    window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname)
+  }
+
   const selectedPostsLabel = useMemo(() => {
     if (posts.length === 0) return postFilterLabels[ALL]
     if (posts.length === 1) return roleLabels[posts[0]]
@@ -761,6 +787,8 @@ export function BrowseBoats() {
               applyingId={applyingId}
               onCancel={cancelApplication}
               cancelingId={cancelingId}
+              autoOpenDetails={listing.id === focusAdId}
+              onAutoOpened={consumeFocusAd}
             />
           ))}
         </div>
@@ -812,6 +840,8 @@ export function BoatCard({
   applyingId,
   onCancel,
   cancelingId,
+  autoOpenDetails = false,
+  onAutoOpened,
 }: {
   listing: ListingRow
   onRequestApply: (listing: ListingRow) => boolean
@@ -819,9 +849,18 @@ export function BoatCard({
   applyingId: string | null
   onCancel: (adId: string, applicationId: string | null) => void
   cancelingId: string | null
+  autoOpenDetails?: boolean
+  onAutoOpened?: () => void
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [applyOpen, setApplyOpen] = useState(false)
+
+  useEffect(() => {
+    if (!autoOpenDetails) return
+    setDetailsOpen(true)
+    onAutoOpened?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenDetails])
   const isFull = listing.maxApplicants !== null && listing.activeApplicationCount >= listing.maxApplicants
 
 
@@ -1021,9 +1060,10 @@ function PrimaryApplyAction({
         variant="outline"
         onClick={() => onCancel(listing.id, listing.applicationId)}
         disabled={cancelingId === listing.id}
+        title="Jelentkezés visszavonása"
         className={`h-10 min-w-0 truncate text-sm text-destructive! hover:bg-destructive/10! hover:text-destructive! ${className}`}
       >
-        {cancelingId === listing.id ? "Visszavonás..." : "Jelentkezés visszavonása"}
+        {cancelingId === listing.id ? "Visszavonás..." : "Visszavonás"}
       </Button>
     )
   }

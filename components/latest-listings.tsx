@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { CalendarDays, MapPin, ArrowRight, Users } from "lucide-react"
+import { CalendarDays, MapPin, ArrowRight } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { supabase } from "@/lib/supabase"
@@ -15,7 +15,6 @@ type ListingPreview = {
   location: string
   date_text: string
   positions: string[]
-  applicationCount: number
   boat: {
     name: string
     image_url: string | null
@@ -28,12 +27,19 @@ export function LatestListings() {
 
   useEffect(() => {
     const fetchListings = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
       const { data, error } = await supabase
         .from("ads")
-        .select("id, title, location, date_text, positions, commitment, start_date, end_date, boat:boats(name, image_url), applications(id)")
+        .select(
+          "id, user_id, boat_id, title, location, date_text, positions, commitment, start_date, end_date, boat:boats(name, image_url), applications(user_id)",
+        )
         .eq("is_active", true)
+        .eq("is_deleted", false)
         .order("created_at", { ascending: false })
-        .limit(20)
+        .limit(40)
 
       if (error) {
         console.error("Élő hirdetések lekérdezési hiba:", error)
@@ -42,18 +48,26 @@ export function LatestListings() {
         return
       }
 
+      const seenBoats = new Set<string>()
       const mapped: ListingPreview[] = (data ?? [])
         .filter((ad: any) => isAdVisibleByDate(ad))
+        .filter((ad: any) => !user || ad.user_id !== user.id)
+        .filter((ad: any) => !user || !(ad.applications ?? []).some((application: any) => application.user_id === user.id))
+        .filter((ad: any) => {
+          const key = ad.boat_id ?? ad.id
+          if (seenBoats.has(key)) return false
+          seenBoats.add(key)
+          return true
+        })
         .slice(0, 4)
         .map((ad: any) => ({
-        id: ad.id,
-        title: ad.title ?? "",
-        location: ad.location ?? "",
-        date_text: ad.date_text ?? "",
-        positions: ad.positions ?? [],
-        applicationCount: ad.applications?.length ?? 0,
-        boat: ad.boat ?? null,
-      }))
+          id: ad.id,
+          title: ad.title ?? "",
+          location: ad.location ?? "",
+          date_text: ad.date_text ?? "",
+          positions: ad.positions ?? [],
+          boat: ad.boat ?? null,
+        }))
 
       setListings(mapped)
       setLoading(false)
@@ -64,7 +78,7 @@ export function LatestListings() {
 
   if (loading) {
     return (
-      <section className="border-t border-border bg-secondary/30">
+      <section className="bg-secondary/30">
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <div className="mb-8">
             <Skeleton className="h-8 w-64" />
@@ -92,7 +106,7 @@ export function LatestListings() {
   }
 
   return (
-    <section className="border-t border-border bg-secondary/30">
+    <section className="bg-secondary/30">
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
         <div className="mb-8 flex items-end justify-between">
           <div>
@@ -100,7 +114,7 @@ export function LatestListings() {
               Aktuális lehetőségek
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Frissen feladott hirdetések — lehet, hogy a te helyeden vár egy hajó.
+              A legfrissebb hirdetések hajóktól, amelyek legénységet keresnek.
             </p>
           </div>
           <Link
@@ -116,7 +130,7 @@ export function LatestListings() {
           {listings.map((listing, index) => (
             <Link
               key={listing.id}
-              href="/bongeszes"
+              href={`/bongeszes?ad=${listing.id}`}
               className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-accent"
             >
               <div className="relative aspect-[3/1] overflow-hidden">
@@ -144,12 +158,6 @@ export function LatestListings() {
                     <CalendarDays className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
                     {listing.date_text}
                   </span>
-                  {listing.applicationCount > 0 && (
-                    <span className="flex items-center gap-1.5">
-                      <Users className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
-                      {listing.applicationCount} jelentkező
-                    </span>
-                  )}
                 </div>
               </div>
             </Link>

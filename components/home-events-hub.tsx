@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import type { User } from "@supabase/supabase-js"
-import { ArrowRight, CalendarDays, Check, Compass, LoaderCircle, MapPin, ShipWheel, Users, X } from "lucide-react"
+import { ArrowRight, CalendarDays, Check, Compass, LoaderCircle, MapPin, ShipWheel, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { supabase } from "@/lib/supabase"
@@ -376,10 +376,9 @@ export function HomeEventsHub() {
   if (loading || (!loadError && !actionError && events.length === 0 && opportunities.length === 0)) return null
 
   const isCaptain = role === "skipper" || role === "kapitany"
-  const isCrewRole = role === "sailor" || role === "mancsaft"
 
   return (
-    <section className="border-b border-border bg-secondary/35" aria-labelledby="home-events-heading">
+    <section className="bg-secondary/35" aria-labelledby="home-events-heading">
       <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -397,11 +396,6 @@ export function HomeEventsHub() {
               Kapitányi dashboard
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
-          ) : isTeamMember || isCrewRole ? (
-            <Button type="button" variant="outline" disabled title="A mancsafthoz készült dashboard hamarosan érkezik.">
-              <Users className="h-4 w-4" aria-hidden="true" />
-              Mancsaft dashboard · hamarosan
-            </Button>
           ) : null}
         </div>
 

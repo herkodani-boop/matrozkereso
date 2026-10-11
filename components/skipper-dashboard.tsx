@@ -741,6 +741,20 @@ export function SkipperDashboard() {
     setModalOpen(true)
   }
 
+  // A főoldali "+ Hirdetés" gomb ?hirdetes=uj paraméterrel nyitja meg a hirdetésfeladó ablakot.
+  const autoOpenListingHandled = useRef(false)
+  useEffect(() => {
+    if (autoOpenListingHandled.current || boatLoading) return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("hirdetes") !== "uj") return
+    autoOpenListingHandled.current = true
+    params.delete("hirdetes")
+    const query = params.toString()
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`)
+    if (hasBoat) openModal("listing")
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boatLoading, hasBoat])
+
   function openListingModalFromEvent(event: EventItem) {
     openModal("listing", {
       eventId: event.id,

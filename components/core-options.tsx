@@ -3,30 +3,33 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Sailboat, LifeBuoy, ArrowRight } from "lucide-react"
+import { Compass, ArrowRight, Sailboat } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AuthGateModal } from "@/components/auth-gate-modal"
+import { useCaptainBoats } from "@/components/captain-boats-provider"
 import { supabase } from "@/lib/supabase"
 
 const options = [
   {
     icon: Sailboat,
     title: "Hajóm van",
-    subtitle: "A hajómmal és a legénységemmel kapcsolatos adatokat szeretném kezelni, vagy szabad helyet hirdetni.",
+    subtitle: "Kezeld a hajód csapatát és eseményeit, és hirdess szabad helyet, ha legénységre van szükséged.",
     cta: "Hajó és legénység kezelése",
     action: "skipper" as const,
   },
   {
-    icon: LifeBuoy,
-    title: "Hajóra szeretnék kerülni",
-    subtitle: "Szabad helyet keresek egy-egy versenyre, vagy hosszú távú csapatot.",
-    cta: "Böngészés és Jelentkezés",
+    icon: Compass,
+    title: "Vitorlázni szeretnék",
+    subtitle: "Találj helyet versenyekre vagy a szezonra, jelentkezz a hirdetésekre, és légy tagja egy hajó csapatának.",
+    cta: "Böngészés és jelentkezés",
     href: "/bongeszes",
   },
 ]
 
 export function CoreOptions() {
   const [skipperOpen, setSkipperOpen] = useState(false)
+  const { boats } = useCaptainBoats()
+  const ownsBoat = boats.length > 0
   const router = useRouter()
 
   const handleSkipperClick = async () => {
@@ -42,14 +45,16 @@ export function CoreOptions() {
     setSkipperOpen(true)
   }
 
+  if (ownsBoat) return null
+
   return (
     <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24" id="versenynaptar">
       <div className="mx-auto mb-12 max-w-2xl text-center">
         <h2 className="text-balance text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-          Hogyan szeretnél vitorlázni?
+          Hogyan kezdenél bele?
         </h2>
         <p className="mt-4 text-pretty leading-relaxed text-muted-foreground">
-          Válaszd ki, hogy hajótulajdonosként legénységedet szeretnéd alakítani, vagy vitorlázóként szeretnél fedélzetre kerülni.
+          Hajótulajdonosként szervezheted a legénységedet, vitorlázóként pedig csatlakozhatsz egy csapathoz.
         </p>
       </div>
 
