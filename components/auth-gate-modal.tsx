@@ -22,14 +22,14 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-<<<<<<< HEAD
+
 import { BoatCard, type ListingRow } from "@/components/browse-boats"
 import { ListingImageFocusPicker } from "@/components/listing-image-focus-picker"
-=======
+
 import { ImageUploadErrorDialog } from "@/components/image-upload-error-dialog"
 import { optimizeAvatarImage } from "@/lib/avatar-image-optimization"
 import { clearHungarianValidationMessage, setHungarianValidationMessage } from "@/lib/hungarian-form-validation"
->>>>>>> origin/domi
+
 
 const levelOptions: Record<string, string> = {
   kezdo: "Kezdő",
