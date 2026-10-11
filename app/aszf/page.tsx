@@ -15,7 +15,7 @@ export default function AszfPage() {
 
           <section className="mt-8 space-y-2 text-sm leading-6 text-foreground">
             <h2 className="text-base font-semibold">1. Szolgáltató adatai</h2>
-            <p>Név: Herko Dániel</p>
+            <p>Név: Herkó Dániel</p>
             <p>Nyilvántartási szám: 58237485</p>
             <p>Székhely: 1137 Budapest XIII., Angyalföldi út 5.</p>
             <p>Adószám: 43925346-1-41</p>
