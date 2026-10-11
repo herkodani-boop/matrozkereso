@@ -6,10 +6,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button"
 import { loadImageElement } from "./image-optimization"
 
-export const BOAT_IMAGE_ASPECT = 3
 const OUTPUT_WIDTH = 1600
 const MIN_RECOMMENDED_WIDTH = 1200
 const MAX_ZOOM = 3
+// The crop frame follows each photo's own proportions (clamped so the dialog stays usable),
+// instead of forcing every boat photo into a single fixed aspect ratio.
+const MIN_FRAME_ASPECT = 0.6
+const MAX_FRAME_ASPECT = 2.4
 
 export function ImageCropDialog({
   file,
@@ -71,6 +74,7 @@ export function ImageCropDialog({
 
   const nw = image?.naturalWidth ?? 0
   const nh = image?.naturalHeight ?? 0
+  const frameAspect = nw && nh ? Math.min(MAX_FRAME_ASPECT, Math.max(MIN_FRAME_ASPECT, nw / nh)) : 16 / 9
   const baseScale = nw && nh && frame.w ? Math.max(frame.w / nw, frame.h / nh) : 1
   const scale = baseScale * zoom
   const dw = nw * scale
@@ -113,7 +117,7 @@ export function ImageCropDialog({
       const sw = frame.w / scale
       const sh = frame.h / scale
       const outWidth = Math.round(Math.min(OUTPUT_WIDTH, sw))
-      const outHeight = Math.round(outWidth / BOAT_IMAGE_ASPECT)
+      const outHeight = Math.round(outWidth * (frame.h / frame.w))
 
       const canvas = document.createElement("canvas")
       canvas.width = outWidth
@@ -135,7 +139,6 @@ export function ImageCropDialog({
 
   const warnings: string[] = []
   if (image) {
-    if (nw / nh < 1.3) warnings.push("Álló vagy négyzetes kép: a vágás után sok elveszhet belőle. Fekvő fotó a legjobb.")
     if (nw < MIN_RECOMMENDED_WIDTH) warnings.push("Kisebb felbontású kép, nagy méretben életlen lehet.")
   }
 
@@ -152,8 +155,8 @@ export function ImageCropDialog({
           <DialogHeader className="gap-1">
             <DialogTitle className="text-lg font-bold">Hajókép beállítása</DialogTitle>
             <DialogDescription>
-              Húzd a képet a megfelelő pozícióba, nagyítsd a csúszkával. A keretben pontosan az látszik, ami a
-              kapitányi felületen is megjelenik.
+              Húzd a képet a megfelelő pozícióba, nagyítsd a csúszkával. A keret a fotód saját arányát követi, így
+              semmi nem vész el belőle feleslegesen.
             </DialogDescription>
           </DialogHeader>
 
@@ -167,8 +170,8 @@ export function ImageCropDialog({
             onPointerCancel={() => {
               dragRef.current = null
             }}
-            className="relative w-full cursor-grab touch-none select-none overflow-hidden rounded-xl bg-brand-tint active:cursor-grabbing"
-            style={{ aspectRatio: BOAT_IMAGE_ASPECT }}
+            className="relative max-h-[55vh] min-h-[140px] w-full cursor-grab touch-none select-none overflow-hidden rounded-xl bg-brand-tint active:cursor-grabbing"
+            style={{ aspectRatio: frameAspect }}
           >
             {src && frame.w ? (
               // eslint-disable-next-line @next/next/no-img-element

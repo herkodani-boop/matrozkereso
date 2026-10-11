@@ -73,7 +73,7 @@ export function LatestListings() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[0, 1, 2, 3].map((i) => (
               <div key={i} className="overflow-hidden rounded-2xl border border-border bg-card">
-                <Skeleton className="aspect-[4/3] w-full rounded-none" />
+                <Skeleton className="aspect-[3/1] w-full rounded-none" />
                 <div className="flex flex-col gap-2 p-4">
                   <Skeleton className="h-5 w-3/4" />
                   <Skeleton className="h-3.5 w-full" />
@@ -119,7 +119,7 @@ export function LatestListings() {
               href="/bongeszes"
               className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-accent"
             >
-              <div className="relative aspect-[4/3] overflow-hidden">
+              <div className="relative aspect-[3/1] overflow-hidden">
                 <Image
                   src={listing.boat?.image_url ?? "/placeholder.svg"}
                   alt={listing.boat?.name ?? "Hajó"}
@@ -131,7 +131,7 @@ export function LatestListings() {
               </div>
 
               <div className="flex flex-1 flex-col gap-2 p-4">
-                <h3 className="font-semibold leading-snug text-card-foreground line-clamp-2">
+                <h3 className="font-semibold leading-snug text-card-foreground line-clamp-1">
                   {listing.title}
                 </h3>
 

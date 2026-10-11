@@ -282,11 +282,11 @@ export function BoatRegistrationModal({
               <Label htmlFor="boat-photo">Hajó fotó (opcionális)</Label>
               <label
                 htmlFor="boat-photo"
-                className="group relative flex aspect-[3/1] cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border bg-secondary/40 text-center text-muted-foreground transition-colors hover:border-brand hover:text-brand"
+                className="group relative flex h-40 cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border bg-secondary/40 text-center text-muted-foreground transition-colors hover:border-brand hover:text-brand"
               >
                 {currentPhotoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={currentPhotoUrl} alt="Hajókép" className="absolute inset-0 h-full w-full object-cover" />
+                  <img src={currentPhotoUrl} alt="Hajókép" className="absolute inset-0 h-full w-full object-contain" />
                 ) : null}
                 <span
                   className={
@@ -301,7 +301,7 @@ export function BoatRegistrationModal({
                   </span>
                   {currentPhotoUrl ? null : (
                     <span className="text-xs font-normal text-muted-foreground">
-                      Fekvő fotó a legjobb, feltöltés után kiválaszthatod a látható részt.
+                      Bármilyen tájolású fotót feltölthetsz, feltöltés után kiválaszthatod a látható részt.
                     </span>
                   )}
                 </span>

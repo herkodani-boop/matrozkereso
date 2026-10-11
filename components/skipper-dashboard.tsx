@@ -3981,6 +3981,8 @@ export function SkipperDashboard() {
         mode="skipper"
         initialView={modalView}
         boatId={boat?.id}
+        boatImageUrl={boat?.image_url ?? null}
+        boatDisplayName={boat?.name ?? null}
         userId={user?.id}
         prefill={listingPrefill}
         onListingCreated={() => {

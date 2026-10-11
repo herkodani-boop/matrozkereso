@@ -4,10 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import type { User } from "@supabase/supabase-js"
 import Image from "next/image"
-import { Anchor, CalendarDays, MapPin, Users, Award, Sailboat, ChevronDown } from "lucide-react"
+import { Flag, CalendarDays, MapPin, Users, Award, Sailboat, ChevronDown, UserCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Label } from "@/components/ui/label"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Select,
   SelectContent,
@@ -22,11 +31,13 @@ import { isAdVisibleByDate } from "@/lib/ad-visibility"
 
 type ListingPost = "kormanyos" | "taktikus" | "main-trim" | "jib-trim" | "mast" | "fordeck" | "barmilyen"
 
-type ListingRow = {
+export type ListingRow = {
   id: string
   isOwnListing: boolean
   boatName: string
   image: string
+  imageFocusX: number
+  imageFocusY: number
   commitment: Commitment
   event: string
   location: string
@@ -62,6 +73,12 @@ const levelLabels: Record<Level, string> = {
   kezdo: "Kezdő",
   halado: "Haladó",
   profi: "Profi / Versenyző",
+}
+
+const levelBadgeClasses: Record<Level, string> = {
+  kezdo: "bg-emerald-100 text-emerald-800",
+  halado: "bg-amber-100 text-amber-800",
+  profi: "bg-brand-tint text-brand",
 }
 
 const ALL = "osszes"
@@ -199,28 +216,31 @@ export function BrowseBoats() {
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadingAds, setLoadingAds] = useState(true)
-  const [openDetailsIds, setOpenDetailsIds] = useState<string[]>([])
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [totalCount, setTotalCount] = useState<number | null>(null)
   const [nextPage, setNextPage] = useState(0)
 
-  function handleApply(listing: ListingRow, applicationMessage?: string) {
+  function canStartApplication(listing: ListingRow) {
     if (listing.isOwnListing) {
       setApplyError("A saját hirdetésedre nem jelentkezhetsz.")
-      return
+      return false
     }
 
     if (!user) {
       setSelectedBoat(listing.boatName)
       setAuthOpen(true)
-      return
+      return false
     }
 
     if (listing.applied) {
-      return
+      return false
     }
 
+    return true
+  }
+
+  function handleApplySubmit(listing: ListingRow, applicationMessage?: string) {
     void submitApplication(listing.id, applicationMessage)
   }
 
@@ -403,11 +423,11 @@ export function BrowseBoats() {
       let count: number | null = null
 
       const { data: adsWithNote, count: countWithNote, error: adsWithNoteError } = await applyFilters(
-        supabase.from("ads").select(`${adsBaseSelect}, captain_note, max_applicants`, { count: "exact" }),
+        supabase.from("ads").select(`${adsBaseSelect}, captain_note, max_applicants, image_focus_x, image_focus_y`, { count: "exact" }),
       )
 
       if (adsWithNoteError) {
-        const noteColumnMissing = String(adsWithNoteError.code ?? "") === "42703" || /captain_note|max_applicants/i.test(adsWithNoteError.message ?? "")
+        const noteColumnMissing = String(adsWithNoteError.code ?? "") === "42703" || /captain_note|max_applicants|image_focus/i.test(adsWithNoteError.message ?? "")
 
         if (!noteColumnMissing) {
           console.error("Hirdetések lekérdezési hiba:", adsWithNoteError)
@@ -495,6 +515,8 @@ export function BrowseBoats() {
           isOwnListing: Boolean(user?.id && ad.user_id === user.id),
           boatName: ad.boat?.name ?? "Névtelen hajó",
           image: ad.boat?.image_url ?? "/placeholder.svg",
+          imageFocusX: typeof ad.image_focus_x === "number" ? ad.image_focus_x : 50,
+          imageFocusY: typeof ad.image_focus_y === "number" ? ad.image_focus_y : 50,
           commitment: (ad.commitment === "szezon" ? "szezon" : "egy-verseny") as Commitment,
           event: ad.title ?? "",
           location: ad.location ?? "",
@@ -513,9 +535,6 @@ export function BrowseBoats() {
       })
 
       setListingsData((prev) => (options.append ? [...prev, ...mapped] : mapped))
-      if (!options.append) {
-        setOpenDetailsIds((prev) => prev.filter((id) => mapped.some((listing) => listing.id === id)))
-      }
       setTotalCount(count)
       setHasMore(count !== null ? from + data!.length < count : data!.length === PAGE_SIZE)
       setNextPage(pageIndex + 1)
@@ -665,36 +684,30 @@ export function BrowseBoats() {
       ) : null}
 
       {loadingAds ? (
-        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {[0, 1, 2, 3, 4, 5].map((i) => (
+        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
             <div key={i} className="overflow-hidden rounded-2xl border border-border bg-card">
-              <Skeleton className="aspect-[4/3] w-full rounded-none" />
-              <div className="flex flex-col gap-3 p-5">
-                <Skeleton className="h-6 w-3/4" />
+              <Skeleton className="aspect-[3/1] w-full rounded-none" />
+              <div className="flex flex-col gap-3 p-4">
                 <Skeleton className="h-4 w-full" />
                 <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-4 w-1/2" />
-                <Skeleton className="mt-2 h-11 w-full rounded-xl" />
+                <Skeleton className="h-5 w-1/2" />
+                <Skeleton className="mt-2 h-10 w-full rounded-xl" />
               </div>
             </div>
           ))}
         </div>
       ) : listingsData.length > 0 ? (
-        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {listingsData.map((listing) => (
             <BoatCard
               key={listing.id}
               listing={listing}
-              onApply={handleApply}
+              onRequestApply={canStartApplication}
+              onApply={handleApplySubmit}
               applyingId={applyingId}
               onCancel={cancelApplication}
               cancelingId={cancelingId}
-              detailsOpen={openDetailsIds.includes(listing.id)}
-              onToggleDetails={() =>
-                setOpenDetailsIds((prev) =>
-                  prev.includes(listing.id) ? prev.filter((id) => id !== listing.id) : [...prev, listing.id],
-                )
-              }
             />
           ))}
         </div>
@@ -739,119 +752,367 @@ function FilterField({ label, children }: { label: string; children: React.React
   )
 }
 
-function BoatCard({
+export function BoatCard({
   listing,
+  onRequestApply,
   onApply,
   applyingId,
   onCancel,
   cancelingId,
-  detailsOpen,
-  onToggleDetails,
 }: {
   listing: ListingRow
+  onRequestApply: (listing: ListingRow) => boolean
   onApply: (listing: ListingRow, applicationMessage?: string) => void
   applyingId: string | null
   onCancel: (adId: string, applicationId: string | null) => void
   cancelingId: string | null
-  detailsOpen: boolean
-  onToggleDetails: () => void
 }) {
-  const [showMessageField, setShowMessageField] = useState(false)
-  const [applicationMessage, setApplicationMessage] = useState("")
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [applyOpen, setApplyOpen] = useState(false)
   const isFull = listing.maxApplicants !== null && listing.activeApplicationCount >= listing.maxApplicants
 
+
+  const startApplyFlow = () => {
+    if (onRequestApply(listing)) setApplyOpen(true)
+  }
+
+  const startApplyFlowFromDetails = () => {
+    if (onRequestApply(listing)) {
+      setDetailsOpen(false)
+      setApplyOpen(true)
+    }
+  }
+
   return (
-    <article className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-accent">
-      <div className="relative aspect-[4/3] overflow-hidden">
+    <article
+      onClick={(event) => {
+        const target = event.target as HTMLElement
+        // Portaled dialogs bubble React events here, so only react to clicks that are really inside the card.
+        if (!event.currentTarget.contains(target) || target.closest("button, a")) return
+        setDetailsOpen(true)
+      }}
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-lg"
+    >
+      <button
+        type="button"
+        onClick={() => setDetailsOpen(true)}
+        aria-label={`${listing.boatName} hirdetés részletei`}
+        className="relative block h-44 w-full shrink-0 overflow-hidden bg-brand-tint text-left"
+      >
         <Image
           src={listing.image || "/placeholder.svg"}
-          alt={`${listing.boatName} vitorlás hajó a vízen`}
+          alt={`${listing.boatName} vitorlás hajó`}
           fill
           loading="eager"
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-          className="object-cover transition-transform duration-300 group-hover:scale-105"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
+          className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          style={{ objectPosition: `${listing.imageFocusX}% ${listing.imageFocusY}%` }}
         />
+        <div
+          className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/80 via-black/25 to-transparent"
+          aria-hidden="true"
+        />
+
         <div className="absolute left-3 top-3">
           <Badge
             className={
               listing.commitment === "szezon"
-                ? "border-transparent bg-accent text-accent-foreground"
-                : "border-transparent bg-primary text-primary-foreground"
+                ? "border-0 bg-brand-teal text-white shadow-sm"
+                : "border-0 bg-brand text-white shadow-sm"
             }
           >
             {commitmentLabels[listing.commitment]}
           </Badge>
         </div>
-      </div>
 
-      <div className="flex flex-1 flex-col p-5">
-        <h3 className="text-xl font-semibold tracking-tight text-card-foreground">{listing.boatName}</h3>
+        {isFull ? (
+          <Badge className="absolute right-3 top-3 border-0 bg-destructive text-destructive-foreground shadow-sm">
+            Betelt
+          </Badge>
+        ) : null}
 
-        <dl className="mt-4 flex flex-1 flex-col gap-3 text-sm">
-          <DetailRow icon={Anchor} label="Esemény">
-            {listing.event}
-          </DetailRow>
-          <DetailRow icon={MapPin} label="Helyszín">
-            {listing.location}
-          </DetailRow>
-          <DetailRow icon={CalendarDays} label="Dátum">
-            {listing.date}
-          </DetailRow>
-          <DetailRow icon={Users} label="Szükséges poszt">
-            {listing.roles.map((role) => roleLabels[role]).join(", ")}
-          </DetailRow>
-          <DetailRow icon={Award} label="Elvárt tapasztalat">
-            {levelLabels[listing.level]}
-          </DetailRow>
-        </dl>
+        <span className="absolute inset-x-3 bottom-2 truncate text-base font-semibold text-white [text-shadow:0_1px_4px_rgb(0_0_0_/_0.55)]">
+          {listing.boatName}
+        </span>
+      </button>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {listing.applicationCount > 0 ? (
-            <Badge className="bg-secondary text-secondary-foreground">
-              {listing.applicationCount} jelentkezés
-            </Badge>
-          ) : null}
-          {listing.isOwnListing ? (
-            <Badge className="border-0 bg-secondary text-secondary-foreground">Saját hirdetés</Badge>
-          ) : null}
-          {listing.applied ? (
-            <Badge className="bg-accent text-accent-foreground">Már jelentkeztem</Badge>
-          ) : null}
-          {listing.maxApplicants !== null && !isFull ? (
-            <Badge className="border-0 bg-secondary text-secondary-foreground">
-              Még {listing.maxApplicants - listing.activeApplicationCount} szabad hely
-            </Badge>
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div className="flex flex-col gap-1 text-sm">
+          <span
+            className="flex items-center gap-1.5 font-medium text-card-foreground"
+            aria-label={`Esemény: ${listing.event}`}
+          >
+            <Flag className="h-3.5 w-3.5 shrink-0 text-brand" aria-hidden="true" />
+            <span className="truncate" aria-hidden="true">
+              {listing.event}
+            </span>
+          </span>
+          <span
+            className="flex min-w-0 items-center gap-1.5 text-muted-foreground"
+            aria-label={`Dátum: ${listing.date}`}
+          >
+            <CalendarDays className="h-3.5 w-3.5 shrink-0 text-brand" aria-hidden="true" />
+            <span className="shrink-0" aria-hidden="true">
+              {listing.date}
+            </span>
+          </span>
+          {listing.location ? (
+            <span
+              className="flex min-w-0 items-center gap-1.5 text-muted-foreground"
+              aria-label={`Helyszín: ${listing.location}`}
+            >
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-brand" aria-hidden="true" />
+              <span className="truncate" aria-hidden="true">
+                {listing.location}
+              </span>
+            </span>
           ) : null}
         </div>
 
-        <button
-          type="button"
-          onClick={onToggleDetails}
-          className="mt-4 inline-flex w-fit items-center gap-1.5 text-sm font-medium text-accent transition-colors hover:text-accent/80"
-          aria-expanded={detailsOpen}
-        >
-          {detailsOpen ? "Részletek elrejtése" : "További részletek"}
-          <ChevronDown
-            className={`h-4 w-4 transition-transform ${detailsOpen ? "rotate-180" : "rotate-0"}`}
+        <div className="flex flex-wrap gap-1.5">
+          <Badge
+            className="max-w-full gap-1 border-0 bg-secondary font-normal text-secondary-foreground"
+            aria-label={`Szükséges poszt: ${listing.roles.map((role) => roleLabels[role]).join(", ")}`}
+            title={listing.roles.map((role) => roleLabels[role]).join(", ")}
+          >
+            <Users className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="truncate" aria-hidden="true">
+              {listing.roles.slice(0, 2).map((role) => roleLabels[role]).join(", ")}
+              {listing.roles.length > 2 ? ` +${listing.roles.length - 2}` : ""}
+            </span>
+          </Badge>
+          <Badge
+            className={`gap-1 border-0 font-normal ${levelBadgeClasses[listing.level]}`}
+            aria-label={`Elvárt tapasztalat: ${levelLabels[listing.level]}`}
+          >
+            <Award className="h-3 w-3" aria-hidden="true" />
+            <span aria-hidden="true">{levelLabels[listing.level]}</span>
+          </Badge>
+        </div>
+
+        {listing.applied ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge className="border-0 bg-emerald-100 text-emerald-800">Már jelentkeztem</Badge>
+          </div>
+        ) : null}
+
+        {listing.isOwnListing ? (
+          <p className="mt-auto flex h-10 items-center justify-center gap-1.5 pt-1 text-sm font-medium text-brand">
+            <UserCheck className="h-4 w-4" aria-hidden="true" />
+            Saját hirdetés
+          </p>
+        ) : (
+          <div className="mt-auto flex items-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => setDetailsOpen(true)}
+              className="shrink-0 text-sm font-medium text-brand underline-offset-4 hover:underline"
+            >
+              Részletek
+            </button>
+            <PrimaryApplyAction
+              listing={listing}
+              isFull={isFull}
+              applyingId={applyingId}
+              cancelingId={cancelingId}
+              onCancel={onCancel}
+              onRequestApply={startApplyFlow}
+              className="flex-1"
+            />
+          </div>
+        )}
+      </div>
+
+      <ListingDetailsDialog
+        listing={listing}
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
+        isFull={isFull}
+        applyingId={applyingId}
+        cancelingId={cancelingId}
+        onCancel={onCancel}
+        onRequestApply={startApplyFlowFromDetails}
+      />
+
+      <ApplyDialog
+        listing={listing}
+        open={applyOpen}
+        onOpenChange={setApplyOpen}
+        isSubmitting={applyingId === listing.id}
+        onSubmit={(message) => onApply(listing, message)}
+      />
+    </article>
+  )
+}
+
+function PrimaryApplyAction({
+  listing,
+  isFull,
+  applyingId,
+  cancelingId,
+  onCancel,
+  onRequestApply,
+  className = "",
+}: {
+  listing: ListingRow
+  isFull: boolean
+  applyingId: string | null
+  cancelingId: string | null
+  onCancel: (adId: string, applicationId: string | null) => void
+  onRequestApply: () => void
+  className?: string
+}) {
+  if (listing.applied) {
+    return (
+      <Button
+        variant="outline"
+        onClick={() => onCancel(listing.id, listing.applicationId)}
+        disabled={cancelingId === listing.id}
+        className={`h-10 min-w-0 truncate text-sm text-destructive! hover:bg-destructive/10! hover:text-destructive! ${className}`}
+      >
+        {cancelingId === listing.id ? "Visszavonás..." : "Jelentkezés visszavonása"}
+      </Button>
+    )
+  }
+
+  if (listing.isOwnListing) return null
+
+  return (
+    <Button
+      onClick={onRequestApply}
+      disabled={applyingId === listing.id || isFull}
+      className={`h-10 min-w-0 truncate bg-brand! text-sm text-white! hover:bg-brand/90! disabled:cursor-not-allowed disabled:bg-muted ${className}`}
+    >
+      {applyingId === listing.id ? "Jelentkezés..." : isFull ? "Betelt" : "Jelentkezés"}
+    </Button>
+  )
+}
+
+function DetailLine({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Flag
+  label: string
+  value: string
+}) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden="true" />
+      <div className="flex flex-col">
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
+        <span className="text-sm text-foreground">{value}</span>
+      </div>
+    </div>
+  )
+}
+
+function ListingDetailsDialog({
+  listing,
+  open,
+  onOpenChange,
+  isFull,
+  applyingId,
+  cancelingId,
+  onCancel,
+  onRequestApply,
+}: {
+  listing: ListingRow
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  isFull: boolean
+  applyingId: string | null
+  cancelingId: string | null
+  onCancel: (adId: string, applicationId: string | null) => void
+  onRequestApply: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[92vh] max-w-lg flex-col gap-0 overflow-hidden rounded-2xl p-0">
+        <DialogTitle className="sr-only">{listing.boatName} hirdetés részletei</DialogTitle>
+        <DialogDescription className="sr-only">A hirdetés teljes részletei és jelentkezési lehetőség.</DialogDescription>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* The photo spans the full modal width at its natural height, so the whole image is always visible. */}
+        <div className="relative w-full overflow-hidden bg-brand-tint">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={listing.image || "/placeholder.svg"}
+            alt={`${listing.boatName} vitorlás hajó`}
+            className="block h-auto w-full"
+          />
+          <div
+            className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/80 via-black/25 to-transparent"
             aria-hidden="true"
           />
-        </button>
+          <div className="absolute left-4 top-4">
+            <Badge
+              className={
+                listing.commitment === "szezon"
+                  ? "border-0 bg-brand-teal text-white shadow-sm"
+                  : "border-0 bg-brand text-white shadow-sm"
+              }
+            >
+              {commitmentLabels[listing.commitment]}
+            </Badge>
+          </div>
+          <p className="absolute inset-x-4 bottom-3 truncate text-xl font-bold text-white [text-shadow:0_1px_4px_rgb(0_0_0_/_0.55)]">
+            {listing.boatName}
+          </p>
+        </div>
 
-        {detailsOpen ? (
-          <div className="mt-3 rounded-xl border border-border/70 bg-secondary/40 p-3">
+        <div className="px-6 py-5">
+          <div className="flex flex-col gap-3">
+            <DetailLine icon={Flag} label="Esemény" value={listing.event} />
+            {listing.location ? <DetailLine icon={MapPin} label="Helyszín" value={listing.location} /> : null}
+            <DetailLine icon={CalendarDays} label="Dátum" value={listing.date} />
+            <DetailLine icon={Users} label="Szükséges poszt" value={listing.roles.map((role) => roleLabels[role]).join(", ")} />
+            <DetailLine icon={Award} label="Elvárt tapasztalat" value={levelLabels[listing.level]} />
+          </div>
+
+          {isFull || listing.applied || listing.isOwnListing ? (
+            <div className="mt-4 flex flex-wrap items-center gap-1.5">
+              {listing.isOwnListing ? (
+                <Badge className="gap-1 border-0 bg-brand-tint text-brand">
+                  <UserCheck className="h-3 w-3" aria-hidden="true" />
+                  Saját hirdetés
+                </Badge>
+              ) : null}
+              {isFull ? (
+                <Badge className="border-0 bg-destructive text-destructive-foreground">Betelt</Badge>
+              ) : null}
+              {listing.applied ? (
+                <Badge className="border-0 bg-emerald-100 text-emerald-800">Már jelentkeztem</Badge>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="mt-5 rounded-xl border border-brand-tint-strong bg-brand-tint p-3">
             <div className="flex items-center gap-3">
-              <span className="relative h-10 w-10 overflow-hidden rounded-full ring-1 ring-border">
-                <Image
-                  src={listing.captainAvatar || "/placeholder.svg"}
-                  alt={`${listing.captainName} profilképe`}
-                  fill
-                  className="object-cover"
-                  sizes="40px"
-                />
+              <span className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand text-sm font-semibold text-white ring-1 ring-border">
+                {listing.captainAvatar ? (
+                  <Image
+                    src={listing.captainAvatar}
+                    alt={`${listing.captainName} profilképe`}
+                    fill
+                    className="object-cover"
+                    sizes="40px"
+                  />
+                ) : (
+                  <span aria-hidden="true">
+                    {listing.captainName
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((part) => part[0]?.toUpperCase())
+                      .join("")}
+                  </span>
+                )}
               </span>
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Kapitány</p>
-                <p className="text-sm font-semibold text-foreground">{listing.captainName}</p>
+                <p className="truncate text-sm font-semibold text-foreground">{listing.captainName}</p>
               </div>
             </div>
             <div className="mt-3">
@@ -861,90 +1122,150 @@ function BoatCard({
               </p>
             </div>
           </div>
-        ) : null}
+        </div>
+        </div>
 
-        {!listing.applied && !listing.isOwnListing && !isFull ? (
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={() => setShowMessageField((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-accent transition-colors hover:text-accent/80"
-              aria-expanded={showMessageField}
-              aria-controls={`application-message-wrap-${listing.id}`}
-            >
-              {showMessageField ? "Üzenetmező elrejtése" : "Üzenet a kapitánynak (opcionális)"}
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${showMessageField ? "rotate-180" : "rotate-0"}`}
-                aria-hidden="true"
-              />
-            </button>
-
-            {showMessageField ? (
-              <div id={`application-message-wrap-${listing.id}`} className="mt-2 space-y-1.5 rounded-xl border border-border/70 bg-secondary/30 p-3">
-                <label htmlFor={`application-message-${listing.id}`} className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Üzenet a kapitánynak
-                </label>
-                <textarea
-                  id={`application-message-${listing.id}`}
-                  name="applicationMessage"
-                  rows={3}
-                  maxLength={500}
-                  value={applicationMessage}
-                  onChange={(event) => setApplicationMessage(event.target.value)}
-                  placeholder="Pl.: Szia! Van tapasztalatom túra- és pályaversenyeken is, szívesen csatlakoznék a csapathoz."
-                  className="w-full resize-y rounded-xl border border-input bg-background px-3 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/80 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                />
-                <p className="text-xs text-muted-foreground">Maximum 500 karakter.</p>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {listing.applied ? (
-          <Button
-            size="lg"
-            variant="outline"
-            onClick={() => onCancel(listing.id, listing.applicationId)}
-            disabled={cancelingId === listing.id}
-            className="mt-6 h-11 w-full text-base text-destructive! hover:bg-destructive/10! hover:text-destructive!"
-          >
-            {cancelingId === listing.id ? "Visszavonás..." : "Jelentkezés visszavonása"}
-          </Button>
-        ) : listing.isOwnListing ? (
-          <Button size="lg" disabled className="mt-6 h-11 w-full">
-            Saját hirdetés
-          </Button>
-        ) : (
-          <Button
-            size="lg"
-            onClick={() => onApply(listing, applicationMessage)}
-            disabled={listing.applied || applyingId === listing.id || isFull}
-            className="mt-6 h-11 w-full bg-accent! text-base text-accent-foreground! hover:bg-accent/90! disabled:cursor-not-allowed disabled:bg-muted"
-          >
-            {applyingId === listing.id ? "Jelentkezés..." : isFull ? "Betelt – nincs több hely" : "Jelentkezem a hajóra"}
-          </Button>
+        {listing.isOwnListing ? null : (
+        <DialogFooter className="mx-0 mb-0 shrink-0 rounded-b-2xl bg-card px-6 py-4">
+          <PrimaryApplyAction
+            listing={listing}
+            isFull={isFull}
+            applyingId={applyingId}
+            cancelingId={cancelingId}
+            onCancel={onCancel}
+            onRequestApply={onRequestApply}
+            className="w-full sm:flex-1"
+          />
+        </DialogFooter>
         )}
-      </div>
-    </article>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-function DetailRow({
-  icon: Icon,
-  label,
-  children,
+function ApplyDialog({
+  listing,
+  open,
+  onOpenChange,
+  isSubmitting,
+  onSubmit,
 }: {
-  icon: typeof Anchor
-  label: string
-  children: React.ReactNode
+  listing: ListingRow
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  isSubmitting: boolean
+  onSubmit: (applicationMessage?: string) => void
 }) {
+  const selectableRoles = useMemo(() => listing.roles.filter((role) => role !== "barmilyen"), [listing.roles])
+  const [selectedRole, setSelectedRole] = useState<ListingPost | "">(selectableRoles[0] ?? "")
+  const [message, setMessage] = useState("")
+  const wasSubmittingRef = useRef(false)
+
+  useEffect(() => {
+    if (open) {
+      setSelectedRole(selectableRoles[0] ?? "")
+      setMessage("")
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, listing.id])
+
+  useEffect(() => {
+    if (open && wasSubmittingRef.current && !isSubmitting) {
+      onOpenChange(false)
+    }
+    wasSubmittingRef.current = isSubmitting
+  }, [isSubmitting, open, onOpenChange])
+
+  const handleSubmit = () => {
+    const parts: string[] = []
+    if (selectableRoles.length > 1 && selectedRole) {
+      parts.push(`Jelentkezett pozíció: ${roleLabels[selectedRole]}`)
+    }
+    const trimmedMessage = message.trim()
+    if (trimmedMessage) parts.push(trimmedMessage)
+    onSubmit(parts.length > 0 ? parts.join("\n\n") : undefined)
+  }
+
   return (
-    <div className="flex items-start gap-2.5">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
-      <div className="flex flex-col">
-        <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
-        <dd className="text-card-foreground">{children}</dd>
-      </div>
-    </div>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!isSubmitting) onOpenChange(next)
+      }}
+    >
+      <DialogContent className="max-w-md gap-0 rounded-2xl p-0">
+        <DialogHeader className="gap-1 border-b border-brand-tint-strong bg-brand-tint px-6 py-5">
+          <DialogTitle className="text-lg font-bold text-brand">Jelentkezés – {listing.boatName}</DialogTitle>
+          <DialogDescription>
+            {listing.event} · {listing.date}
+            {listing.location ? ` · ${listing.location}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4 px-6 py-5">
+          {selectableRoles.length > 1 ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="apply-role" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Melyik pozícióra jelentkezel?
+              </Label>
+              <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as ListingPost)}>
+                <SelectTrigger id="apply-role" className="w-full">
+                  <SelectValue>{(v: string) => roleLabels[v as ListingPost] ?? "Válassz pozíciót"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {selectableRoles.map((role) => (
+                    <SelectItem key={role} value={role}>
+                      {roleLabels[role]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              <Badge className="gap-1 border-0 bg-secondary font-normal text-secondary-foreground">
+                <Users className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+                {listing.roles.map((role) => roleLabels[role]).join(", ")}
+              </Badge>
+              <Badge className="gap-1 border-0 bg-secondary font-normal text-secondary-foreground">
+                <Award className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+                {levelLabels[listing.level]}
+              </Badge>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="apply-message" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Üzenet a kapitánynak (opcionális)
+            </Label>
+            <textarea
+              id="apply-message"
+              name="applicationMessage"
+              rows={4}
+              maxLength={500}
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="Pl.: Szia! Van tapasztalatom túra- és pályaversenyeken is, szívesen csatlakoznék a csapathoz."
+              className="w-full resize-y rounded-xl border border-input bg-background px-3 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/80 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+            <p className="text-xs text-muted-foreground">Maximum 500 karakter.</p>
+          </div>
+        </div>
+
+        <DialogFooter className="mx-0 mb-0 rounded-b-2xl bg-card px-6 py-4">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+            Mégse
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="bg-brand! text-white! hover:bg-brand/90!"
+          >
+            {isSubmitting ? "Küldés..." : "Jelentkezés elküldése"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

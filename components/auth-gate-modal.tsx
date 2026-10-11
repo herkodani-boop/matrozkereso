@@ -22,6 +22,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { BoatCard, type ListingRow } from "@/components/browse-boats"
+import { ListingImageFocusPicker } from "@/components/listing-image-focus-picker"
 
 const levelOptions: Record<string, string> = {
   kezdo: "Kezdő",
@@ -110,7 +112,7 @@ function buildResetPasswordRedirectUrl() {
   return `${window.location.origin}/reset-password`
 }
 
-type View = "login" | "register" | "boat" | "listing" | "forgot"
+type View = "login" | "register" | "boat" | "listing" | "preview" | "forgot"
 type Mode = "sailor" | "skipper"
 
 export function AuthGateModal({
@@ -122,6 +124,8 @@ export function AuthGateModal({
   inviteEmail = null,
   initialView,
   boatId,
+  boatImageUrl,
+  boatDisplayName,
   userId,
   onListingCreated,
   prefill,
@@ -134,6 +138,8 @@ export function AuthGateModal({
   inviteEmail?: string | null
   initialView?: View
   boatId?: string
+  boatImageUrl?: string | null
+  boatDisplayName?: string | null
   userId?: string
   onListingCreated?: () => void
   prefill?: {
@@ -163,6 +169,7 @@ export function AuthGateModal({
   const [isEventPrefilledListing, setIsEventPrefilledListing] = useState(false)
   const [listingPosts, setListingPosts] = useState<string[]>([])
   const [listingLevel, setListingLevel] = useState<string>("kezdo")
+  const [listingFocus, setListingFocus] = useState({ x: 50, y: 50 })
   const [listingNote, setListingNote] = useState("")
   const [listingMaxApplicants, setListingMaxApplicants] = useState<string>("25")
   const [listingTitle, setListingTitle] = useState("")
@@ -213,6 +220,7 @@ export function AuthGateModal({
     setListingCommitment("egy-verseny")
     setListingPosts([])
     setListingLevel("kezdo")
+    setListingFocus({ x: 50, y: 50 })
     setListingNote("")
     setListingMaxApplicants("25")
     setListingErrors({})
@@ -655,6 +663,12 @@ export function AuthGateModal({
     }
 
     setListingErrors({})
+
+    if (view === "listing") {
+      setView("preview")
+      return
+    }
+
     setIsListingSaving(true)
 
     try {
@@ -674,6 +688,8 @@ export function AuthGateModal({
         experience_level: listingLevel,
         captain_note: listingNote.trim() || null,
         max_applicants: listingMaxApplicants === "unlimited" ? null : Number(listingMaxApplicants),
+        image_focus_x: Math.round(listingFocus.x),
+        image_focus_y: Math.round(listingFocus.y),
         created_at: new Date().toISOString(),
       }
 
@@ -694,6 +710,8 @@ export function AuthGateModal({
             ...listingPayload,
             captain_note: undefined,
             max_applicants: undefined,
+            image_focus_x: undefined,
+            image_focus_y: undefined,
           },
         ])
 
@@ -709,6 +727,31 @@ export function AuthGateModal({
       setTimeout(() => handleOpenChange(false), 1800)
     } finally {
       setIsListingSaving(false)
+    }
+  }
+
+  function buildPreviewListing(): ListingRow {
+    return {
+      id: "preview",
+      isOwnListing: false,
+      boatName: boatDisplayName || "Hajó",
+      image: boatImageUrl || "/placeholder.svg",
+      imageFocusX: listingFocus.x,
+      imageFocusY: listingFocus.y,
+      commitment: (listingCommitment === "szezon" ? "szezon" : "egy-verseny") as ListingRow["commitment"],
+      event: listingTitle.trim(),
+      location: listingLocation.trim(),
+      date: formatDateText(listingStartDate, listingEndDate, listingOneDay),
+      roles: listingPosts as ListingRow["roles"],
+      level: listingLevel as ListingRow["level"],
+      applied: false,
+      applicationId: null,
+      applicationCount: 0,
+      captainName: "",
+      captainAvatar: null,
+      captainNote: listingNote.trim() || null,
+      maxApplicants: null,
+      activeApplicationCount: 0,
     }
   }
 
@@ -1259,6 +1302,60 @@ export function AuthGateModal({
               </Button>
             </form>
           </div>
+        ) : view === "preview" ? (
+          <div className="flex flex-col gap-5 p-6 sm:p-8">
+            <DialogHeader className="gap-2">
+              <DialogTitle className="text-balance text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                Így fog kinézni a hirdetésed
+              </DialogTitle>
+              <DialogDescription className="text-pretty leading-relaxed">
+                Ellenőrizd az adatokat, és állítsd be, melyik képrész látszódjon a kártyán.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleListingSubmit} className="flex flex-col gap-5">
+              {listingErrors.submit ? (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  {listingErrors.submit}
+                </div>
+              ) : null}
+
+              <div className="mx-auto w-full max-w-[280px]" aria-hidden="true" inert>
+                <BoatCard
+                  listing={buildPreviewListing()}
+                  onRequestApply={() => false}
+                  onApply={() => {}}
+                  applyingId={null}
+                  onCancel={() => {}}
+                  cancelingId={null}
+                />
+              </div>
+
+              {boatImageUrl ? (
+                <div className="flex flex-col gap-2">
+                  <Label>Kiemelt képrész</Label>
+                  <ListingImageFocusPicker src={boatImageUrl} focus={listingFocus} onChange={setListingFocus} />
+                  <p className="text-xs text-muted-foreground">
+                    Kattints vagy húzd a képen arra, amit a kártyán mindenképp látni kell. A részletek ablakban a teljes kép látszik.
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                <Button type="button" variant="outline" size="lg" className="h-11" onClick={() => setView("listing")}>
+                  Vissza a szerkesztéshez
+                </Button>
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="h-11 bg-accent! text-base text-accent-foreground! hover:bg-accent/90!"
+                  disabled={isListingSaving}
+                >
+                  {isListingSaving ? "Hirdetés mentése..." : "Hirdetés közzététele"}
+                </Button>
+              </div>
+            </form>
+          </div>
         ) : (
           <div className="flex flex-col gap-6 p-6 sm:p-8">
             <DialogHeader className="gap-3">
@@ -1550,7 +1647,7 @@ export function AuthGateModal({
                 className="mt-1 h-11 w-full bg-accent! text-base text-accent-foreground! hover:bg-accent/90!"
                 disabled={isListingSaving}
               >
-                {isListingSaving ? "Hirdetés mentése..." : "Hirdetés közzététele"}
+                {isListingSaving ? "Hirdetés mentése..." : "Tovább az előnézethez"}
               </Button>
             </form>
           </div>
