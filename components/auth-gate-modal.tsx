@@ -380,7 +380,12 @@ export function AuthGateModal({
       })
 
       if (error) {
-        setResendError(error.message)
+        const waitSeconds = error.message.match(/for security purposes, you can only request this after (\d+) seconds?/i)?.[1]
+        setResendError(
+          waitSeconds
+            ? `Biztonsági okokból csak ${waitSeconds} másodperc múlva kérheted újra a hitelesítő emailt.`
+            : error.message,
+        )
         return
       }
 

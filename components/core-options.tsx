@@ -11,18 +11,18 @@ import { supabase } from "@/lib/supabase"
 
 const options = [
   {
-    icon: Sailboat,
-    title: "Hajóm van",
-    subtitle: "Kezeld a hajód csapatát és eseményeit, és hirdess szabad helyet, ha legénységre van szükséged.",
-    cta: "Hajó és legénység kezelése",
-    action: "skipper" as const,
-  },
-  {
     icon: Compass,
     title: "Vitorlázni szeretnék",
     subtitle: "Találj helyet versenyekre vagy a szezonra, jelentkezz a hirdetésekre, és légy tagja egy hajó csapatának.",
     cta: "Böngészés és jelentkezés",
     href: "/bongeszes",
+  },
+  {
+    icon: Sailboat,
+    title: "Hajóm van",
+    subtitle: "Kezeld a hajód csapatát és eseményeit, és hirdess szabad helyet, ha legénységre van szükséged.",
+    cta: "Hajó és legénység kezelése",
+    action: "skipper" as const,
   },
 ]
 
@@ -96,7 +96,7 @@ export function CoreOptions() {
         })}
       </div>
 
-      <AuthGateModal open={skipperOpen} onOpenChange={setSkipperOpen} mode="skipper" />
+      <AuthGateModal open={skipperOpen} onOpenChange={setSkipperOpen} mode="skipper" initialView="login" />
     </section>
   )
 }
