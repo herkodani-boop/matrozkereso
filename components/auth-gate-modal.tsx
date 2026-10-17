@@ -192,6 +192,11 @@ export function AuthGateModal({
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [forgotSent, setForgotSent] = useState(false)
+  const [confirmationRequired, setConfirmationRequired] = useState(false)
+  const [confirmationEmail, setConfirmationEmail] = useState("")
+  const [resendLoading, setResendLoading] = useState(false)
+  const [resendSent, setResendSent] = useState(false)
+  const [resendError, setResendError] = useState<string | null>(null)
   const [isListingSaving, setIsListingSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [listingErrors, setListingErrors] = useState<{
@@ -218,6 +223,11 @@ export function AuthGateModal({
     setAvatarError(null)
     setAvatarProcessing(false)
     setForgotSent(false)
+    setConfirmationRequired(false)
+    setConfirmationEmail("")
+    setResendLoading(false)
+    setResendSent(false)
+    setResendError(null)
     setLoading(false)
     setFormError(null)
     setBoatNameValue("")
@@ -321,6 +331,11 @@ export function AuthGateModal({
 
       if (error) {
         console.error("Bejelentkezési hiba:", error)
+        if (error.code === "email_not_confirmed" || error.message.toLowerCase().includes("email not confirmed")) {
+          setConfirmationEmail(email.trim())
+          setConfirmationRequired(true)
+          return
+        }
         setFormError(error.message)
         return
       }
@@ -329,6 +344,13 @@ export function AuthGateModal({
         const errorMessage = "Bejelentkezés sikertelen."
         console.error(errorMessage)
         setFormError(errorMessage)
+        return
+      }
+
+      if (!data.user.email_confirmed_at) {
+        await supabase.auth.signOut({ scope: "local" })
+        setConfirmationEmail(data.user.email ?? email.trim())
+        setConfirmationRequired(true)
         return
       }
 
@@ -341,6 +363,32 @@ export function AuthGateModal({
       router.refresh()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Ismeretlen hiba történt.")
+    }
+  }
+
+  async function handleResendConfirmation() {
+    if (!confirmationEmail) return
+    setResendLoading(true)
+    setResendError(null)
+    setResendSent(false)
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: confirmationEmail,
+        options: { emailRedirectTo: `${window.location.origin}/auth/confirm` },
+      })
+
+      if (error) {
+        setResendError(error.message)
+        return
+      }
+
+      setResendSent(true)
+    } catch (err) {
+      setResendError(err instanceof Error ? err.message : "Az email újraküldése nem sikerült.")
+    } finally {
+      setResendLoading(false)
     }
   }
 
@@ -423,6 +471,7 @@ export function AuthGateModal({
           email: email,
           password: password,
           options: {
+            emailRedirectTo: `${window.location.origin}/auth/confirm`,
             data: {
               full_name: fullName || null,
               phone: phone || null,
@@ -443,6 +492,13 @@ export function AuthGateModal({
           const errorMessage = "Felhasználó létrehozása sikertelen."
           console.error(errorMessage)
           setFormError(errorMessage)
+          return
+        }
+
+        if (!data.user.email_confirmed_at) {
+          if (data.session) await supabase.auth.signOut({ scope: "local" })
+          setConfirmationEmail(email.trim())
+          setConfirmationRequired(true)
           return
         }
 
@@ -539,6 +595,7 @@ export function AuthGateModal({
         email: email,
         password: password,
         options: {
+          emailRedirectTo: `${window.location.origin}/auth/confirm`,
           data: {
             full_name: fullName || null,
             phone: phone || null,
@@ -559,6 +616,13 @@ export function AuthGateModal({
         const errorMessage = "Felhasználó létrehozása sikertelen."
         console.error(errorMessage)
         setFormError(errorMessage)
+        return
+      }
+
+      if (!data.user.email_confirmed_at) {
+        if (data.session) await supabase.auth.signOut({ scope: "local" })
+        setConfirmationEmail(email.trim())
+        setConfirmationRequired(true)
         return
       }
 
@@ -818,7 +882,28 @@ export function AuthGateModal({
         showCloseButton
         className="max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] gap-0 overflow-y-auto overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch] rounded-2xl p-0 sm:max-w-lg"
       >
-        {submitted ? (
+        {confirmationRequired ? (
+          <div className="flex flex-col gap-6 p-6 sm:p-8">
+            <DialogHeader className="gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                <Mail className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <DialogTitle className="text-balance text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                Erősítsd meg az email címed
+              </DialogTitle>
+              <DialogDescription className="text-pretty leading-relaxed">
+                A folytatáshoz kattints a(z) <span className="font-medium text-foreground">{confirmationEmail}</span> címre küldött hitelesítő linkre. Addig nem tudsz bejelentkezni.
+              </DialogDescription>
+            </DialogHeader>
+
+            {resendSent ? <output className="text-sm text-emerald-700">A hitelesítő emailt újraküldtük.</output> : null}
+            {resendError ? <p className="text-sm text-destructive" role="alert">{resendError}</p> : null}
+
+            <Button type="button" size="lg" disabled={resendLoading} onClick={handleResendConfirmation} className="h-11 w-full bg-accent! text-base text-accent-foreground! hover:bg-accent/90!">
+              {resendLoading ? "Küldés..." : "Hitelesítő email újraküldése"}
+            </Button>
+          </div>
+        ) : submitted ? (
           <div className="flex flex-col items-center gap-4 px-6 py-12 text-center sm:px-8">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
               <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
