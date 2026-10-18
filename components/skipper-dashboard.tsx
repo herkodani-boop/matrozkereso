@@ -1793,7 +1793,7 @@ export function SkipperDashboard() {
 
     if (userIds.length > 0) {
       const { data: profileRows } = await supabase
-        .from("users")
+        .from("visible_event_participant_profiles")
         .select("id, full_name, avatar_url")
         .in("id", userIds)
 

@@ -415,7 +415,7 @@ export function BrowseBoats() {
       }
       setLoadError(null)
 
-      const adsBaseSelect = "id, user_id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url), applications(id, user_id, status)"
+      const adsBaseSelect = "id, user_id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url)"
       const adsExtendedBaseSelect = adsBaseSelect.replace("boat:boats(id, name, image_url)", "boat:boats(id, name, image_url, original_image_url)")
       const from = pageIndex * PAGE_SIZE
       const to = from + PAGE_SIZE - 1
@@ -510,12 +510,36 @@ export function BrowseBoats() {
         count = countWithNote ?? null
       }
 
+      const applicationCountsByAdId = new Map<string, { applicationCount: number; activeApplicationCount: number }>()
+      const adIds = (data ?? []).map((ad: any) => String(ad.id))
+      if (adIds.length > 0) {
+        const { data: applicationCounts, error: applicationCountsError } = await supabase
+          .from("public_application_counts")
+          .select("ad_id, application_count, active_application_count")
+          .in("ad_id", adIds)
+
+        if (applicationCountsError) {
+          console.error("Jelentkezési darabszámok lekérdezési hiba:", applicationCountsError)
+          setLoadError("A hirdetések jelentkezési adatait nem sikerült betölteni. Próbáld újra később.")
+          setLoadingAds(false)
+          setLoadingMore(false)
+          return
+        }
+
+        ;(applicationCounts ?? []).forEach((row) => {
+          applicationCountsByAdId.set(String(row.ad_id), {
+            applicationCount: row.application_count,
+            activeApplicationCount: row.active_application_count,
+          })
+        })
+      }
+
       const userIds = Array.from(new Set((data ?? []).map((ad: any) => ad.user_id).filter(Boolean)))
       const usersById = new Map<string, { full_name?: string; avatar_url?: string | null }>()
 
       if (userIds.length > 0) {
         const { data: usersData, error: usersError } = await supabase
-          .from("users")
+          .from("public_profiles")
           .select("id, full_name, avatar_url")
           .in("id", userIds)
 
@@ -553,6 +577,7 @@ export function BrowseBoats() {
         const roles = Array.from(new Set(rawPositions.map((position: unknown) => normalizePost(position)))) as ListingPost[]
         const normalizedRoles: ListingPost[] = roles.length > 0 ? roles : ["barmilyen"]
         const captainData = usersById.get(ad.user_id)
+        const applicationCounts = applicationCountsByAdId.get(String(ad.id))
 
         return {
           id: ad.id,
@@ -569,12 +594,12 @@ export function BrowseBoats() {
           level: (ad.experience_level ?? "halado") as Level,
           applied: appliedAdIdMap.has(ad.id),
           applicationId: appliedAdIdMap.get(ad.id) ?? null,
-          applicationCount: ad.applications?.length ?? 0,
+          applicationCount: applicationCounts?.applicationCount ?? 0,
           captainName: captainData?.full_name?.trim() || "Ismeretlen kapitány",
           captainAvatar: captainData?.avatar_url ?? null,
           captainNote: typeof ad.captain_note === "string" && ad.captain_note.trim() ? ad.captain_note.trim() : null,
           maxApplicants: typeof ad.max_applicants === "number" ? ad.max_applicants : null,
-          activeApplicationCount: (ad.applications ?? []).filter((application: any) => application.status !== "rejected").length,
+          activeApplicationCount: applicationCounts?.activeApplicationCount ?? 0,
         }
       })
 
