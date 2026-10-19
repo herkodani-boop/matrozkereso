@@ -31,15 +31,11 @@ Ez az oldal egy magyar nagyhajós vitorlázó közösséghez készült crew-matc
 - Automatikus session-kezelés Supabase segítségével.
 - Kijelentkezés a fejlécből.
 
-## Jelszó-visszaállítás
+## Emailes belépés
 
-- Visszaállító link kezelése.
-- Új jelszó beállítása recovery session alapján.
-- Kódos, tokenes és hash alapú Supabase recovery támogatás.
-- Érvényesítés:
-  - legalább 8 karakter
-  - a két jelszó egyezése
-- Sikeres mentés után automatikus kijelentkeztetés.
+- Supabase magic link küldése a regisztrált email címre.
+- A link megnyitása után automatikus belépés a fiókba.
+- Az emailes belépési folyamat új felhasználói fiókot nem hoz létre.
 
 ## Böngészés oldal
 
@@ -152,4 +148,4 @@ Ez az oldal egy magyar nagyhajós vitorlázó közösséghez készült crew-matc
 
 ## Röviden
 
-Az oldal fő értéke, hogy egy helyen köti össze a hajókat kereső kapitányokat és a fedélzetre jelentkező vitorlázókat, miközben kezeli a regisztrációt, belépést, jelszó-visszaállítást, hirdetéskezelést, jelentkezéskezelést és a jogi tájékoztatásokat is.
+Az oldal fő értéke, hogy egy helyen köti össze a hajókat kereső kapitányokat és a fedélzetre jelentkező vitorlázókat, miközben kezeli a regisztrációt, jelszavas és emailes belépést, hirdetéskezelést, jelentkezéskezelést és a jogi tájékoztatásokat is.

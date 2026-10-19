@@ -90,35 +90,7 @@ const crewTypeOptions: { value: string; label: string }[] = [
   { value: "tura", label: "Túra / Hobbi vitorlázás" },
 ]
 
-function buildResetPasswordRedirectUrl() {
-  const runtimeOrigin = typeof window !== "undefined" ? window.location.origin : ""
-  const runtimeHost = runtimeOrigin ? new URL(runtimeOrigin).hostname.toLowerCase() : ""
-
-  if (runtimeOrigin && runtimeHost !== "localhost" && runtimeHost !== "127.0.0.1") {
-    return `${runtimeOrigin}/reset-password`
-  }
-
-  const configuredBaseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_APP_URL?.trim()
-
-  if (configuredBaseUrl) {
-    try {
-      const parsed = new URL(configuredBaseUrl)
-      const host = parsed.hostname.toLowerCase()
-
-      if (host !== "localhost" && host !== "127.0.0.1") {
-        return new URL("/reset-password", parsed).toString()
-      }
-    } catch {
-      // Hibás env esetén az utolsó fallback ágra megyünk.
-    }
-  }
-
-  return `${window.location.origin}/reset-password`
-}
-
-type View = "login" | "register" | "boat" | "listing" | "preview" | "forgot"
+type View = "login" | "register" | "boat" | "listing" | "preview" | "magic-link"
 type Mode = "sailor" | "skipper"
 
 export function AuthGateModal({
@@ -191,7 +163,7 @@ export function AuthGateModal({
   const avatarSelectionId = useRef(0)
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [forgotSent, setForgotSent] = useState(false)
+  const [magicLinkSent, setMagicLinkSent] = useState(false)
   const [confirmationRequired, setConfirmationRequired] = useState(false)
   const [confirmationEmail, setConfirmationEmail] = useState("")
   const [resendLoading, setResendLoading] = useState(false)
@@ -222,7 +194,7 @@ export function AuthGateModal({
     setPreviewUrl("")
     setAvatarError(null)
     setAvatarProcessing(false)
-    setForgotSent(false)
+    setMagicLinkSent(false)
     setConfirmationRequired(false)
     setConfirmationEmail("")
     setResendLoading(false)
@@ -299,19 +271,28 @@ export function AuthGateModal({
     }
   }, [previewUrl])
 
-  async function handleForgotPassword(e: React.FormEvent) {
+  async function handleMagicLinkSubmit(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
     setLoading(true)
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: buildResetPasswordRedirectUrl(),
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: {
+          emailRedirectTo: `${window.location.origin}/`,
+          shouldCreateUser: false,
+        },
       })
       if (error) {
-        setFormError(error.message)
+        const waitSeconds = error.message.match(/for security purposes, you can only request this after (\d+) seconds?/i)?.[1]
+        setFormError(
+          waitSeconds
+            ? `Biztonsági okokból csak ${waitSeconds} másodperc múlva kérhetsz új belépési linket.`
+            : error.message,
+        )
         return
       }
-      setForgotSent(true)
+      setMagicLinkSent(true)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Ismeretlen hiba történt.")
     } finally {
@@ -1004,7 +985,7 @@ export function AuthGateModal({
                 <div className="text-center">
                   <button
                     type="button"
-                    onClick={() => { setFormError(null); setView("forgot") }}
+                    onClick={() => { setFormError(null); setView("magic-link") }}
                     className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                   >
                     Elfelejtettem a jelszavam
@@ -1041,7 +1022,7 @@ export function AuthGateModal({
               </Button>
             </div>
           </>
-        ) : view === "forgot" ? (
+        ) : view === "magic-link" ? (
           <div className="flex flex-col gap-6 p-6 sm:p-8">
             <DialogHeader className="gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
@@ -1055,18 +1036,18 @@ export function AuthGateModal({
               </DialogDescription>
             </DialogHeader>
 
-            {forgotSent ? (
+            {magicLinkSent ? (
               <div className="flex flex-col items-center gap-4 py-4 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                   <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
                 </div>
-                <p className="font-semibold text-foreground">Link elküldve!</p>
+                <p className="font-semibold text-foreground">Belépési link elküldve!</p>
                 <p className="text-sm text-muted-foreground">
-                  Ellenőrizd a postaládád (spam mappát is), és kattints a kapott linkre.
+                  Ellenőrizd a postaládád (a spam mappát is), és kattints a kapott linkre a belépéshez.
                 </p>
                 <button
                   type="button"
-                  onClick={() => { setForgotSent(false); setView("login") }}
+                  onClick={() => { setMagicLinkSent(false); setView("login") }}
                   className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1074,16 +1055,16 @@ export function AuthGateModal({
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleForgotPassword} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
+              <form onSubmit={handleMagicLinkSubmit} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
                 {formError ? (
                   <p className="text-sm text-destructive" role="alert">{formError}</p>
                 ) : null}
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="forgot-email">E-mail cím</Label>
+                  <Label htmlFor="magic-link-email">E-mail cím</Label>
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                     <Input
-                      id="forgot-email"
+                      id="magic-link-email"
                       type="email"
                       required
                       autoComplete="email"
@@ -1100,7 +1081,7 @@ export function AuthGateModal({
                   disabled={loading}
                   className="h-11 w-full bg-accent! text-base text-accent-foreground! hover:bg-accent/90!"
                 >
-                  {loading ? "Küldés..." : "Link leküldése"}
+                  {loading ? "Küldés..." : "Link elküldése"}
                 </Button>
                 <div className="text-center">
                   <button
