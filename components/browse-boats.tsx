@@ -213,6 +213,8 @@ export function BrowseBoats() {
     if (filters.level !== ALL) params.set("level", filters.level)
     if (filters.q.trim()) params.set("q", filters.q.trim())
     if (sortRef.current !== "soon") params.set("sort", sortRef.current)
+    const focusedAdId = new URLSearchParams(window.location.search).get("ad")
+    if (focusedAdId) params.set("ad", focusedAdId)
 
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
@@ -252,6 +254,7 @@ export function BrowseBoats() {
   const [listingsData, setListingsData] = useState<ListingRow[]>([])
   const [authOpen, setAuthOpen] = useState(false)
   const [selectedBoat, setSelectedBoat] = useState<string | undefined>(undefined)
+  const [authReturnTo, setAuthReturnTo] = useState<string | undefined>(undefined)
   const [user, setUser] = useState<User | null>(null)
   const [applyingId, setApplyingId] = useState<string | null>(null)
   const [cancelingId, setCancelingId] = useState<string | null>(null)
@@ -272,6 +275,7 @@ export function BrowseBoats() {
 
     if (!user) {
       setSelectedBoat(listing.boatName)
+      setAuthReturnTo(`/bongeszes?ad=${encodeURIComponent(listing.id)}`)
       setAuthOpen(true)
       return false
     }
@@ -624,6 +628,10 @@ export function BrowseBoats() {
   const focusAdFound = focusAdId ? listingsData.some((listing) => listing.id === focusAdId) : false
 
   useEffect(() => {
+    setFocusAdId(searchParams.get("ad"))
+  }, [searchParams])
+
+  useEffect(() => {
     if (!focusAdId || focusAdFound || loadingAds || loadingMore) return
     if (hasMore) {
       void loadAdsPage(nextPage, { append: true })
@@ -844,7 +852,12 @@ export function BrowseBoats() {
         </div>
       ) : null}
 
-      <AuthGateModal open={authOpen} onOpenChange={setAuthOpen} boatName={selectedBoat} />
+      <AuthGateModal
+        open={authOpen}
+        onOpenChange={setAuthOpen}
+        boatName={selectedBoat}
+        returnTo={authReturnTo}
+      />
     </section>
   )
 }

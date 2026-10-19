@@ -101,6 +101,7 @@ export function AuthGateModal({
   teamInvite = false,
   inviteEmail = null,
   initialView,
+  returnTo,
   boatId,
   boatImageUrl,
   boatDisplayName,
@@ -115,6 +116,7 @@ export function AuthGateModal({
   teamInvite?: boolean
   inviteEmail?: string | null
   initialView?: View
+  returnTo?: string
   boatId?: string
   boatImageUrl?: string | null
   boatDisplayName?: string | null
@@ -179,6 +181,12 @@ export function AuthGateModal({
     level?: string
     submit?: string
   }>({})
+
+  function getConfirmationRedirectUrl() {
+    const url = new URL("/auth/confirm", window.location.origin)
+    if (returnTo) url.searchParams.set("next", returnTo)
+    return url.toString()
+  }
 
   function resetFormState() {
     avatarSelectionId.current += 1
@@ -337,6 +345,11 @@ export function AuthGateModal({
         return
       }
 
+      if (returnTo) {
+        router.replace(returnTo)
+        return
+      }
+
       router.refresh()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Ismeretlen hiba történt.")
@@ -353,7 +366,7 @@ export function AuthGateModal({
       const { error } = await supabase.auth.resend({
         type: "signup",
         email: confirmationEmail,
-        options: { emailRedirectTo: `${window.location.origin}/auth/confirm` },
+        options: { emailRedirectTo: getConfirmationRedirectUrl() },
       })
 
       if (error) {
@@ -577,7 +590,7 @@ export function AuthGateModal({
         email: email,
         password: password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/confirm`,
+          emailRedirectTo: getConfirmationRedirectUrl(),
           data: {
             full_name: fullName || null,
             phone: phone || null,
@@ -687,6 +700,7 @@ export function AuthGateModal({
 
       void triggerWelcomeEmail()
       handleOpenChange(false)
+      if (returnTo) router.replace(returnTo)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Ismeretlen hiba történt.")
     } finally {

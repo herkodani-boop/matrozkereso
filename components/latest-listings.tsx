@@ -34,7 +34,7 @@ export function LatestListings() {
       const { data, error } = await supabase
         .from("ads")
         .select(
-          "id, user_id, boat_id, title, location, date_text, positions, commitment, start_date, end_date, boat:boats(name, image_url), applications(user_id)",
+          "id, user_id, title, location, date_text, positions, commitment, start_date, end_date, boat:boats(name, image_url), applications(user_id)",
         )
         .eq("is_active", true)
         .eq("is_deleted", false)
@@ -48,17 +48,10 @@ export function LatestListings() {
         return
       }
 
-      const seenBoats = new Set<string>()
       const mapped: ListingPreview[] = (data ?? [])
         .filter((ad: any) => isAdVisibleByDate(ad))
         .filter((ad: any) => !user || ad.user_id !== user.id)
         .filter((ad: any) => !user || !(ad.applications ?? []).some((application: any) => application.user_id === user.id))
-        .filter((ad: any) => {
-          const key = ad.boat_id ?? ad.id
-          if (seenBoats.has(key)) return false
-          seenBoats.add(key)
-          return true
-        })
         .slice(0, 4)
         .map((ad: any) => ({
           id: ad.id,

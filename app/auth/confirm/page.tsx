@@ -10,6 +10,21 @@ export default function ConfirmEmailPage() {
   const [message, setMessage] = useState("Az email címed ellenőrzése folyamatban...")
   const [error, setError] = useState<string | null>(null)
 
+  function getSafeReturnTo() {
+    const next = new URLSearchParams(window.location.search).get("next")
+    if (!next) return null
+
+    try {
+      const url = new URL(next, window.location.origin)
+      if (url.origin !== window.location.origin || url.pathname !== "/bongeszes" || !url.searchParams.has("ad")) {
+        return null
+      }
+      return `${url.pathname}${url.search}`
+    } catch {
+      return null
+    }
+  }
+
   useEffect(() => {
     let active = true
 
@@ -56,7 +71,7 @@ export default function ConfirmEmailPage() {
 
       if (!active) return
       setMessage("Az email címed hitelesítve. Átirányítás...")
-      router.replace(role === "skipper" ? "/kapitany-dashboard" : "/")
+      router.replace(getSafeReturnTo() ?? (role === "skipper" ? "/kapitany-dashboard" : "/"))
     }
 
     void finishConfirmation().catch((confirmationError: unknown) => {
