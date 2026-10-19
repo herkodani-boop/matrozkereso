@@ -90,7 +90,7 @@ const crewTypeOptions: { value: string; label: string }[] = [
   { value: "tura", label: "Túra / Hobbi vitorlázás" },
 ]
 
-type View = "login" | "register" | "boat" | "listing" | "preview" | "magic-link"
+type View = "login" | "register" | "boat" | "listing" | "preview" | "forgot"
 type Mode = "sailor" | "skipper"
 
 export function AuthGateModal({
@@ -163,7 +163,7 @@ export function AuthGateModal({
   const avatarSelectionId = useRef(0)
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [magicLinkSent, setMagicLinkSent] = useState(false)
+  const [resetEmailSent, setResetEmailSent] = useState(false)
   const [confirmationRequired, setConfirmationRequired] = useState(false)
   const [confirmationEmail, setConfirmationEmail] = useState("")
   const [resendLoading, setResendLoading] = useState(false)
@@ -194,7 +194,7 @@ export function AuthGateModal({
     setPreviewUrl("")
     setAvatarError(null)
     setAvatarProcessing(false)
-    setMagicLinkSent(false)
+    setResetEmailSent(false)
     setConfirmationRequired(false)
     setConfirmationEmail("")
     setResendLoading(false)
@@ -271,28 +271,24 @@ export function AuthGateModal({
     }
   }, [previewUrl])
 
-  async function handleMagicLinkSubmit(e: React.FormEvent) {
+  async function handleForgotPassword(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
     setLoading(true)
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: `${window.location.origin}/`,
-          shouldCreateUser: false,
-        },
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
       })
       if (error) {
         const waitSeconds = error.message.match(/for security purposes, you can only request this after (\d+) seconds?/i)?.[1]
         setFormError(
           waitSeconds
-            ? `Biztonsági okokból csak ${waitSeconds} másodperc múlva kérhetsz új belépési linket.`
+            ? `Biztonsági okokból csak ${waitSeconds} másodperc múlva kérhetsz új jelszó-visszaállító emailt.`
             : error.message,
         )
         return
       }
-      setMagicLinkSent(true)
+      setResetEmailSent(true)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Ismeretlen hiba történt.")
     } finally {
@@ -985,7 +981,7 @@ export function AuthGateModal({
                 <div className="text-center">
                   <button
                     type="button"
-                    onClick={() => { setFormError(null); setView("magic-link") }}
+                    onClick={() => { setFormError(null); setView("forgot") }}
                     className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                   >
                     Elfelejtettem a jelszavam
@@ -1022,7 +1018,7 @@ export function AuthGateModal({
               </Button>
             </div>
           </>
-        ) : view === "magic-link" ? (
+        ) : view === "forgot" ? (
           <div className="flex flex-col gap-6 p-6 sm:p-8">
             <DialogHeader className="gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
@@ -1036,7 +1032,7 @@ export function AuthGateModal({
               </DialogDescription>
             </DialogHeader>
 
-            {magicLinkSent ? (
+            {resetEmailSent ? (
               <div className="flex flex-col items-center gap-4 py-4 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                   <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
@@ -1047,7 +1043,7 @@ export function AuthGateModal({
                 </p>
                 <button
                   type="button"
-                  onClick={() => { setMagicLinkSent(false); setView("login") }}
+                  onClick={() => { setResetEmailSent(false); setView("login") }}
                   className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1055,7 +1051,7 @@ export function AuthGateModal({
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleMagicLinkSubmit} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
+              <form onSubmit={handleForgotPassword} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
                 {formError ? (
                   <p className="text-sm text-destructive" role="alert">{formError}</p>
                 ) : null}

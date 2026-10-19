@@ -30,6 +30,7 @@ function ResetPasswordContent() {
   const code = useMemo(() => searchParams.get("code"), [searchParams])
   const tokenHash = useMemo(() => searchParams.get("token_hash") ?? searchParams.get("token"), [searchParams])
   const type = useMemo(() => searchParams.get("type"), [searchParams])
+  const confirmationUrl = useMemo(() => searchParams.get("confirmation_url"), [searchParams])
 
   useEffect(() => {
     let active = true
@@ -39,6 +40,30 @@ function ResetPasswordContent() {
       setError(null)
 
       try {
+        if (confirmationUrl) {
+          const configuredSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+          if (!configuredSupabaseUrl) {
+            throw new Error("A jelszó-visszaállító link ellenőrzése nem sikerült.")
+          }
+
+          const confirmation = new URL(confirmationUrl)
+          const supabaseOrigin = new URL(configuredSupabaseUrl).origin
+          if (confirmation.origin !== supabaseOrigin || confirmation.pathname !== "/auth/v1/verify") {
+            throw new Error("A jelszó-visszaállító link érvénytelen.")
+          }
+
+          const token = confirmation.searchParams.get("token") ?? tokenHash
+          if (!token) {
+            throw new Error("A jelszó-visszaállító link érvénytelen.")
+          }
+
+          confirmation.searchParams.set("token", token)
+          confirmation.searchParams.set("type", "recovery")
+          confirmation.searchParams.set("redirect_to", `${window.location.origin}/reset-password`)
+          window.location.replace(confirmation.toString())
+          return
+        }
+
         const hashParams = extractHashParams(window.location.hash)
         const accessToken = hashParams.get("access_token")
         const refreshToken = hashParams.get("refresh_token")
@@ -96,7 +121,7 @@ function ResetPasswordContent() {
     return () => {
       active = false
     }
-  }, [code, tokenHash, type])
+  }, [code, confirmationUrl, tokenHash, type])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
