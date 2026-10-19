@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Anchor, CheckCircle2, KeyRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { supabase } from "@/lib/supabase"
@@ -22,11 +23,10 @@ function ResetPasswordContent() {
   const [saving, setSaving] = useState(false)
   const [ready, setReady] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false)
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
-  const passwordsMatch = password.length > 0 && password === confirmPassword
-
   const code = useMemo(() => searchParams.get("code"), [searchParams])
   const tokenHash = useMemo(() => searchParams.get("token_hash") ?? searchParams.get("token"), [searchParams])
   const type = useMemo(() => searchParams.get("type"), [searchParams])
@@ -148,12 +148,9 @@ function ResetPasswordContent() {
         return
       }
 
-      const { error: signOutError } = await supabase.auth.signOut()
-      if (signOutError) {
-        console.error("Kijelentkeztetési hiba reset után:", signOutError)
-      }
-
       setSuccess(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "A jelszó frissítése nem sikerült.")
     } finally {
       setSaving(false)
     }
@@ -176,13 +173,24 @@ function ResetPasswordContent() {
           <p className="text-sm text-muted-foreground">Link ellenőrzése...</p>
         ) : success ? (
           <div className="flex flex-col gap-4">
-            <div className="rounded-xl border border-accent/30 bg-accent/10 p-4 text-sm text-accent-foreground">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-100">
               <div className="flex items-start gap-2">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 text-accent" aria-hidden="true" />
-                <p>A jelszavad sikeresen frissült. Biztonságból kijelentkeztettünk, most jelentkezz be az új jelszóval.</p>
+                <p>A jelszavad sikeresen frissült. A fiókodba bejelentkezve maradsz.</p>
               </div>
             </div>
-            <Button className="h-11" onClick={() => router.push("/")}>Bejelentkezés</Button>
+            <Button className="h-11" onClick={() => setSuccessDialogOpen(true)}>Bejelentkezés</Button>
+            <Dialog open={successDialogOpen} onOpenChange={setSuccessDialogOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Sikeres jelszóváltoztatás</DialogTitle>
+                  <DialogDescription>
+                    Az új jelszavadat elmentettük. Továbbra is be vagy jelentkezve a fiókodba.
+                  </DialogDescription>
+                </DialogHeader>
+                <Button className="h-11" onClick={() => setSuccessDialogOpen(false)}>Rendben</Button>
+              </DialogContent>
+            </Dialog>
           </div>
         ) : ready ? (
           <form onSubmit={handleSubmit} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
@@ -210,12 +218,11 @@ function ResetPasswordContent() {
               />
             </div>
 
-            {confirmPassword.length > 0 && !passwordsMatch ? (
-              <p className="text-sm text-destructive">A két jelszó nem egyezik.</p>
-            ) : null}
-
             {error ? (
-              <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              <div
+                className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                role="alert"
+              >
                 {error}
               </div>
             ) : null}
@@ -223,7 +230,7 @@ function ResetPasswordContent() {
             <Button
               type="submit"
               className="h-11 bg-accent! text-accent-foreground! hover:bg-accent/90!"
-              disabled={saving || !passwordsMatch || password.length < 8}
+              disabled={saving || !password || !confirmPassword}
             >
               <KeyRound className="h-4 w-4" aria-hidden="true" />
               {saving ? "Mentés..." : "Jelszó frissítése"}
@@ -232,7 +239,10 @@ function ResetPasswordContent() {
         ) : (
           <div className="flex flex-col gap-4">
             {error ? (
-              <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              <div
+                className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                role="alert"
+              >
                 {error}
               </div>
             ) : null}
