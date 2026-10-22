@@ -8,6 +8,11 @@ CREATE TABLE IF NOT EXISTS public.admin_users (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.admin_users
+  ADD COLUMN IF NOT EXISTS email_snapshot text,
+  ADD COLUMN IF NOT EXISTS display_name text,
+  ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.admin_users FROM PUBLIC, anon, authenticated;
 
