@@ -34,6 +34,7 @@ export function SiteNavbar() {
   const pathname = usePathname()
   const [authOpen, setAuthOpen] = useState(false)
   const [user, setUser] = useState<SupabaseUser | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [pendingCount, setPendingCount] = useState(0)
   const [feedbackText, setFeedbackText] = useState("")
@@ -134,11 +135,22 @@ export function SiteNavbar() {
 
       if (!currentUser) {
         setUser(null)
+        setIsAdmin(false)
         setProfile(null)
         return
       }
 
       setUser(currentUser)
+      setIsAdmin(false)
+      const { data: adminAccess, error: adminError } = await supabase.rpc("is_admin")
+
+      if (adminError) {
+        console.error("Admin jogosultság lekérdezési hiba:", adminError)
+        setIsAdmin(false)
+      } else {
+        setIsAdmin(adminAccess)
+      }
+
       const { data, error } = await supabase
         .from("users")
         .select("full_name, role, avatar_url")
@@ -175,6 +187,7 @@ export function SiteNavbar() {
         fetchUser()
       } else {
         setUser(null)
+        setIsAdmin(false)
         setProfile(null)
       }
     })
@@ -223,6 +236,14 @@ export function SiteNavbar() {
           )}
 
           <nav className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-3">
+            {isAdmin && !pathname.startsWith("/admin") && (
+              <Link
+                href="/admin"
+                className="flex h-10 items-center justify-center rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:border-accent hover:text-accent"
+              >
+                Admin
+              </Link>
+            )}
             {user && profile ? (
               <>
                 {isCaptainRole(profile.role) && (

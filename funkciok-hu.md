@@ -133,6 +133,16 @@ Ez az oldal egy magyar nagyhajós vitorlázó közösséghez készült crew-matc
 - Reszponzív kialakítás mobilra és asztali nézetre.
 - Kártyás, vizuálisan kiemelt felületet használ a fontos funkciókhoz.
 
+## Adminisztráció
+
+- Az adminisztrációs felületet csak a Supabase `admin_users` táblájában szereplő adminok érhetik el.
+- A Platformkezelés a felhasználók, hirdetések, hajók és események keresésére, szűrésére, rendezésére, megtekintésére és szerkesztésére szolgál.
+- Az elemek törlése soft delete; a hajó, illetve a felhasználó törlése a hozzá tartozó hirdetéseket és eseményeket is elrejti.
+- A felhasználó tiltása a Supabase Auth belépést és az alkalmazás hitelesített API-/adatbázis-hozzáférését is letiltja.
+- A bejelentéskezelés később készül el; jelenleg nincs bekötött bejelentési adatforrás.
+- A telepítéshez az `admin-users-migration.sql`, majd az `admin-platform-migration.sql` migrációt kell futtatni a Supabase SQL Editorban.
+- Az admin API-hoz a `SUPABASE_SERVICE_ROLE_KEY` csak szerveroldali környezeti változóként állítható be.
+
 ## Jogi és tájékoztató oldalak
 
 - Külön ÁSZF oldal.
