@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import {
   adminCategoryConfig,
   cleanAdminSearch,
@@ -23,13 +24,111 @@ export async function GET(request: NextRequest) {
 
   const params = request.nextUrl.searchParams
   const categoryParam = params.get("category")
+  if (categoryParam === "reports") {
+    const status = params.get("status") ?? "all"
+    if (!["all", "active", "deleted", "reported"].includes(status)) {
+      return errorResponse("Érvénytelen szűrő.", 400)
+    }
+    const page = Math.max(1, Number.parseInt(params.get("page") ?? "1", 10) || 1)
+    const pageSize = Math.min(
+      PAGE_SIZE_MAX,
+      Math.max(1, Number.parseInt(params.get("pageSize") ?? "25", 10) || 25),
+    )
+    const search = cleanAdminSearch(params.get("search")).toLocaleLowerCase("hu")
+    try {
+      const reportData = await loadAdminReports(result.access.adminClient, page, pageSize, search)
+      return NextResponse.json(reportData)
+    } catch (error) {
+      console.error("Admin bejelentések betöltési hiba:", error)
+      return errorResponse("A bejelentések nem tölthetők be.", 500)
+    }
+  }
   if (!isAdminCategory(categoryParam)) return errorResponse("Érvénytelen kategória.", 400)
 
   const category = categoryParam
   const config = adminCategoryConfig[category]
   const status = params.get("status") ?? "active"
-  if (!["active", "deleted", "reported"].includes(status)) {
+  if (!["all", "active", "deleted", "reported"].includes(status)) {
     return errorResponse("Érvénytelen szűrő.", 400)
+  }
+
+  async function loadAdminReports(
+    client: SupabaseClient,
+    page: number,
+    pageSize: number,
+    search: string,
+  ) {
+    const reports: Array<Record<string, unknown>> = []
+    const reportPageSize = 1000
+    for (let from = 0; ; from += reportPageSize) {
+      const { data, error } = await client
+        .from("ad_reports")
+        .select("id, ad_id, user_id, report_type, extra_text, created_at")
+        .order("created_at", { ascending: false })
+        .range(from, from + reportPageSize - 1)
+      if (error) throw error
+      reports.push(...(data ?? []))
+      if ((data?.length ?? 0) < reportPageSize) break
+    }
+
+    const adIds = [...new Set(reports.map((report) => String(report.ad_id)))]
+    const userIds = [...new Set(reports.map((report) => String(report.user_id)))]
+    const listingsById = new Map<string, { title: string; is_deleted: boolean; is_active: boolean }>()
+    const usersById = new Map<string, string>()
+    for (let from = 0; from < adIds.length; from += 500) {
+      const { data, error } = await client
+        .from("ads")
+        .select("id, title, is_deleted, is_active")
+        .in("id", adIds.slice(from, from + 500))
+      if (error) throw error
+      for (const listing of data ?? []) {
+        listingsById.set(String(listing.id), {
+          title: String(listing.title ?? ""),
+          is_deleted: listing.is_deleted === true,
+          is_active: listing.is_active === true,
+        })
+      }
+    }
+    for (let from = 0; from < userIds.length; from += 500) {
+      const { data, error } = await client
+        .from("users")
+        .select("id, full_name")
+        .in("id", userIds.slice(from, from + 500))
+      if (error) throw error
+      for (const user of data ?? []) usersById.set(String(user.id), String(user.full_name ?? ""))
+    }
+
+    const rows: Array<Record<string, unknown>> = reports.map((report): Record<string, unknown> => {
+      const adId = String(report.ad_id)
+      const userId = String(report.user_id)
+      return {
+        ...report,
+        listing_title: listingsById.get(adId)?.title ?? "Ismeretlen hirdetés",
+        reporter_name: usersById.get(userId) ?? "Ismeretlen felhasználó",
+      }
+    }).filter((report) => !search || [
+      report.listing_title,
+      report.reporter_name,
+      report.report_type,
+      report.extra_text,
+    ].some((value) => String(value ?? "").toLocaleLowerCase("hu").includes(search)))
+
+    const start = (page - 1) * pageSize
+    return {
+      rows: rows.slice(start, start + pageSize),
+      page,
+      pageSize,
+      matchCount: rows.length,
+      counts: {
+        total: reports.length,
+        active: reports.filter((report) => {
+          const listing = listingsById.get(String(report.ad_id))
+          return listing?.is_deleted === false && listing.is_active
+        }).length,
+        reported: reports.length,
+        deleted: reports.filter((report) => listingsById.get(String(report.ad_id))?.is_deleted).length,
+      },
+    }
   }
 
   const page = Math.max(1, Number.parseInt(params.get("page") ?? "1", 10) || 1)
@@ -53,23 +152,163 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [activeCount, deletedCount] = await Promise.all([countRows(false), countRows(true)])
-    if (status === "reported") {
+    let totalCount: number
+    let activeCount: number
+    let deletedCount: number
+    let reportedCount = 0
+    let reportedAdIds: string[] = []
+    const reportsByAdId = new Map<string, { count: number; types: Set<string> }>()
+
+    if (category === "listings") {
+      const [
+        { count: allAdsCount, error: allAdsError },
+        { count: activeAdsCount, error: activeAdsError },
+        deletedAdsCount,
+      ] = await Promise.all([
+        client.from("ads").select("id", { count: "exact", head: true }),
+        client.from("ads").select("id", { count: "exact", head: true }).eq("is_deleted", false).eq("is_active", true),
+        countRows(true),
+      ])
+      if (allAdsError || activeAdsError) {
+        throw allAdsError ?? activeAdsError
+      }
+
+      const reportPageSize = 1000
+      for (let from = 0; ; from += reportPageSize) {
+        const { data: reportRows, error: reportIdsError } = await client
+          .from("ad_reports")
+          .select("ad_id, report_type")
+          .order("id", { ascending: true })
+          .range(from, from + reportPageSize - 1)
+        if (reportIdsError) throw reportIdsError
+        for (const report of reportRows ?? []) {
+          const adId = String(report.ad_id)
+          const summary = reportsByAdId.get(adId) ?? { count: 0, types: new Set<string>() }
+          summary.count += 1
+          summary.types.add(String(report.report_type))
+          reportsByAdId.set(adId, summary)
+        }
+        if ((reportRows?.length ?? 0) < reportPageSize) break
+      }
+
+      totalCount = allAdsCount ?? 0
+      activeCount = activeAdsCount ?? 0
+      deletedCount = deletedAdsCount
+      reportedAdIds = [...reportsByAdId.keys()]
+      reportedCount = reportedAdIds.length
+    } else {
+      const [active, deleted] = await Promise.all([countRows(false), countRows(true)])
+      activeCount = active
+      deletedCount = deleted
+      totalCount = active + deleted
+    }
+
+    if (status === "reported" && category !== "listings") {
       return NextResponse.json({
         rows: [],
         page,
         pageSize,
         matchCount: 0,
-        counts: { total: activeCount + deletedCount, active: activeCount, reported: 0, deleted: deletedCount },
+        counts: { total: totalCount, active: activeCount, reported: reportedCount, deleted: deletedCount },
       })
+    }
+
+    let sortedListingIds: string[] | null = null
+    let matchCount: number | null = null
+    const creatorNameByUserId = new Map<string, string>()
+    if (category === "listings" && (sortColumn === "report_count" || sortColumn === "creator_name")) {
+      const candidates: Array<{ id: string; userId: string }> = []
+      const idPageSize = 1000
+      for (let from = 0; ; from += idPageSize) {
+        let idQuery = client.from("ads").select("id, user_id")
+        if (status === "active") idQuery = idQuery.eq("is_deleted", false).eq("is_active", true)
+        else if (status === "deleted") idQuery = idQuery.eq("is_deleted", true)
+        if (search) {
+          const pattern = `*${search}*`
+          idQuery = idQuery.or(config.searchColumns.map((column) => `${column}.ilike.${pattern}`).join(","))
+        }
+        const { data: idRows, error: idError } = await idQuery
+          .order("id", { ascending: true })
+          .range(from, from + idPageSize - 1)
+        if (idError) throw idError
+        for (const row of idRows ?? []) {
+          const id = String(row.id)
+          if (status !== "reported" || reportsByAdId.has(id)) {
+            candidates.push({ id, userId: String(row.user_id ?? "") })
+          }
+        }
+        if ((idRows?.length ?? 0) < idPageSize) break
+      }
+
+      if (sortColumn === "creator_name") {
+        const userIds = [...new Set(candidates.map((candidate) => candidate.userId).filter(Boolean))]
+        for (let from = 0; from < userIds.length; from += 500) {
+          const { data: profiles, error: profilesError } = await client
+            .from("users")
+            .select("id, full_name")
+            .in("id", userIds.slice(from, from + 500))
+          if (profilesError) throw profilesError
+          for (const profile of profiles ?? []) {
+            creatorNameByUserId.set(String(profile.id), String(profile.full_name ?? ""))
+          }
+        }
+      }
+
+      candidates.sort((first, second) => {
+        const comparison = sortColumn === "report_count"
+          ? (reportsByAdId.get(first.id)?.count ?? 0) - (reportsByAdId.get(second.id)?.count ?? 0)
+          : (creatorNameByUserId.get(first.userId) ?? "").localeCompare(
+              creatorNameByUserId.get(second.userId) ?? "",
+              "hu",
+              { sensitivity: "base" },
+            )
+        if (comparison !== 0) return ascending ? comparison : -comparison
+        return first.id.localeCompare(second.id)
+      })
+      sortedListingIds = candidates.slice((page - 1) * pageSize, page * pageSize).map((candidate) => candidate.id)
+      matchCount = candidates.length
+      if (sortedListingIds.length === 0) {
+        return NextResponse.json({
+          rows: [],
+          page,
+          pageSize,
+          matchCount,
+          counts: { total: totalCount, active: activeCount, reported: reportedCount, deleted: deletedCount },
+        })
+      }
     }
 
     let query = client
       .from(config.table)
       .select("*", { count: "exact" })
-      .eq("is_deleted", status === "deleted")
-      .order(sortColumn, { ascending, nullsFirst: false })
-      .range((page - 1) * pageSize, page * pageSize - 1)
+      .order(
+        sortColumn === "report_count" || sortColumn === "creator_name" ? "created_at" : sortColumn,
+        { ascending, nullsFirst: false },
+      )
+
+    if (sortedListingIds) {
+      query = query.in("id", sortedListingIds)
+    } else {
+      query = query.range((page - 1) * pageSize, page * pageSize - 1)
+    }
+
+    if (status === "active") {
+      query = query.eq("is_deleted", false)
+      if (category === "listings") query = query.eq("is_active", true)
+    } else if (status === "deleted") {
+      query = query.eq("is_deleted", true)
+    } else if (status === "reported" && category === "listings" && !sortedListingIds) {
+      if (reportedAdIds.length === 0) {
+        return NextResponse.json({
+          rows: [],
+          page,
+          pageSize,
+          matchCount: 0,
+          counts: { total: totalCount, active: activeCount, reported: reportedCount, deleted: deletedCount },
+        })
+      }
+      query = query.in("id", reportedAdIds)
+    }
 
     if (search) {
       const pattern = `*${search}*`
@@ -94,25 +333,90 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    const reportDetailsByAdId = new Map<string, Array<Record<string, unknown>>>()
+    if (category === "listings" && data?.length) {
+      const { data: pageReports, error: pageReportsError } = await client
+        .from("ad_reports")
+        .select("id, ad_id, user_id, report_type, extra_text, created_at")
+        .in("ad_id", data.map((row) => String(row.id)))
+        .order("created_at", { ascending: false })
+      if (pageReportsError) throw pageReportsError
+
+      const reporterIds = new Set<string>()
+      for (const report of pageReports ?? []) {
+        const adId = String(report.ad_id)
+        const details = reportDetailsByAdId.get(adId) ?? []
+        details.push({ ...report })
+        reportDetailsByAdId.set(adId, details)
+        reporterIds.add(String(report.user_id))
+      }
+
+      const userIds = [...new Set([
+        ...data.map((row) => String(row.user_id)),
+        ...reporterIds,
+      ].filter(Boolean))]
+      if (userIds.length > 0) {
+        for (let from = 0; from < userIds.length; from += 500) {
+          const { data: profiles, error: profilesError } = await client
+            .from("users")
+            .select("id, full_name")
+            .in("id", userIds.slice(from, from + 500))
+          if (profilesError) throw profilesError
+          for (const profile of profiles ?? []) {
+            creatorNameByUserId.set(String(profile.id), String(profile.full_name ?? ""))
+          }
+        }
+      }
+
+      for (const details of reportDetailsByAdId.values()) {
+        for (const detail of details) {
+          detail.reporter_name = creatorNameByUserId.get(String(detail.user_id)) || "Ismeretlen felhasználó"
+        }
+      }
+    }
+
     const rows = (data ?? []).map((row) => {
-      const item = { ...row } as Record<string, unknown>
+      const item: Record<string, unknown> = { ...(row as Record<string, unknown>) }
       if (category === "users") {
         const id = String(item.id)
         item.email = emailByUserId.get(id) || item.email || ""
         item.banned_until = bannedUntilByUserId.get(id) ?? null
       }
+      if (category === "listings" && status === "reported") {
+        const summary = reportsByAdId.get(String(item.id)) ?? { count: 0, types: new Set<string>() }
+        item.report_count = summary.count
+        item.report_types = [...summary.types].join(", ")
+      }
+      if (category === "listings") {
+        const summary = reportsByAdId.get(String(item.id)) ?? { count: 0, types: new Set<string>() }
+        item.report_count = summary.count
+        item.creator_name = creatorNameByUserId.get(String(item.user_id)) || "Ismeretlen felhasználó"
+        item.report_details = reportDetailsByAdId.get(String(item.id)) ?? []
+      }
       return item
     })
+
+    if (category === "listings" && sortedListingIds) {
+      const rowById = new Map(rows.map((row) => [row.id, row]))
+      rows.splice(0, rows.length, ...sortedListingIds.flatMap((id) => {
+        const row = rowById.get(id)
+        if (!row) return []
+        const summary = reportsByAdId.get(id) ?? { count: 0, types: new Set<string>() }
+        row.report_count = summary.count
+        row.report_types = [...summary.types].join(", ")
+        return [row]
+      }))
+    }
 
     return NextResponse.json({
       rows,
       page,
       pageSize,
-      matchCount: count ?? 0,
+      matchCount: matchCount ?? count ?? 0,
       counts: {
-        total: activeCount + deletedCount,
+        total: totalCount,
         active: activeCount,
-        reported: 0,
+        reported: reportedCount,
         deleted: deletedCount,
       },
     })

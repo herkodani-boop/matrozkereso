@@ -42,9 +42,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Érvénytelen vagy lejárt session." }, { status: 401 })
   }
 
+  if (isDeleted) {
+    const { data: deletedAdId, error } = await userClient.rpc("owner_soft_delete_ad", {
+      p_ad_id: listingId,
+    })
+
+    if (error) {
+      console.error("Hirdetés törlési adatbázis-művelet hiba:", error)
+      if (error.code === "42883") {
+        return NextResponse.json(
+          { error: "Hiányzik az adatbázisból az owner-delete-listing-migration.sql migráció. Futtasd le a Supabase SQL Editorban." },
+          { status: 500 },
+        )
+      }
+      if (error.code === "42501") {
+        return NextResponse.json(
+          { error: "A hirdetést nem sikerült törölni: az adatbázis elutasította a műveletet. Ellenőrizd, hogy a friss owner-delete-listing-migration.sql migráció lefutott-e." },
+          { status: 403 },
+        )
+      }
+      return NextResponse.json({ error: "A hirdetés törlése nem sikerült." }, { status: 400 })
+    }
+
+    if (!deletedAdId) {
+      return NextResponse.json(
+        { error: "A hirdetés nem található, már törölve van, vagy nem a saját hirdetésed." },
+        { status: 404 },
+      )
+    }
+
+    return NextResponse.json({ ok: true, id: String(deletedAdId) })
+  }
+
   const { data, error } = await userClient
     .from("ads")
-    .update({ is_active: false, ...(isDeleted ? { is_deleted: true } : {}) })
+    .update({ is_active: false })
     .eq("id", listingId)
     .eq("user_id", user.id)
     .select("id")
@@ -52,6 +84,15 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     console.error("Hirdetés lezárási hiba:", error)
+    if (error.code === "42501") {
+      return NextResponse.json(
+        {
+          error:
+            "Az adatbázis még tiltja a saját hirdetés törlését. Futtasd le az owner-delete-listing-migration.sql migrációt a Supabase SQL Editorban.",
+        },
+        { status: 403 },
+      )
+    }
     return NextResponse.json({ error: "A hirdetés lezárása nem sikerült." }, { status: 400 })
   }
 

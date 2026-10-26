@@ -23,7 +23,7 @@ export const adminCategoryConfig: Record<
   listings: {
     table: "ads",
     searchColumns: ["title", "location", "date_text"],
-    sortableColumns: ["title", "location", "start_date", "created_at"],
+    sortableColumns: ["title", "start_date", "created_at", "report_count", "creator_name"],
     editableColumns: [
       "title",
       "location",

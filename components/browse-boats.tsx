@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import type { User } from "@supabase/supabase-js"
 import Image from "next/image"
-import { Flag, CalendarDays, MapPin, Users, Award, Sailboat, ChevronDown, UserCheck } from "lucide-react"
+import { Flag, CalendarDays, MapPin, Users, Award, Sailboat, ChevronDown, TriangleAlert, UserCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -815,6 +815,7 @@ export function BrowseBoats() {
             <BoatCard
               key={listing.id}
               listing={listing}
+              userId={user?.id ?? null}
               onRequestApply={canStartApplication}
               onApply={handleApplySubmit}
               applyingId={applyingId}
@@ -873,6 +874,7 @@ function FilterField({ label, children }: { label: string; children: React.React
 
 export function BoatCard({
   listing,
+  userId,
   onRequestApply,
   onApply,
   applyingId,
@@ -882,6 +884,7 @@ export function BoatCard({
   onAutoOpened,
 }: {
   listing: ListingRow
+  userId: string | null
   onRequestApply: (listing: ListingRow) => boolean
   onApply: (listing: ListingRow, applicationMessage?: string) => void
   applyingId: string | null
@@ -892,6 +895,8 @@ export function BoatCard({
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [applyOpen, setApplyOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [hasReported, setHasReported] = useState<boolean | null>(null)
 
   useEffect(() => {
     if (!autoOpenDetails) return
@@ -899,6 +904,34 @@ export function BoatCard({
     onAutoOpened?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenDetails])
+
+  useEffect(() => {
+    let active = true
+    setHasReported(null)
+
+    if (!userId) return
+
+    void supabase
+      .from("ad_reports")
+      .select("id")
+      .eq("ad_id", listing.id)
+      .eq("user_id", userId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          console.error("Saját hirdetésbejelentés lekérdezési hiba:", error)
+          setHasReported(false)
+          return
+        }
+        setHasReported(Boolean(data))
+      })
+
+    return () => {
+      active = false
+    }
+  }, [listing.id, userId])
+
   const isFull = listing.maxApplicants !== null && listing.activeApplicationCount >= listing.maxApplicants
 
 
@@ -911,6 +944,12 @@ export function BoatCard({
       setDetailsOpen(false)
       setApplyOpen(true)
     }
+  }
+
+  const startReportFlowFromDetails = () => {
+    if (hasReported) return
+    setDetailsOpen(false)
+    setReportOpen(true)
   }
 
   return (
@@ -1062,6 +1101,17 @@ export function BoatCard({
         cancelingId={cancelingId}
         onCancel={onCancel}
         onRequestApply={startApplyFlowFromDetails}
+        onRequestReport={startReportFlowFromDetails}
+        userIsLoggedIn={Boolean(userId && hasReported !== null)}
+        hasReported={hasReported === true}
+      />
+
+      <ListingReportDialog
+        listing={listing}
+        userId={userId}
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        onSubmitted={() => setHasReported(true)}
       />
 
       <ApplyDialog
@@ -1148,6 +1198,9 @@ function ListingDetailsDialog({
   cancelingId,
   onCancel,
   onRequestApply,
+  onRequestReport,
+  userIsLoggedIn,
+  hasReported,
 }: {
   listing: ListingRow
   open: boolean
@@ -1157,6 +1210,9 @@ function ListingDetailsDialog({
   cancelingId: string | null
   onCancel: (adId: string, applicationId: string | null) => void
   onRequestApply: () => void
+  onRequestReport: () => void
+  userIsLoggedIn: boolean
+  hasReported: boolean
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1166,7 +1222,7 @@ function ListingDetailsDialog({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
         {/* The photo spans the full modal width at its natural height, so the whole image is always visible. */}
-        <div className="relative w-full overflow-hidden bg-brand-tint">
+        <div className="relative w-full overflow-visible bg-brand-tint">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={listing.image || "/placeholder.svg"}
@@ -1188,6 +1244,29 @@ function ListingDetailsDialog({
               {commitmentLabels[listing.commitment]}
             </Badge>
           </div>
+          {!listing.isOwnListing && userIsLoggedIn ? (
+            <div className="group/report absolute right-10 top-2 z-20">
+              <button
+                type="button"
+                onClick={onRequestReport}
+                aria-label={hasReported ? "Ezt a hirdetést már bejelentetted" : "Hirdetés jelentése"}
+                className={`group inline-flex h-7 w-7 items-center justify-start overflow-hidden rounded-lg border-0 bg-transparent p-0 text-black shadow-none transition-[width,background-color,color] duration-200 hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                  hasReported
+                    ? "hover:w-[10rem] focus-visible:w-[10rem]"
+                    : "hover:w-[6.5rem] focus-visible:w-[6.5rem]"
+                }`}
+              >
+                <TriangleAlert className="ml-1.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className={`ml-1.5 overflow-hidden whitespace-nowrap text-xs font-medium ${
+                  hasReported
+                    ? "max-w-0 opacity-0 transition-all duration-200 group-hover:max-w-36 group-hover:opacity-100 group-focus-visible:max-w-36 group-focus-visible:opacity-100"
+                    : "max-w-0 opacity-0 transition-all duration-200 group-hover:max-w-20 group-hover:opacity-100 group-focus-visible:max-w-20 group-focus-visible:opacity-100"
+                }`}>
+                  {hasReported ? "Már bejelentetted" : "Jelentés"}
+                </span>
+              </button>
+            </div>
+          ) : null}
           <p className="absolute inset-x-4 bottom-3 truncate text-xl font-bold text-white [text-shadow:0_1px_4px_rgb(0_0_0_/_0.55)]">
             {listing.boatName}
           </p>
@@ -1269,6 +1348,166 @@ function ListingDetailsDialog({
           />
         </DialogFooter>
         )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+const reportTypes = [
+  { value: "tragar", label: "Trágár vagy sértő tartalom" },
+  { value: "spam", label: "Spam vagy reklám" },
+  { value: "csalas", label: "Csalás vagy megtévesztő hirdetés" },
+  { value: "valotlan", label: "Valótlan információ" },
+  { value: "egyeb", label: "Egyéb" },
+] as const
+
+function ListingReportDialog({
+  listing,
+  userId,
+  open,
+  onOpenChange,
+  onSubmitted,
+}: {
+  listing: ListingRow
+  userId: string | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSubmitted: () => void
+}) {
+  const [reportType, setReportType] = useState("")
+  const [extraText, setExtraText] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [submitted, setSubmitted] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setReportType("")
+      setExtraText("")
+      setErrorMessage(null)
+      setSubmitted(false)
+    }
+  }, [open, listing.id])
+
+  async function submitReport() {
+    if (!reportType) return
+
+    setIsSubmitting(true)
+    setErrorMessage(null)
+
+    try {
+      const {
+        data: { user: authenticatedUser },
+        error: authError,
+      } = await supabase.auth.getUser()
+
+      if (authError || !authenticatedUser || authenticatedUser.id !== userId) {
+        setErrorMessage("Hirdetés bejelentéséhez be kell jelentkezned.")
+        return
+      }
+
+      const { error } = await supabase.from("ad_reports").insert({
+        ad_id: listing.id,
+        user_id: authenticatedUser.id,
+        report_type: reportType,
+        extra_text: extraText.trim() || null,
+      })
+
+      if (error) {
+        if (error.code === "23505") {
+          setErrorMessage("Ezt a hirdetést már bejelentetted.")
+          return
+        }
+
+        console.error("Hirdetésbejelentési hiba:", error)
+        setErrorMessage("A bejelentést nem sikerült elküldeni. Próbáld újra később.")
+        return
+      }
+
+      setSubmitted(true)
+      onSubmitted()
+    } catch (error) {
+      console.error("Hirdetésbejelentési hálózati hiba:", error)
+      setErrorMessage("A bejelentést nem sikerült elküldeni. Ellenőrizd az internetkapcsolatot, majd próbáld újra.")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!isSubmitting) onOpenChange(nextOpen)
+      }}
+    >
+      <DialogContent className="max-w-md gap-0 overflow-hidden rounded-2xl p-0">
+        <DialogHeader className="gap-1 border-b border-brand-tint-strong bg-brand-tint px-6 py-5">
+          <DialogTitle className="text-lg font-bold text-brand">Hirdetés bejelentése</DialogTitle>
+          <DialogDescription>{listing.boatName} · {listing.event}</DialogDescription>
+        </DialogHeader>
+
+        {submitted ? (
+          <div className="px-6 py-5">
+            <p role="status" className="text-sm text-foreground">Köszönjük, a bejelentésedet rögzítettük.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4 px-6 py-5">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={`report-type-${listing.id}`} className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Bejelentés típusa
+              </Label>
+              <Select value={reportType} onValueChange={(value) => setReportType(value ?? "")}>
+                <SelectTrigger id={`report-type-${listing.id}`} className="w-full">
+                  <SelectValue placeholder="Válassz egy okot" />
+                </SelectTrigger>
+                <SelectContent>
+                  {reportTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={`report-extra-${listing.id}`} className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                További részletek (nem kötelező)
+              </Label>
+              <textarea
+                id={`report-extra-${listing.id}`}
+                rows={4}
+                maxLength={1000}
+                value={extraText}
+                onChange={(event) => setExtraText(event.target.value)}
+                placeholder="Írd le röviden, miért jelentetted be a hirdetést."
+                className="w-full resize-y rounded-xl border border-input bg-background px-3 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/80 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              />
+              <p className="text-xs text-muted-foreground">Maximum 1000 karakter.</p>
+            </div>
+
+            {errorMessage ? <p role="alert" className="text-sm text-destructive">{errorMessage}</p> : null}
+          </div>
+        )}
+
+        <DialogFooter className="mx-0 mb-0 rounded-b-2xl bg-card px-6 py-4">
+          {submitted ? (
+            <Button type="button" onClick={() => onOpenChange(false)}>Bezárás</Button>
+          ) : (
+            <>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+                Mégse
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void submitReport()}
+                disabled={!reportType || !userId || isSubmitting}
+                className="bg-brand! text-white! hover:bg-brand/90!"
+              >
+                {isSubmitting ? "Küldés..." : "Bejelentés elküldése"}
+              </Button>
+            </>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

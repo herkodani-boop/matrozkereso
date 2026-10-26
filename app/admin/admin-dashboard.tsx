@@ -24,11 +24,18 @@ import { Label } from "@/components/ui/label"
 
 type AdminSection = "statistics" | "platform"
 type PlatformArea = "users" | "boats" | "listings" | "events" | "reports"
-type ListStatus = "active" | "deleted" | "reported"
+type ListStatus = "all" | "active" | "deleted" | "reported"
 type AdminRow = Record<string, unknown> & { id: string }
 type FieldDefinition = { key: string; label: string; type?: "text" | "date" | "number" | "boolean" | "array" }
 
 const PAGE_SIZE = 25
+const reportColumns = [
+  { key: "listing_title", label: "Hirdetés" },
+  { key: "reporter_name", label: "Bejelentő" },
+  { key: "report_type", label: "Ok" },
+  { key: "extra_text", label: "Leírás" },
+  { key: "created_at", label: "Dátum" },
+]
 
 const sections: { id: AdminSection; label: string; icon: LucideIcon }[] = [
   { id: "statistics", label: "Statisztikák", icon: BarChart3 },
@@ -100,9 +107,11 @@ const columns: Record<Exclude<PlatformArea, "reports">, { key: string; label: st
   ],
   listings: [
     { key: "title", label: "Hirdetés" },
+    { key: "creator_name", label: "Létrehozta" },
     { key: "location", label: "Helyszín" },
     { key: "positions", label: "Pozíciók" },
     { key: "start_date", label: "Kezdés" },
+    { key: "report_count", label: "Bejelentések" },
   ],
   events: [
     { key: "title", label: "Esemény" },
@@ -186,10 +195,10 @@ function PlatformManagement({
   activeArea: PlatformArea
   onAreaChange: (area: PlatformArea) => void
 }) {
-  const [status, setStatus] = useState<ListStatus>("active")
+  const [status, setStatus] = useState<ListStatus>(activeArea === "reports" ? "all" : "active")
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
-  const [sort, setSort] = useState("created_at")
+  const [sort, setSort] = useState(activeArea === "listings" ? "report_count" : "created_at")
   const [direction, setDirection] = useState<"asc" | "desc">("desc")
   const [page, setPage] = useState(1)
   const [rows, setRows] = useState<AdminRow[]>([])
@@ -237,12 +246,7 @@ function PlatformManagement({
   }, [activeArea, direction, page, search, sort, status])
 
   useEffect(() => {
-    if (activeArea !== "reports") void loadRows()
-    else {
-      setRows([])
-      setCounts({ total: 0, active: 0, reported: 0, deleted: 0 })
-      setMatchCount(0)
-    }
+    void loadRows()
   }, [activeArea, loadRows])
 
   function changeCategory(area: PlatformArea) {
@@ -250,8 +254,8 @@ function PlatformManagement({
     setError(null)
     setSearchInput("")
     setSearch("")
-    setSort("created_at")
-    setStatus("active")
+    setSort(area === "listings" ? "report_count" : "created_at")
+    setStatus(area === "reports" ? "all" : "active")
     setPage(1)
     onAreaChange(area)
   }
@@ -312,6 +316,13 @@ function PlatformManagement({
   const categoryLabel = platformAreas.find((area) => area.id === activeArea)?.label ?? ""
   const sortOptions = activeArea === "reports"
     ? []
+    : activeArea === "listings"
+      ? [
+          { key: "title", label: "Hirdetés neve" },
+          { key: "creator_name", label: "Létrehozó" },
+          { key: "start_date", label: "Kezdés" },
+          { key: "report_count", label: "Bejelentések száma" },
+        ]
     : [
         { key: "created_at", label: "Létrehozva" },
         ...columns[activeArea].filter(({ key }) => key !== "created_at"),
@@ -338,22 +349,71 @@ function PlatformManagement({
         ))}
       </nav>
 
-      {activeArea === "reports" ? (
-        <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center shadow-sm sm:p-12">
-          <Flag className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
-          <h2 className="mt-4 text-lg font-semibold text-foreground">A bejelentések kezelése később készül el</h2>
-          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-            Még nincs bejelentési rendszer, ezért egyelőre nem áll rendelkezésre bejelentett elem.
-          </p>
-        </div>
-      ) : (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <CountCard label="Összes" value={counts.total} />
-            <CountCard label="Aktív" value={counts.active} />
-            <CountCard label="Jelentett" value={counts.reported} />
-            <CountCard label="Törölt" value={counts.deleted} />
-          </div>
+      <>
+          {activeArea === "listings" ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Hirdetések szűrése">
+              {([
+                ["all", "Összes", counts.total],
+                ["active", "Aktív", counts.active],
+                ["reported", "Jelentett", counts.reported],
+                ["deleted", "Törölt", counts.deleted],
+              ] as const).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={status === value}
+                  onClick={() => {
+                    setStatus(value)
+                    setPage(1)
+                  }}
+                  className={`rounded-2xl border p-4 text-left shadow-sm transition-colors ${
+                    status === value
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "border-border bg-card hover:bg-muted/60"
+                  }`}
+                >
+                  <span className="text-sm text-muted-foreground">{label}</span>
+                  <span className="mt-1 block text-2xl font-semibold tracking-tight text-foreground">
+                    {count.toLocaleString("hu-HU")}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {([
+                ["all", "Összes", counts.total],
+                ["active", "Aktív", counts.active],
+                ["reported", "Jelentett", counts.reported],
+                ["deleted", "Törölt", counts.deleted],
+              ] as const).map(([value, label, count]) => {
+                const disabled = value === "reported"
+                  || activeArea === "reports" && value !== "all"
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={status === value}
+                    disabled={disabled}
+                    onClick={() => {
+                      setStatus(value)
+                      setPage(1)
+                    }}
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      status === value
+                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                        : "border-border bg-card hover:bg-muted/60"
+                    }`}
+                  >
+                    <span className="text-sm text-muted-foreground">{label}</span>
+                    <span className="mt-1 block text-2xl font-semibold tracking-tight text-foreground">
+                      {count.toLocaleString("hu-HU")}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
 
           <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm xl:flex-row xl:items-end">
             <div className="min-w-0 flex-1">
@@ -369,88 +429,76 @@ function PlatformManagement({
                 />
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3 xl:w-auto">
-              <label className="text-sm font-medium">
-                Szűrés
-                <select
-                  value={status}
-                  onChange={(event) => {
-                    setStatus(event.target.value as ListStatus)
-                    setPage(1)
-                  }}
-                  className="mt-1.5 flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
-                >
-                  <option value="active">Aktív elemek</option>
-                  <option value="deleted">Törölt elemek</option>
-                  <option value="reported">Jelentett elemek</option>
-                </select>
-              </label>
-              <label className="text-sm font-medium">
+            <div className="grid items-end gap-3 sm:grid-cols-2 xl:w-auto">
+              {activeArea !== "reports" ? <label className="text-sm font-medium">
                 Rendezés
                 <select
                   value={sort}
-                  onChange={(event) => setSort(event.target.value)}
+                  onChange={(event) => {
+                    setSort(event.target.value)
+                    setPage(1)
+                  }}
                   className="mt-1.5 flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
                 >
                   {sortOptions.map(({ key, label }) => (
                     <option key={key} value={key}>{label}</option>
                   ))}
                 </select>
-              </label>
-              <label className="text-sm font-medium">
-                Irány
-                <select
-                  value={direction}
-                  onChange={(event) => setDirection(event.target.value as "asc" | "desc")}
-                  className="mt-1.5 flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
-                >
-                  <option value="desc">Csökkenő</option>
-                  <option value="asc">Növekvő</option>
-                </select>
-              </label>
+              </label> : null}
+              {activeArea !== "reports" ? <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDirection((value) => value === "desc" ? "asc" : "desc")
+                  setPage(1)
+                }}
+                aria-label={`Rendezési irány: ${direction === "desc" ? "csökkenő" : "növekvő"}. Kattints az irány megfordításához.`}
+                title={direction === "desc" ? "Csökkenő sorrend; kattints a növekvőhöz" : "Növekvő sorrend; kattints a csökkenőhöz"}
+                className="h-9 w-full self-end"
+              >
+                {direction === "desc" ? "↓ Csökkenő" : "↑ Növekvő"}
+              </Button> : null}
             </div>
           </div>
 
           {error && <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
           {notice && <p role="status" className="rounded-xl border border-accent/30 bg-accent/10 p-3 text-sm text-foreground">{notice}</p>}
 
-          {status === "reported" ? (
-            <p className="rounded-xl border border-dashed border-border bg-card p-6 text-sm text-muted-foreground">
-              A bejelentési funkció még nincs bekötve, ezért nincs megjeleníthető bejelentés.
-            </p>
-          ) : (
             <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] border-collapse text-left text-sm">
                   <thead className="bg-muted/70 text-xs uppercase tracking-wide text-muted-foreground">
                     <tr>
-                      {columns[activeArea].map(({ key, label }) => (
-                        <th key={key} scope="col" className="px-4 py-3 font-semibold">{label}</th>
+                      {(activeArea === "reports" ? reportColumns : columns[activeArea]).map(({ key, label }) => (
+                        <th key={key} scope="col" className={`px-4 py-3 font-semibold ${activeArea === "listings" && key === "report_count" ? "text-center" : ""}`}>{label}</th>
                       ))}
                       {activeArea === "users" && <th scope="col" className="px-4 py-3 font-semibold">Állapot</th>}
-                      <th scope="col" className="px-4 py-3 text-right font-semibold">Művelet</th>
+                      {activeArea !== "reports" && <th scope="col" className="px-4 py-3 text-right font-semibold">Művelet</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {loading ? (
-                      <tr><td colSpan={columns[activeArea].length + 2} className="px-4 py-12 text-center text-muted-foreground"><LoaderCircle className="mr-2 inline size-4 animate-spin" />Betöltés...</td></tr>
+                      <tr><td colSpan={(activeArea === "reports" ? reportColumns.length : columns[activeArea].length) + (activeArea === "reports" ? 0 : 2)} className="px-4 py-12 text-center text-muted-foreground"><LoaderCircle className="mr-2 inline size-4 animate-spin" />Betöltés...</td></tr>
                     ) : rows.length === 0 ? (
-                      <tr><td colSpan={columns[activeArea].length + 2} className="px-4 py-12 text-center text-muted-foreground">{error ? "Az adatok nem tölthetők be." : "Nincs megjeleníthető elem."}</td></tr>
+                      <tr><td colSpan={(activeArea === "reports" ? reportColumns.length : columns[activeArea].length) + (activeArea === "reports" ? 0 : 2)} className="px-4 py-12 text-center text-muted-foreground">{error ? "Az adatok nem tölthetők be." : "Nincs megjeleníthető elem."}</td></tr>
                     ) : rows.map((row) => (
                       <tr key={row.id} className="hover:bg-muted/40">
-                        {columns[activeArea].map(({ key }) => (
-                          <td key={key} className="max-w-64 truncate px-4 py-3">
-                            {key === "positions" && Array.isArray(row[key])
+                        {(activeArea === "reports" ? reportColumns : columns[activeArea]).map(({ key }) => (
+                          <td
+                            key={key}
+                            className={`max-w-64 px-4 py-3 ${key === "extra_text" ? "whitespace-pre-wrap break-words" : "truncate"} ${activeArea === "listings" && key === "report_count" ? "text-center tabular-nums" : ""}`}
+                          >
+                            {key === "report_type"
+                              ? formatReportType(row[key])
+                              : key === "positions" && Array.isArray(row[key])
                               ? row[key].join(", ")
                               : formatValue(row[key])}
                           </td>
                         ))}
-                        {activeArea === "users" && (
-                          <td className="px-4 py-3">
-                            {row.is_banned ? <span className="text-destructive">Letiltva</span> : "Aktív"}
-                          </td>
-                        )}
-                        <td className="px-4 py-3">
+                        {activeArea === "users" ? <td className="px-4 py-3">
+                          {row.is_banned ? <span className="text-destructive">Letiltva</span> : "Aktív"}
+                        </td> : null}
+                        {activeArea !== "reports" ? <td className="px-4 py-3">
                           <div className="flex justify-end gap-2">
                             {activeArea === "users" && status === "active" && (
                               <Button
@@ -464,18 +512,18 @@ function PlatformManagement({
                                 <span className="hidden sm:inline">{row.is_banned ? "Feloldás" : "Tiltás"}</span>
                               </Button>
                             )}
-                            {status === "active" && (
+                            {status !== "deleted" && !row.is_deleted && (
                               <Button type="button" variant="outline" size="sm" onClick={() => setSelectedRow(row)}>
                                 Adatok
                               </Button>
                             )}
-                            {status === "active" && (
+                            {status !== "deleted" && !row.is_deleted && (
                               <Button type="button" variant="destructive" size="icon-sm" title="Soft törlés" onClick={() => void handleDelete(row)}>
                                 <Trash2 className="size-4" aria-hidden="true" />
                               </Button>
                             )}
                           </div>
-                        </td>
+                        </td> : null}
                       </tr>
                     ))}
                   </tbody>
@@ -494,9 +542,7 @@ function PlatformManagement({
                 </div>
               </div>
             </div>
-          )}
         </>
-      )}
 
       {selectedRow && activeArea !== "reports" && (
         <EditDialog
@@ -511,15 +557,6 @@ function PlatformManagement({
   )
 }
 
-function CountCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{value.toLocaleString("hu-HU")}</p>
-    </div>
-  )
-}
-
 function formatValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—"
   if (typeof value === "boolean") return value ? "Igen" : "Nem"
@@ -528,6 +565,18 @@ function formatValue(value: unknown): string {
     if (!Number.isNaN(date.getTime())) return date.toLocaleDateString("hu-HU")
   }
   return Array.isArray(value) ? value.join(", ") : String(value)
+}
+
+function formatReportType(value: unknown): string {
+  if (typeof value !== "string") return "Egyéb"
+  const labels: Record<string, string> = {
+    tragar: "Trágár vagy sértő tartalom",
+    spam: "Spam vagy reklám",
+    csalas: "Csalás vagy megtévesztő hirdetés",
+    valotlan: "Valótlan információ",
+    egyeb: "Egyéb",
+  }
+  return labels[value] ?? value
 }
 
 function EditDialog({
@@ -544,6 +593,9 @@ function EditDialog({
   onSave: (fields: Record<string, unknown>) => Promise<void>
 }) {
   const fields = categoryFields[category]
+  const reportDetails = category === "listings" && Array.isArray(row.report_details)
+    ? row.report_details as Array<Record<string, unknown>>
+    : []
   const [values, setValues] = useState<Record<string, string | boolean>>(() =>
     Object.fromEntries(fields.map(({ key, type }) => {
       const value = row[key]
@@ -575,7 +627,12 @@ function EditDialog({
     <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/50 p-4" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose()
     }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="admin-edit-title" className="my-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-xl sm:p-7">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-edit-title"
+        className={`my-auto max-h-[90vh] w-full ${reportDetails.length > 0 ? "max-w-6xl" : "max-w-2xl"} overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-xl sm:p-7`}
+      >
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 id="admin-edit-title" className="text-xl font-semibold">Adatok megtekintése és szerkesztése</h2>
@@ -585,7 +642,8 @@ function EditDialog({
             <X className="size-4" />
           </Button>
         </div>
-        <form className="mt-6 space-y-4" onSubmit={(event) => void submit(event)}>
+        <div className={`mt-6 grid gap-6 ${reportDetails.length > 0 ? "lg:grid-cols-2" : ""}`}>
+        <form className="min-w-0 space-y-4" onSubmit={(event) => void submit(event)}>
           <div className="grid gap-4 sm:grid-cols-2">
             {fields.map(({ key, label, type }) => (
               <div key={key} className={type === "boolean" ? "flex items-center gap-3" : ""}>
@@ -648,6 +706,35 @@ function EditDialog({
             </Button>
           </div>
         </form>
+        {reportDetails.length > 0 ? (
+          <section aria-labelledby="admin-listing-reports-title" className="min-w-0 space-y-3 lg:border-l lg:border-border lg:pl-6">
+            <div>
+              <h3 id="admin-listing-reports-title" className="text-lg font-semibold">Hirdetés bejelentései</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{reportDetails.length} bejelentés</p>
+            </div>
+            <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1">
+              {reportDetails.map((report, index) => (
+                <article key={String(report.id ?? index)} className="rounded-xl border border-border bg-muted/30 p-4">
+                  <div className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
+                    <p className="min-w-0">
+                      <span className="text-muted-foreground">Bejelentő: </span>
+                      <span className="font-medium text-foreground">{formatValue(report.reporter_name)}</span>
+                    </p>
+                    <p className="min-w-0">
+                      <span className="text-muted-foreground">Oka: </span>
+                      <span className="text-foreground">{formatReportType(report.report_type)}</span>
+                    </p>
+                  </div>
+                  <div className="mt-3 border-t border-border pt-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Leírás</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">{formatValue(report.extra_text)}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+        </div>
       </section>
     </div>
   )

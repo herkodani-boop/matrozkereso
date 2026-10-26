@@ -44,6 +44,14 @@ function getTodayDateInputValue() {
   return `${today.getFullYear()}-${month}-${day}`
 }
 
+function getTomorrowDateInputValue() {
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const month = String(tomorrow.getMonth() + 1).padStart(2, "0")
+  const day = String(tomorrow.getDate()).padStart(2, "0")
+  return `${tomorrow.getFullYear()}-${month}-${day}`
+}
+
 function isValidPhoneNumber(value: string) {
   const phone = value.trim()
   const digitCount = phone.replace(/\D/g, "").length
@@ -730,8 +738,8 @@ export function AuthGateModal({
 
     if (!listingStartDate) {
       newErrors.date = listingCommitment === "szezon" ? "Szezon kezdő dátuma kötelező." : "Kezdő dátum megadása kötelező."
-    } else if (listingStartDate < new Date().toISOString().slice(0, 10)) {
-      newErrors.date = "A kezdő dátum nem lehet múltbeli."
+    } else if (listingStartDate < getTomorrowDateInputValue()) {
+      newErrors.date = "A kezdő dátum nem lehet mai vagy múltbeli."
     }
 
     if (!listingOneDay && !listingEndDate) {
@@ -743,6 +751,10 @@ export function AuthGateModal({
 
     if (listingEndDate && listingStartDate && listingEndDate < listingStartDate) {
       newErrors.date = "A végdátumnak nem lehet korábbi a kezdő dátumnál."
+    }
+
+    if (listingEndDate && listingEndDate < getTomorrowDateInputValue()) {
+      newErrors.date = "A végdátum nem lehet mai vagy múltbeli."
     }
 
     if (listingPosts.length === 0) {
@@ -1478,6 +1490,7 @@ export function AuthGateModal({
               <div className="mx-auto w-full max-w-[280px]" aria-hidden="true" inert>
                 <BoatCard
                   listing={buildPreviewListing()}
+                  userId={null}
                   onRequestApply={() => false}
                   onApply={() => {}}
                   applyingId={null}
@@ -1636,6 +1649,7 @@ export function AuthGateModal({
                     <Input
                       id="listing-start-date"
                       type="date"
+                      min={getTomorrowDateInputValue()}
                       value={listingStartDate}
                       onChange={(e) => {
                         setListingStartDate(e.target.value)
@@ -1656,6 +1670,7 @@ export function AuthGateModal({
                       <Input
                         id="listing-end-date"
                         type="date"
+                        min={listingStartDate > getTomorrowDateInputValue() ? listingStartDate : getTomorrowDateInputValue()}
                         value={listingEndDate}
                         onChange={(e) => {
                           setListingEndDate(e.target.value)

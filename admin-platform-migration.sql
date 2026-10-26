@@ -78,6 +78,14 @@ BEGIN
       NEW.is_deleted IS DISTINCT FROM OLD.is_deleted
       OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at
     ) THEN
+    IF TG_TABLE_NAME = 'ads'
+      AND OLD.user_id = (SELECT auth.uid())
+      AND OLD.is_deleted IS NOT TRUE
+      AND NEW.is_deleted IS TRUE
+      AND NEW.deleted_at IS NOT NULL THEN
+      RETURN NEW;
+    END IF;
+
     RAISE EXCEPTION 'Ezt az elemet csak adminisztrátor törölheti.'
       USING ERRCODE = '42501';
   END IF;
