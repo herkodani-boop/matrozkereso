@@ -25,10 +25,15 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams
   const categoryParam = params.get("category")
   if (categoryParam === "reports") {
-    const status = params.get("status") ?? "all"
-    if (!["all", "active", "deleted", "reported"].includes(status)) {
+    const requestedReportStatus = params.get("status") ?? "all"
+    if (!["all", "active", "deleted"].includes(requestedReportStatus)) {
       return errorResponse("Érvénytelen szűrő.", 400)
     }
+    const reportStatus: "all" | "active" | "deleted" = requestedReportStatus === "deleted"
+      ? "deleted"
+      : requestedReportStatus === "active"
+        ? "active"
+        : "all"
     const page = Math.max(1, Number.parseInt(params.get("page") ?? "1", 10) || 1)
     const pageSize = Math.min(
       PAGE_SIZE_MAX,
@@ -36,10 +41,16 @@ export async function GET(request: NextRequest) {
     )
     const search = cleanAdminSearch(params.get("search")).toLocaleLowerCase("hu")
     try {
-      const reportData = await loadAdminReports(result.access.adminClient, page, pageSize, search)
+      const reportData = await loadAdminReports(result.access.adminClient, page, pageSize, search, reportStatus)
       return NextResponse.json(reportData)
     } catch (error) {
       console.error("Admin bejelentések betöltési hiba:", error)
+      if (isMissingReportSchema(error)) {
+        return errorResponse(
+          "A bejelentések adatbázis-migrációja hiányzik. Futtasd le az ad-report-review-migration.sql fájlt a Supabase SQL Editorban.",
+          500,
+        )
+      }
       return errorResponse("A bejelentések nem tölthetők be.", 500)
     }
   }
@@ -57,13 +68,14 @@ export async function GET(request: NextRequest) {
     page: number,
     pageSize: number,
     search: string,
+    status: "all" | "active" | "deleted",
   ) {
     const reports: Array<Record<string, unknown>> = []
     const reportPageSize = 1000
     for (let from = 0; ; from += reportPageSize) {
       const { data, error } = await client
         .from("ad_reports")
-        .select("id, ad_id, user_id, report_type, extra_text, created_at")
+        .select("id, ad_id, user_id, report_type, evaluation_status, is_deleted, extra_text, created_at")
         .order("created_at", { ascending: false })
         .range(from, from + reportPageSize - 1)
       if (error) throw error
@@ -106,12 +118,17 @@ export async function GET(request: NextRequest) {
         listing_title: listingsById.get(adId)?.title ?? "Ismeretlen hirdetés",
         reporter_name: usersById.get(userId) ?? "Ismeretlen felhasználó",
       }
-    }).filter((report) => !search || [
+    }).filter((report) => (
+      status === "all"
+      || status === "deleted" && report.is_deleted === true
+      || status === "active" && report.is_deleted === false
+    ) && (!search || [
       report.listing_title,
       report.reporter_name,
       report.report_type,
+      report.evaluation_status,
       report.extra_text,
-    ].some((value) => String(value ?? "").toLocaleLowerCase("hu").includes(search)))
+    ].some((value) => String(value ?? "").toLocaleLowerCase("hu").includes(search))))
 
     const start = (page - 1) * pageSize
     return {
@@ -121,12 +138,9 @@ export async function GET(request: NextRequest) {
       matchCount: rows.length,
       counts: {
         total: reports.length,
-        active: reports.filter((report) => {
-          const listing = listingsById.get(String(report.ad_id))
-          return listing?.is_deleted === false && listing.is_active
-        }).length,
-        reported: reports.length,
-        deleted: reports.filter((report) => listingsById.get(String(report.ad_id))?.is_deleted).length,
+        active: reports.filter((report) => report.is_deleted === false).length,
+        reported: reports.filter((report) => report.is_deleted === false).length,
+        deleted: reports.filter((report) => report.is_deleted === true).length,
       },
     }
   }
@@ -178,6 +192,7 @@ export async function GET(request: NextRequest) {
         const { data: reportRows, error: reportIdsError } = await client
           .from("ad_reports")
           .select("ad_id, report_type")
+          .eq("is_deleted", false)
           .order("id", { ascending: true })
           .range(from, from + reportPageSize - 1)
         if (reportIdsError) throw reportIdsError
@@ -337,8 +352,9 @@ export async function GET(request: NextRequest) {
     if (category === "listings" && data?.length) {
       const { data: pageReports, error: pageReportsError } = await client
         .from("ad_reports")
-        .select("id, ad_id, user_id, report_type, extra_text, created_at")
+        .select("id, ad_id, user_id, report_type, evaluation_status, extra_text, created_at")
         .in("ad_id", data.map((row) => String(row.id)))
+        .eq("is_deleted", false)
         .order("created_at", { ascending: false })
       if (pageReportsError) throw pageReportsError
 
@@ -426,11 +442,21 @@ export async function GET(request: NextRequest) {
   }
 }
 
+function isMissingReportSchema(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const details = error as { code?: unknown; message?: unknown }
+  return details.code === "42703"
+    || details.code === "PGRST204"
+    || typeof details.message === "string"
+      && /(is_deleted|evaluation_status).*(column|schema cache)|(column|schema cache).*(is_deleted|evaluation_status)/i.test(details.message)
+}
+
 type AdminMutation = {
   category?: unknown
   id?: unknown
   fields?: unknown
   action?: unknown
+  evaluationStatus?: unknown
 }
 
 export async function PATCH(request: NextRequest) {
@@ -455,10 +481,33 @@ async function handleMutation(request: NextRequest, operation: "update" | "actio
   if (typeof body.id !== "string" || !/^[0-9a-f-]{36}$/i.test(body.id)) {
     return errorResponse("Érvénytelen azonosító.", 400)
   }
-  if (typeof body.category !== "string" || !isAdminCategory(body.category)) {
+  const categoryParam = typeof body.category === "string" ? body.category : null
+  const isReportEvaluation = categoryParam === "reports" && operation === "action"
+  if (categoryParam === null || (!isAdminCategory(categoryParam) && !isReportEvaluation)) {
     return errorResponse("Érvénytelen kategória.", 400)
   }
-  const category: AdminCategory = body.category
+  if (isReportEvaluation) {
+    const evaluationStatus = body.evaluationStatus === "valid" || body.evaluationStatus === "invalid"
+      ? body.evaluationStatus
+      : null
+    if (body.action !== "evaluate" || !evaluationStatus) {
+      return errorResponse("Érvénytelen bejelentésértékelés.", 400)
+    }
+
+    const { data, error } = await result.access.adminClient.rpc("admin_review_ad_report", {
+      p_report_id: body.id,
+      p_decision: evaluationStatus,
+    })
+    if (error) {
+      console.error("Admin bejelentésértékelési hiba:", error)
+      return errorResponse("Nem sikerült értékelni a bejelentést.", 500)
+    }
+    if (data !== true) return errorResponse("A bejelentés nem található.", 404)
+    return NextResponse.json({ ok: true })
+  }
+
+  if (!isAdminCategory(categoryParam)) return errorResponse("Érvénytelen kategória.", 400)
+  const category: AdminCategory = categoryParam
   const client = result.access.adminClient
 
   if (operation === "action") {

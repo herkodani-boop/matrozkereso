@@ -33,8 +33,10 @@ const reportColumns = [
   { key: "listing_title", label: "Hirdetés" },
   { key: "reporter_name", label: "Bejelentő" },
   { key: "report_type", label: "Ok" },
+  { key: "evaluation_status", label: "Értékelés" },
   { key: "extra_text", label: "Leírás" },
   { key: "created_at", label: "Dátum" },
+  { key: "is_deleted", label: "Állapot" },
 ]
 
 const sections: { id: AdminSection; label: string; icon: LucideIcon }[] = [
@@ -313,6 +315,28 @@ function PlatformManagement({
     }
   }
 
+  async function handleReportEvaluation(reportId: string, evaluationStatus: "valid" | "invalid") {
+    await mutate(
+      { category: "reports", id: reportId, action: "evaluate", evaluationStatus },
+      evaluationStatus === "valid"
+        ? "A bejelentés jóváhagyva, a hirdetés és az összes hozzá tartozó bejelentés törölve."
+        : "A bejelentés elutasítva és törölve.",
+    )
+    if (evaluationStatus === "valid") {
+      setSelectedRow(null)
+      return
+    }
+    setSelectedRow((current) => {
+      if (!current || !Array.isArray(current.report_details)) return current
+      return {
+        ...current,
+        report_details: (current.report_details as Array<Record<string, unknown>>).filter(
+          (report) => report.id !== reportId,
+        ),
+      }
+    })
+  }
+
   const categoryLabel = platformAreas.find((area) => area.id === activeArea)?.label ?? ""
   const sortOptions = activeArea === "reports"
     ? []
@@ -350,7 +374,35 @@ function PlatformManagement({
       </nav>
 
       <>
-          {activeArea === "listings" ? (
+          {activeArea === "reports" ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Bejelentések szűrése">
+              {([
+                ["all", "Összes", counts.total],
+                ["active", "Aktív", counts.active],
+                ["deleted", "Törölt", counts.deleted],
+              ] as const).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={status === value}
+                  onClick={() => {
+                    setStatus(value)
+                    setPage(1)
+                  }}
+                  className={`rounded-2xl border p-4 text-left shadow-sm transition-colors ${
+                    status === value
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "border-border bg-card hover:bg-muted/60"
+                  }`}
+                >
+                  <span className="text-sm text-muted-foreground">{label}</span>
+                  <span className="mt-1 block text-2xl font-semibold tracking-tight text-foreground">
+                    {count.toLocaleString("hu-HU")}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : activeArea === "listings" ? (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Hirdetések szűrése">
               {([
                 ["all", "Összes", counts.total],
@@ -388,7 +440,6 @@ function PlatformManagement({
                 ["deleted", "Törölt", counts.deleted],
               ] as const).map(([value, label, count]) => {
                 const disabled = value === "reported"
-                  || activeArea === "reports" && value !== "all"
                 return (
                   <button
                     key={value}
@@ -490,6 +541,10 @@ function PlatformManagement({
                           >
                             {key === "report_type"
                               ? formatReportType(row[key])
+                              : key === "evaluation_status"
+                              ? formatReportEvaluation(row[key])
+                              : key === "is_deleted"
+                              ? row[key] ? "Törölt" : "Aktív"
                               : key === "positions" && Array.isArray(row[key])
                               ? row[key].join(", ")
                               : formatValue(row[key])}
@@ -551,6 +606,7 @@ function PlatformManagement({
           saving={saving}
           onClose={() => setSelectedRow(null)}
           onSave={handleSave}
+          onEvaluateReport={handleReportEvaluation}
         />
       )}
     </div>
@@ -570,6 +626,8 @@ function formatValue(value: unknown): string {
 function formatReportType(value: unknown): string {
   if (typeof value !== "string") return "Egyéb"
   const labels: Record<string, string> = {
+    boat_report: "Hajó jelentése",
+    user_report: "Felhasználó jelentése",
     tragar: "Trágár vagy sértő tartalom",
     spam: "Spam vagy reklám",
     csalas: "Csalás vagy megtévesztő hirdetés",
@@ -579,18 +637,26 @@ function formatReportType(value: unknown): string {
   return labels[value] ?? value
 }
 
+function formatReportEvaluation(value: unknown): string {
+  if (value === "valid") return "Jogos"
+  if (value === "invalid") return "Nem megalapozott"
+  return "Értékelésre vár"
+}
+
 function EditDialog({
   category,
   row,
   saving,
   onClose,
   onSave,
+  onEvaluateReport,
 }: {
   category: Exclude<PlatformArea, "reports">
   row: AdminRow
   saving: boolean
   onClose: () => void
   onSave: (fields: Record<string, unknown>) => Promise<void>
+  onEvaluateReport: (reportId: string, evaluationStatus: "valid" | "invalid") => Promise<void>
 }) {
   const fields = categoryFields[category]
   const reportDetails = category === "listings" && Array.isArray(row.report_details)
@@ -604,9 +670,26 @@ function EditDialog({
       return [key, value === null || value === undefined ? "" : String(value)]
     })),
   )
+  const [evaluatingReport, setEvaluatingReport] = useState<{
+    id: string
+    status: "valid" | "invalid"
+  } | null>(null)
+  const [reviewError, setReviewError] = useState<string | null>(null)
 
   function updateValue(key: string, value: string | boolean) {
     setValues((previous) => ({ ...previous, [key]: value }))
+  }
+
+  async function evaluateReport(reportId: string, evaluationStatus: "valid" | "invalid") {
+    setEvaluatingReport({ id: reportId, status: evaluationStatus })
+    setReviewError(null)
+    try {
+      await onEvaluateReport(reportId, evaluationStatus)
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : "A bejelentés értékelése nem sikerült.")
+    } finally {
+      setEvaluatingReport(null)
+    }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -724,14 +807,44 @@ function EditDialog({
                       <span className="text-muted-foreground">Oka: </span>
                       <span className="text-foreground">{formatReportType(report.report_type)}</span>
                     </p>
+                    <p className="min-w-0">
+                      <span className="text-muted-foreground">Értékelés: </span>
+                      <span className="font-medium text-foreground">{formatReportEvaluation(report.evaluation_status)}</span>
+                    </p>
                   </div>
                   <div className="mt-3 border-t border-border pt-3">
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Leírás</p>
                     <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">{formatValue(report.extra_text)}</p>
                   </div>
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={evaluatingReport?.id === report.id || report.evaluation_status === "valid"}
+                      onClick={() => void evaluateReport(String(report.id), "valid")}
+                    >
+                      {evaluatingReport?.id === report.id && evaluatingReport?.status === "valid"
+                        ? <LoaderCircle className="size-4 animate-spin" />
+                        : null}
+                      Jóváhagyás
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={evaluatingReport?.id === report.id || report.evaluation_status === "invalid"}
+                      onClick={() => void evaluateReport(String(report.id), "invalid")}
+                    >
+                      {evaluatingReport?.id === report.id && evaluatingReport?.status === "invalid"
+                        ? <LoaderCircle className="size-4 animate-spin" />
+                        : null}
+                      Elutasítás
+                    </Button>
+                  </div>
                 </article>
               ))}
             </div>
+            {reviewError ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{reviewError}</p> : null}
           </section>
         ) : null}
         </div>

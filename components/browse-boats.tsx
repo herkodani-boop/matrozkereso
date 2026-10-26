@@ -1354,6 +1354,8 @@ function ListingDetailsDialog({
 }
 
 const reportTypes = [
+  { value: "boat_report", label: "Hajó jelentése" },
+  { value: "user_report", label: "Felhasználó jelentése" },
   { value: "tragar", label: "Trágár vagy sértő tartalom" },
   { value: "spam", label: "Spam vagy reklám" },
   { value: "csalas", label: "Csalás vagy megtévesztő hirdetés" },
@@ -1374,7 +1376,7 @@ function ListingReportDialog({
   onOpenChange: (open: boolean) => void
   onSubmitted: () => void
 }) {
-  const [reportType, setReportType] = useState("")
+  const [reportReason, setReportReason] = useState("")
   const [extraText, setExtraText] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -1382,7 +1384,7 @@ function ListingReportDialog({
 
   useEffect(() => {
     if (open) {
-      setReportType("")
+      setReportReason("")
       setExtraText("")
       setErrorMessage(null)
       setSubmitted(false)
@@ -1390,7 +1392,7 @@ function ListingReportDialog({
   }, [open, listing.id])
 
   async function submitReport() {
-    if (!reportType) return
+    if (!reportReason) return
 
     setIsSubmitting(true)
     setErrorMessage(null)
@@ -1409,7 +1411,7 @@ function ListingReportDialog({
       const { error } = await supabase.from("ad_reports").insert({
         ad_id: listing.id,
         user_id: authenticatedUser.id,
-        report_type: reportType,
+        report_type: reportReason,
         extra_text: extraText.trim() || null,
       })
 
@@ -1454,11 +1456,15 @@ function ListingReportDialog({
         ) : (
           <div className="flex flex-col gap-4 px-6 py-5">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor={`report-type-${listing.id}`} className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Bejelentés típusa
+              <Label htmlFor={`report-reason-${listing.id}`} className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Bejelentés oka
               </Label>
-              <Select value={reportType} onValueChange={(value) => setReportType(value ?? "")}>
-                <SelectTrigger id={`report-type-${listing.id}`} className="w-full">
+              <Select
+                value={reportReason}
+                onValueChange={(value) => setReportReason(value ?? "")}
+                itemToStringLabel={(value) => reportTypes.find((type) => type.value === value)?.label ?? ""}
+              >
+                <SelectTrigger id={`report-reason-${listing.id}`} className="w-full">
                   <SelectValue placeholder="Válassz egy okot" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1500,7 +1506,7 @@ function ListingReportDialog({
               <Button
                 type="button"
                 onClick={() => void submitReport()}
-                disabled={!reportType || !userId || isSubmitting}
+                disabled={!reportReason || !userId || isSubmitting}
                 className="bg-brand! text-white! hover:bg-brand/90!"
               >
                 {isSubmitting ? "Küldés..." : "Bejelentés elküldése"}

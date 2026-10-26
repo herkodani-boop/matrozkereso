@@ -2,7 +2,10 @@ CREATE TABLE IF NOT EXISTS public.ad_reports (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   ad_id uuid NOT NULL REFERENCES public.ads(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  report_type text NOT NULL CHECK (report_type IN ('tragar', 'spam', 'csalas', 'valotlan', 'egyeb')),
+  report_type text NOT NULL CHECK (report_type IN ('boat_report', 'user_report', 'tragar', 'spam', 'csalas', 'valotlan', 'egyeb')),
+  evaluation_status text NOT NULL DEFAULT 'pending' CONSTRAINT ad_reports_evaluation_status_check CHECK (evaluation_status IN ('pending', 'valid', 'invalid')),
+  is_deleted boolean NOT NULL DEFAULT false,
+  deleted_at timestamptz,
   extra_text text CHECK (extra_text IS NULL OR char_length(extra_text) <= 1000),
   created_at timestamptz NOT NULL DEFAULT now()
 );
