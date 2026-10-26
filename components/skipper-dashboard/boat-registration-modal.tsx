@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
-import { type User } from "@supabase/supabase-js"
 import { supabase } from "@/lib/supabase"
 import { ImagePlus } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -35,14 +34,12 @@ export function BoatRegistrationModal({
   existingBoat,
   onOpenChange,
   onBoatSaved,
-  user,
 }: {
   open: boolean
   mode: "create" | "edit"
   existingBoat: Boat | null
   onOpenChange: (open: boolean) => void
   onBoatSaved: (boat: Boat) => void
-  user: User | null
 }) {
   const [name, setName] = useState("")
   const [type, setType] = useState("")
@@ -126,12 +123,20 @@ export function BoatRegistrationModal({
       newErrors.crewType = "Csapat jellegének kiválasztása kötelező."
     }
 
-    if (!user) {
-      newErrors.submit = "Be kell jelentkezned, hogy el tudd menteni a hajót."
-    }
-
     if (Object.keys(newErrors).length > 0 || isValidatingImage) {
       setErrors(newErrors)
+      return
+    }
+
+    const {
+      data: { user: authenticatedUser },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !authenticatedUser) {
+      setErrors({
+        submit: authError?.message ?? "Be kell jelentkezned, hogy el tudd menteni a hajót.",
+      })
       return
     }
 
@@ -143,7 +148,7 @@ export function BoatRegistrationModal({
 
     const uploadBoatFile = async (file: File, suffix: string) => {
       const fileExt = file.name.split(".").pop() ?? "webp"
-      const filePath = `boats/${user?.id}-${Date.now()}${suffix}.${fileExt}`
+      const filePath = `boats/${authenticatedUser.id}-${Date.now()}${suffix}.${fileExt}`
 
       const { error: uploadError } = await supabase.storage.from("boats").upload(filePath, file)
       if (uploadError) throw new Error(uploadError.message)
@@ -192,7 +197,7 @@ export function BoatRegistrationModal({
       const runSave = (payload: Record<string, unknown>) =>
         mode === "edit" && existingBoat
           ? supabase.from("boats").update(payload).eq("id", existingBoat.id).select().single()
-          : supabase.from("boats").insert([{ ...payload, user_id: user!.id }]).select().single()
+          : supabase.from("boats").insert([{ ...payload, user_id: authenticatedUser.id }]).select().single()
 
       let savedResult = await runSave({ ...boatFields, original_image_url: originalImageUrl })
       if (savedResult.error && /original_image_url/i.test(savedResult.error.message ?? "")) {

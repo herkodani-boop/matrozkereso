@@ -3227,7 +3227,6 @@ export function SkipperDashboard() {
           setBoat(savedBoat)
           setHasBoat(true)
         }}
-        user={user}
       />
 
       <Dialog open={!!photoPreview} onOpenChange={(open) => { if (!open) setPhotoPreview(null) }}>
