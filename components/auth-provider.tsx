@@ -8,6 +8,8 @@ type AuthState = {
   // "loading": még nem tudjuk, van-e bejelentkezett felhasználó
   status: "loading" | "ready"
   user: User | null
+  // Megjelenítéshez. API-híváshoz a supabase.auth.getSession()-t használd,
+  // mert az lejárt token esetén előbb frissít.
   session: Session | null
 }
 
@@ -22,12 +24,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true
+    // Ha a szerver elutasította a helyi sessiont, a később érkező INITIAL_SESSION ne állítsa vissza.
+    let rejected = false
 
     // Az INITIAL_SESSION a helyi tárolóból azonnal megérkezik, így nem kell rá hálózati kérés.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return
+      if (event === "INITIAL_SESSION" && rejected) return
+      if (event === "SIGNED_IN") rejected = false
       setState((prev) => {
         const user = session?.user ?? null
         // Token-frissítéskor ugyanaz a felhasználó marad, a user objektumot megtartjuk,
@@ -41,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Hálózati hibánál nem jelentkeztetünk ki, csak ha a szerver ténylegesen elutasítja.
     void supabase.auth.getUser().then(({ data, error }) => {
       if (!active || (!error && data.user) || isAuthRetryableFetchError(error)) return
+      rejected = true
       setState({ status: "ready", user: null, session: null })
     })
 

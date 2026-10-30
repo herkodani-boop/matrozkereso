@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/components/auth-provider"
 import { ImagePlus } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -41,6 +42,7 @@ export function BoatRegistrationModal({
   onOpenChange: (open: boolean) => void
   onBoatSaved: (boat: Boat) => void
 }) {
+  const { user: authenticatedUser } = useAuth()
   const [name, setName] = useState("")
   const [type, setType] = useState("")
   const [harbor, setHarbor] = useState("")
@@ -128,15 +130,8 @@ export function BoatRegistrationModal({
       return
     }
 
-    const {
-      data: { user: authenticatedUser },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !authenticatedUser) {
-      setErrors({
-        submit: authError?.message ?? "Be kell jelentkezned, hogy el tudd menteni a hajót.",
-      })
+    if (!authenticatedUser) {
+      setErrors({ submit: "Be kell jelentkezned, hogy el tudd menteni a hajót." })
       return
     }
 

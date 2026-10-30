@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RequireAuth } from "@/components/require-auth"
+import { useAuth } from "@/components/auth-provider"
+import type { User } from "@supabase/supabase-js"
 import { supabase } from "@/lib/supabase"
 import { ImageUploadErrorDialog } from "@/components/image-upload-error-dialog"
 import { optimizeAvatarImage } from "@/lib/avatar-image-optimization"
@@ -51,6 +53,7 @@ function isValidPhoneNumber(value: string) {
 
 export default function ProfilPage() {
   const router = useRouter()
+  const { status: authStatus, user: authUser } = useAuth()
 
   const [userId, setUserId] = useState<string | null>(null)
   const [email, setEmail] = useState("")
@@ -103,24 +106,18 @@ export default function ProfilPage() {
   }, [previewUrl])
 
   useEffect(() => {
+    if (authStatus === "loading") return
+    if (!authUser) {
+      router.push("/")
+      return
+    }
+
     let active = true
 
-    async function loadProfile() {
+    async function loadProfile(user: User) {
       setLoading(true)
       setError(null)
       setProfileErrors({})
-
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-
-      if (userError || !user) {
-        if (active) {
-          router.push("/")
-        }
-        return
-      }
 
       const { data, error: profileError } = await supabase
         .from("users")
@@ -157,12 +154,12 @@ export default function ProfilPage() {
       setLoading(false)
     }
 
-    void loadProfile()
+    void loadProfile(authUser)
 
     return () => {
       active = false
     }
-  }, [router])
+  }, [authStatus, authUser, router])
 
   const isDirty = useMemo(() => {
     if (!initial) return false

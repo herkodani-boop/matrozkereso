@@ -33,7 +33,7 @@ export function SiteNavbar() {
   const router = useRouter()
   const pathname = usePathname()
   const [authOpen, setAuthOpen] = useState(false)
-  const { user, session } = useAuth()
+  const { user } = useAuth()
   const userId = user?.id ?? null
   // A betöltött adatot a felhasználóhoz kötjük, így kijelentkezéskor vagy fiókváltáskor
   // a régi felhasználó adatai külön nullázás nélkül sem jelennek meg.
@@ -103,6 +103,10 @@ export function SiteNavbar() {
     setFeedbackNotice(null)
 
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
       const response = await fetch("/api/feedback", {
         method: "POST",
         headers: {

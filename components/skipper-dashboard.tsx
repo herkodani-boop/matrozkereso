@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { type User } from "@supabase/supabase-js"
 import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/components/auth-provider"
 import {
   Anchor,
   Plus,
@@ -115,7 +114,6 @@ function buildEventRoster(event: EventItem, teamMembers: TeamMember[], captainId
 const APPLICANT_PAGE_SIZE = 15
 
 export function SkipperDashboard() {
-  const router = useRouter()
   const [activeDashboardTab, setActiveDashboardTab] = useState<"team" | "events" | "listings">("events")
   const [listings, setListings] = useState<Listing[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -167,7 +165,8 @@ export function SkipperDashboard() {
   const participantMutationRef = useRef(new Set<string>())
   const applicantMutationRef = useRef(new Set<string>())
   const listingMutationRef = useRef<string | null>(null)
-  const [user, setUser] = useState<User | null>(null)
+  const { user } = useAuth()
+  const userId = user?.id ?? null
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [boat, setBoat] = useState<Boat | null>(null)
   const [hasBoat, setHasBoat] = useState(false)
@@ -232,25 +231,19 @@ export function SkipperDashboard() {
     setSelectedId((previous) => (previous === listingId ? "" : listingId))
   }
 
+  // A bejelentkezés hiányát a RequireAuth kezeli (átirányít).
   useEffect(() => {
-    const fetchUser = async () => {
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
+    if (!userId) return
 
-      if (!currentUser) {
-        setUser(null)
-        setProfile(null)
-        router.replace("/")
-        return
-      }
+    let active = true
 
-      setUser((prev) => (prev?.id === currentUser.id ? prev : currentUser))
+    const fetchProfile = async () => {
       const { data: profileData, error: profileError } = await supabase
         .from("users")
         .select("full_name, role, avatar_url")
-        .eq("id", currentUser.id)
+        .eq("id", userId)
         .maybeSingle()
+      if (!active) return
 
       if (profileError) {
         console.error("Profil lekérdezési hiba:", profileError)
@@ -266,21 +259,12 @@ export function SkipperDashboard() {
       setProfile(profileData)
     }
 
-    fetchUser()
+    void fetchProfile()
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        fetchUser()
-      } else {
-        setUser(null)
-        setProfile(null)
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
+    return () => {
+      active = false
+    }
+  }, [userId])
 
   useEffect(() => {
     if (!user) {

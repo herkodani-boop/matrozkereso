@@ -98,7 +98,7 @@ function normalizeBoat(boat: unknown) {
 }
 
 export function HomeEventsHub() {
-  const { status: authStatus, user, session } = useAuth()
+  const { status: authStatus, user } = useAuth()
   const authResolved = authStatus === "ready"
   const [role, setRole] = useState<string | null>(null)
   const [profileMissing, setProfileMissing] = useState(false)
@@ -266,6 +266,7 @@ export function HomeEventsHub() {
     setActionError(null)
 
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) {
         throw new Error("A válasz mentéséhez be kell jelentkezned.")
       }
@@ -320,6 +321,7 @@ export function HomeEventsHub() {
     setActionError(null)
 
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) {
         throw new Error("A részvétel törléséhez be kell jelentkezned.")
       }

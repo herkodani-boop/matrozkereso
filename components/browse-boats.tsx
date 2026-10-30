@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import type { User } from "@supabase/supabase-js"
 import Image from "next/image"
 import { Flag, CalendarDays, MapPin, Users, Award, Sailboat, ChevronDown, TriangleAlert, UserCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -26,6 +25,7 @@ import {
 } from "@/components/ui/select"
 import { AuthGateModal } from "@/components/auth-gate-modal"
 import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/components/auth-provider"
 import { type Commitment, type Level } from "@/lib/mock-data"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
 
@@ -255,7 +255,7 @@ export function BrowseBoats() {
   const [authOpen, setAuthOpen] = useState(false)
   const [selectedBoat, setSelectedBoat] = useState<string | undefined>(undefined)
   const [authReturnTo, setAuthReturnTo] = useState<string | undefined>(undefined)
-  const [user, setUser] = useState<User | null>(null)
+  const { user } = useAuth()
   const [applyingId, setApplyingId] = useState<string | null>(null)
   const [cancelingId, setCancelingId] = useState<string | null>(null)
   const [applyError, setApplyError] = useState<string | null>(null)
@@ -390,25 +390,6 @@ export function BrowseBoats() {
     }
   }
 
-  useEffect(() => {
-    async function fetchUser() {
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
-
-      setUser(currentUser)
-    }
-
-    fetchUser()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
 
   const loadAdsPage = useCallback(
     async (pageIndex: number, options: { append: boolean }) => {
@@ -1365,19 +1346,14 @@ function ListingReportDialog({
     setErrorMessage(null)
 
     try {
-      const {
-        data: { user: authenticatedUser },
-        error: authError,
-      } = await supabase.auth.getUser()
-
-      if (authError || !authenticatedUser || authenticatedUser.id !== userId) {
+      if (!userId) {
         setErrorMessage("Hirdetés bejelentéséhez be kell jelentkezned.")
         return
       }
 
       const { error } = await supabase.from("ad_reports").insert({
         ad_id: listing.id,
-        user_id: authenticatedUser.id,
+        user_id: userId,
         report_type: reportReason,
         extra_text: extraText.trim() || null,
       })

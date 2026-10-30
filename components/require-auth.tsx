@@ -1,66 +1,19 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/components/auth-provider"
 
 export function RequireAuth({ children, redirectTo = "/" }: { children: ReactNode; redirectTo?: string }) {
   const router = useRouter()
-  const [checking, setChecking] = useState(true)
+  const { status, user } = useAuth()
+  const checking = status === "loading" || !user
 
   useEffect(() => {
-    let isMounted = true
-
-    async function verify() {
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-
-      if (!isMounted) return
-
-      if (sessionError || !session?.user) {
-        router.replace(redirectTo)
-        return
-      }
-
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-
-      if (!isMounted) return
-
-      if (userError || !user) {
-        router.replace(redirectTo)
-        return
-      }
-
-      setChecking(false)
+    if (status === "ready" && !user) {
+      router.replace(redirectTo)
     }
-
-    void verify()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!isMounted) return
-
-      if (session?.user) {
-        setChecking(false)
-        return
-      }
-
-      if (event === "SIGNED_OUT") {
-        router.replace(redirectTo)
-      }
-    })
-
-    return () => {
-      isMounted = false
-      subscription.unsubscribe()
-    }
-  }, [redirectTo, router])
+  }, [status, user, redirectTo, router])
 
   if (checking) {
     return (
