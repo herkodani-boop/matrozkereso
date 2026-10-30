@@ -773,17 +773,51 @@ export function SkipperDashboard() {
     setModalOpen(true)
   }
 
-  // A főoldali "+ Hirdetés" gomb ?hirdetes=uj paraméterrel nyitja meg a hirdetésfeladó ablakot.
+  // A kezdőlap mélylinkjei, a betöltés végén egyszer feldolgozva:
+  // ?hirdetes=uj, ?esemeny=uj, ?esemeny=<id>, ?jelentkezok=<hirdetés id>,
+  // ?hirdetes-esemenyre=<esemény id>, ?meghivas=uj, ?ful=esemenyek|hirdetesek|csapat
   const autoOpenListingHandled = useRef(false)
   useEffect(() => {
     if (autoOpenListingHandled.current || boatLoading) return
     const params = new URLSearchParams(window.location.search)
-    if (params.get("hirdetes") !== "uj") return
+    const keys = ["hirdetes", "esemeny", "jelentkezok", "hirdetes-esemenyre", "meghivas", "ful"]
+    if (!keys.some((key) => params.has(key))) return
     autoOpenListingHandled.current = true
-    params.delete("hirdetes")
+    const listingAction = params.get("hirdetes")
+    const eventParam = params.get("esemeny")
+    const applicantsListingId = params.get("jelentkezok")
+    const listingForEventId = params.get("hirdetes-esemenyre")
+    const inviteAction = params.get("meghivas")
+    const tab = params.get("ful")
+    keys.forEach((key) => params.delete(key))
     const query = params.toString()
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`)
-    if (hasBoat) openModal("listing")
+    if (!hasBoat) return
+
+    if (listingAction === "uj") {
+      openModal("listing")
+    } else if (eventParam === "uj") {
+      setActiveDashboardTab("events")
+      resetNewEventForm()
+      setIsNewEventModalOpen(true)
+    } else if (eventParam) {
+      setActiveDashboardTab("events")
+      setExpandedEventId(eventParam)
+    } else if (applicantsListingId && listings.some((listing) => listing.id === applicantsListingId)) {
+      initialTabResolved.current = true
+      setActiveDashboardTab("listings")
+      setApplicantFilter(null)
+      setSelectedId(applicantsListingId)
+    } else if (listingForEventId) {
+      const event = events.find((item) => item.id === listingForEventId)
+      if (event) openListingModalFromEvent(event)
+    } else if (inviteAction === "uj") {
+      setActiveDashboardTab("team")
+      setTeamError(null)
+      setIsInviteModalOpen(true)
+    } else if (tab === "esemenyek" || tab === "hirdetesek" || tab === "csapat") {
+      setActiveDashboardTab(tab === "esemenyek" ? "events" : tab === "hirdetesek" ? "listings" : "team")
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boatLoading, hasBoat])
 

@@ -174,7 +174,14 @@ export function HomeEventsHub() {
         console.error("Közelgő főoldali események lekérdezési hiba:", boatEventsResult.error ?? attendeeEventsResult.error)
       }
 
-      const teamEventRows = (boatEventsResult.data ?? []).filter((event: any) => teamBoatIds.includes(String(event.boat_id)))
+      // A saját hajó eseményei közül csak a lemondott és a döntetlen kerül ide, hogy a kapitány
+      // visszavonhassa a lemondást; a többi a "Következő eseményeid" alatt szerepel.
+      const teamEventRows = (boatEventsResult.data ?? []).filter((event: any) => {
+        const boatId = String(event.boat_id)
+        if (teamBoatIds.includes(boatId)) return true
+        const status = attendeeStatuses.get(String(event.id))
+        return ownedBoatIds.includes(boatId) && (status === "declined" || status === "unset")
+      })
 
       const eventRows = new Map<string, any>()
       ;[...(boatEventsResult.data ?? []), ...(attendeeEventsResult.data ?? [])].forEach((event: any) => {
@@ -346,7 +353,27 @@ export function HomeEventsHub() {
       return
     }
 
-    setOpportunities((previous) => previous.map((item) => (item.id === eventId ? { ...item, response: "declined" } : item)))
+    // A lemondott esemény átkerül az elérhetők közé, hogy a "Mégis részt veszek" gombbal visszavonható legyen.
+    const cancelledEvent = events.find((item) => item.id === eventId)
+    setOpportunities((previous) => {
+      if (previous.some((item) => item.id === eventId)) {
+        return previous.map((item) => (item.id === eventId ? { ...item, response: "declined" } : item))
+      }
+      if (!cancelledEvent) return previous
+      return [
+        ...previous,
+        {
+          id: cancelledEvent.id,
+          title: cancelledEvent.title,
+          location: cancelledEvent.location,
+          startDate: cancelledEvent.startDate,
+          endDate: cancelledEvent.endDate,
+          boatName: cancelledEvent.boatName,
+          type: cancelledEvent.type,
+          response: "declined" as const,
+        },
+      ].sort((first, second) => first.startDate.localeCompare(second.startDate))
+    })
     setEvents((previous) => previous.filter((item) => item.id !== eventId))
     setRespondingEventId(null)
     setDetailsEvent(null)

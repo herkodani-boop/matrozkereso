@@ -28,6 +28,11 @@
   --color-brand-orange: #e8833a;
   /* Szöveg a narancs jelzéseken: a brand kék itt csak 4.1:1, ez 5.2:1 (WCAG AA). */
   --color-brand-orange-foreground: #0a2f42;
+  /* Sötét módhoz alkalmazkodó márkaszínek (a :root és a sötét blokkok állítják). */
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-attention-ink: var(--attention-ink);
+  --color-bar-declined: var(--bar-declined);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -56,6 +61,10 @@
 }
 
 :root {
+  --brand-ink: #0e3f57;
+  --brand-soft: #e7edf0;
+  --attention-ink: #a8501a;
+  --bar-declined: #b9c5d1;
   color-scheme: light;
   --background: oklch(1 0 0);
   --foreground: oklch(0.21 0.04 257);
@@ -93,6 +102,10 @@
 
 .dark {
   color-scheme: dark;
+  --brand-ink: #9fc6db;
+  --brand-soft: rgb(62 143 168 / 0.22);
+  --attention-ink: #f2a76b;
+  --bar-declined: #5b6b7f;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -129,6 +142,10 @@
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     color-scheme: dark;
+    --brand-ink: #9fc6db;
+    --brand-soft: rgb(62 143 168 / 0.22);
+    --attention-ink: #f2a76b;
+    --bar-declined: #5b6b7f;
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
