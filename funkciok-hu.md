@@ -93,14 +93,10 @@ Ez az oldal egy magyar nagyhajós vitorlázó közösséghez készült crew-matc
   - kezdő dátum
   - végdátum vagy egynapos esemény
   - elköteleződés típusa
-  - keresett posztok (többes kiválasztás)
-    - Kormányos
-    - Taktikus
-    - Main Trim
-    - Jib trim
-    - Mast
-    - Fordeck
-  - elvárt tapasztalati szint
+  - kit keres: „Segítő kezeket” (bárki jöhet) vagy „Konkrét posztokra”
+    - posztok: Segítő legénység, Kormányos, Taktikus/navigátor, Nagyvitorla-kezelő, Orrvitorla-kezelő, Árbocnál, Orrban, plusz szabadon beírt egyéb poszt
+  - hány főt keres összesen
+  - kezdőbarát-e („Kezdőket is szívesen látok”)
   - rövid, opcionális kapitányi megjegyzés
 - A rendszer ellenőrzi a kötelező mezőket.
 - A hirdetés mentése után megjelenik a böngészésben.

@@ -3,13 +3,16 @@
 import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { CalendarDays, Check, ChevronDown, ChevronUp, Clock, Plus, UserPlus, UserX } from "lucide-react"
+import { CalendarDays, Check, ChevronDown, ChevronUp, Mail, Plus, UserCheck, UserPlus, Users } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { useCaptainBoats } from "@/components/captain-boats-provider"
 import { Skeleton } from "@/components/ui/skeleton"
+import { HomeEventsHub } from "@/components/home-events-hub"
 import { CaptainOtherListings } from "./captain-other-listings"
+import { EventMessageButton, EventWeatherPanel } from "./event-extras"
 import {
   daysUntil,
+  EXPIRY_WARNING_DAYS,
   formatLongDate,
   getTodayKey,
   useCaptainHomeData,
@@ -62,21 +65,31 @@ function formatExpiry(listing: HomeListing) {
   return `Lejárat: ${formatLongDate(listing.expiryDate)}`
 }
 
+// A közeli lejárat csak tájékoztatás (nincs teendő vele), ezért itt, a hirdetésnél emeljük ki.
+function isExpiringSoon(listing: HomeListing) {
+  if (!listing.expiryDate) return false
+  const days = daysUntil(listing.expiryDate)
+  return days >= 0 && days <= EXPIRY_WARNING_DAYS
+}
+
+const meaningfulType = (type: string) => (type && type !== "Egyéb" ? type : null)
+
 const secondaryButton =
   "inline-flex h-11 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition-colors hover:bg-secondary focus-visible:outline-2 focus-visible:outline-brand"
 const primaryButton =
   "inline-flex h-11 items-center justify-center rounded-lg bg-brand px-4 text-sm font-semibold text-white transition-colors hover:bg-brand/90 focus-visible:outline-2 focus-visible:outline-brand"
-const sectionLabel = "text-sm font-semibold uppercase tracking-wide text-muted-foreground"
+const sectionLabel = "text-base font-semibold text-foreground"
 
 export function CaptainHome() {
   const { user } = useAuth()
   const { boats, firstName } = useCaptainBoats()
   const { status, data, retry } = useCaptainHomeData(boats[0]?.id ?? null, user?.id ?? null)
+  const capacity = data?.boat.maxCrew ?? null
 
   return (
     <div className="bg-secondary/60">
       <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 sm:gap-7 sm:px-6 sm:py-8">
-        <Greeting firstName={firstName} data={data} imageUrl={boats[0]?.imageUrl ?? null} />
+        <Greeting firstName={firstName} data={data} />
 
         {status === "error" ? (
           <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-card p-5 text-sm text-destructive">
@@ -94,8 +107,8 @@ export function CaptainHome() {
             {data.todos.length > 0 || isOnboardingDone(data.onboarding) ? <Todos todos={data.todos} /> : null}
             <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
               <div className="flex min-w-0 flex-col gap-4">
-                <NextEvent event={data.events[0] ?? null} upcomingCount={data.upcomingCount} />
-                <LaterEvents events={data.events.slice(1)} upcomingCount={data.upcomingCount} />
+                <NextEvent event={data.events[0] ?? null} upcomingCount={data.upcomingCount} capacity={capacity} harbor={data.boat.harbor} />
+                <LaterEvents events={data.events.slice(1)} upcomingCount={data.upcomingCount} capacity={capacity} />
               </div>
               <aside aria-label="Hajóm és hirdetéseim" className="flex min-w-0 flex-col gap-4">
                 <BoatCard data={data} />
@@ -105,13 +118,15 @@ export function CaptainHome() {
           </>
         )}
 
+        {/* Ha a kapitány más hajón is csapattag, ott elérhető eseményei; üresen nem jelenik meg. */}
+        <HomeEventsHub otherBoatsOnly />
         <CaptainOtherListings />
       </main>
     </div>
   )
 }
 
-function Greeting({ firstName, data, imageUrl }: { firstName: string | null; data: CaptainHomeData | null; imageUrl: string | null }) {
+function Greeting({ firstName, data }: { firstName: string | null; data: CaptainHomeData | null }) {
   const todayKey = getTodayKey()
   const dateLine = `${capitalize(weekdayFormat.format(toDate(todayKey)))}, ${formatLongDate(todayKey)}`
 
@@ -119,23 +134,30 @@ function Greeting({ firstName, data, imageUrl }: { firstName: string | null; dat
   if (data) {
     const count = data.todos.length
     const todoPart = count > 0
-      ? `${count} dolog vár a döntésedre${data.totalPending > 0 && count > 1 ? `, köztük ${data.totalPending} új jelentkező` : ""}.`
-      : "Minden rendben, most nincs döntésre váró teendőd."
-    const days = data.daysUntilNextRace
-    const racePart = days === null ? "" : days <= 0 ? " Ma versenynap van!" : days === 1 ? " Holnap verseny." : ` A következő versenyig ${days} nap van hátra.`
-    summary = todoPart + racePart
+      ? `${count} teendőd van${data.totalPending > 0 && count > 1 ? `, köztük ${data.totalPending} új jelentkező` : ""}.`
+      : "Minden rendben, most nincs teendőd."
+    const next = data.events[0]
+    const days = next ? daysUntil(next.startDate) : null
+    const eventPart = !next || days === null
+      ? ""
+      : days <= 0
+        ? ` Ma: ${next.title}.`
+        : days === 1
+          ? ` Holnap: ${next.title}.`
+          : ` A következő esemény ${days} nap múlva: ${next.title}.`
+    summary = todoPart + eventPart
   }
 
   return (
     <section aria-labelledby="captain-greeting" className="relative overflow-hidden rounded-2xl text-white">
-      {/* A kapitány saját hajója; ha még nincs fotója, az általános vitorlás kép. */}
+      {/* Általános vitorlás kép: a saját hajó fotója a hajó-kártyán szerepel, itt nem ismételjük. */}
       <Image
-        src={imageUrl ?? "/hero-sailing.png"}
+        src="/hero-sailing.png"
         alt=""
         fill
         priority
         sizes="(max-width: 1200px) 100vw, 1152px"
-        className={`object-cover ${imageUrl ? "object-center" : "object-[center_38%]"}`}
+        className="object-cover object-[center_38%]"
       />
       {/* Sötét réteg a fotón, hogy a fehér szöveg olvasható maradjon. */}
       <div className="relative flex min-h-[200px] flex-wrap items-end justify-between gap-5 bg-[rgba(10,47,66,0.76)] p-6 sm:p-8">
@@ -222,10 +244,11 @@ function GettingStarted({ onboarding }: { onboarding: CaptainHomeData["onboardin
 }
 
 const todoIcons = {
+  shortfall: Users,
   applicants: UserPlus,
-  declined: UserX,
   calendar: CalendarDays,
-  clock: Clock,
+  accepted: UserCheck,
+  invite: Mail,
 }
 
 function Todos({ todos }: { todos: HomeTodo[] }) {
@@ -252,7 +275,7 @@ function Todos({ todos }: { todos: HomeTodo[] }) {
           <span className="flex h-11 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-brand-ink">
             <Check className="h-5 w-5" aria-hidden="true" />
           </span>
-          Nincs döntésre váró teendőd.
+          Nincs teendőd.
         </p>
       ) : (
         <ul>
@@ -295,7 +318,17 @@ function Todos({ todos }: { todos: HomeTodo[] }) {
   )
 }
 
-function NextEvent({ event, upcomingCount }: { event: HomeEvent | null; upcomingCount: number }) {
+function NextEvent({
+  event,
+  upcomingCount,
+  capacity,
+  harbor,
+}: {
+  event: HomeEvent | null
+  upcomingCount: number
+  capacity: number | null
+  harbor: string
+}) {
   if (!event) {
     return (
       <section aria-labelledby="captain-next-event" className="rounded-2xl border border-border bg-card p-6">
@@ -314,6 +347,7 @@ function NextEvent({ event, upcomingCount }: { event: HomeEvent | null; upcoming
   const percent = (value: number) => `${total > 0 ? (value / total) * 100 : 0}%`
   const shownPeople = event.confirmedPeople.slice(0, AVATARS_SHOWN)
   const extraPeople = event.confirmedPeople.length - shownPeople.length
+  const hasFreePlaces = capacity !== null && confirmed < capacity
   const breakdown = [declined > 0 ? `${declined} nem jön` : null, unanswered > 0 ? `${unanswered} nem válaszolt` : null].filter(Boolean).join(" · ")
 
   return (
@@ -334,7 +368,9 @@ function NextEvent({ event, upcomingCount }: { event: HomeEvent | null; upcoming
         <div className="min-w-0 flex-[999_1_240px]">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[22px] font-bold tracking-tight">{event.title}</h3>
-            <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-[13px] font-semibold text-brand-ink">{event.type}</span>
+            {meaningfulType(event.type) ? (
+              <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-[13px] font-semibold text-brand-ink">{event.type}</span>
+            ) : null}
             {event.linkedListing ? (
               <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-[13px] font-semibold text-brand-ink">
                 Aktív hirdetés{event.linkedListing.pending > 0 ? ` · ${event.linkedListing.pending} új jelentkező` : ""}
@@ -344,12 +380,17 @@ function NextEvent({ event, upcomingCount }: { event: HomeEvent | null; upcoming
           <p className="mt-1.5 text-muted-foreground">
             {[formatDateRange(event.startDate, event.endDate), event.location].filter(Boolean).join(" · ")}
           </p>
+          {event.note ? <p className="mt-1.5 line-clamp-2 text-sm text-foreground/85">{event.note}</p> : null}
         </div>
       </div>
+
+      <EventWeatherPanel event={event} harbor={harbor} />
 
       <div className="mt-5 border-t border-border/70 pt-5">
         {total === 0 ? (
           <p className="text-sm text-muted-foreground">Még nincs csapattagod. A kapitányi felületen hívhatod meg őket.</p>
+        ) : capacity ? (
+          <CapacityAttendance confirmed={confirmed} unanswered={unanswered} breakdown={breakdown} capacity={capacity} />
         ) : (
           <>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -369,8 +410,12 @@ function NextEvent({ event, upcomingCount }: { event: HomeEvent | null; upcoming
         )}
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3.5">
-          {shownPeople.length > 0 ? (
-            <div className="flex items-center">
+          <Link
+            href={`/kapitany-dashboard?esemeny=${encodeURIComponent(event.id)}`}
+            className="-mx-2 flex min-h-11 items-center gap-2.5 rounded-lg px-2 transition-colors hover:bg-secondary/60 focus-visible:outline-2 focus-visible:outline-brand"
+          >
+            {shownPeople.length > 0 ? (
+            <span className="flex items-center">
               {shownPeople.map((person, index) => (
                 <span
                   key={person.id}
@@ -389,22 +434,34 @@ function NextEvent({ event, upcomingCount }: { event: HomeEvent | null; upcoming
                   +{extraPeople}
                 </span>
               ) : null}
-              <span className="ml-2.5 text-sm text-muted-foreground">jön</span>
-            </div>
-          ) : <span />}
-          <div className="flex flex-wrap gap-2.5">
-            <Link href={`/kapitany-dashboard?esemeny=${encodeURIComponent(event.id)}`} className={secondaryButton}>
-              Résztvevők kezelése
+            </span>
+            ) : null}
+            <span className="text-sm font-semibold text-brand-ink">
+              Résztvevők <span aria-hidden="true">→</span>
+            </span>
+          </Link>
+          <div className="flex flex-wrap items-center gap-2.5">
+          <EventMessageButton event={event} dateLabel={formatDateRange(event.startDate, event.endDate)} />
+          {/* Csak akkor kérünk figyelmet, ha van mit elbírálni. */}
+          {event.linkedListing ? (
+            event.linkedListing.pending > 0 ? (
+              <Link
+                href={`/kapitany-dashboard?jelentkezok=${encodeURIComponent(event.linkedListing.id)}`}
+                className="inline-flex h-11 items-center justify-center rounded-lg bg-brand-orange px-4 text-sm font-semibold text-brand-orange-foreground transition-colors hover:bg-brand-orange/90 focus-visible:outline-2 focus-visible:outline-brand"
+              >
+                {event.linkedListing.pending} új jelentkező
+              </Link>
+            ) : null
+          ) : hasFreePlaces ? (
+            // A visszajelzések alapján nincs tele a hajó: kézre adjuk a hirdetést a hiányzó helyekre.
+            <Link
+              href={`/kapitany-dashboard?hirdetes-esemenyre=${encodeURIComponent(event.id)}`}
+              className={`gap-2 ${secondaryButton}`}
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Hirdetés feladása
             </Link>
-            {event.linkedListing ? (
-              <Link href={`/kapitany-dashboard?jelentkezok=${encodeURIComponent(event.linkedListing.id)}`} className={secondaryButton}>
-                Jelentkezők{event.linkedListing.pending > 0 ? ` (${event.linkedListing.pending})` : ""}
-              </Link>
-            ) : (
-              <Link href={`/kapitany-dashboard?hirdetes-esemenyre=${encodeURIComponent(event.id)}`} className={secondaryButton}>
-                Hirdetés erre az eseményre
-              </Link>
-            )}
+          ) : null}
           </div>
         </div>
       </div>
@@ -412,7 +469,49 @@ function NextEvent({ event, upcomingCount }: { event: HomeEvent | null; upcoming
   )
 }
 
-function LaterEvents({ events, upcomingCount }: { events: HomeEvent[]; upcomingCount: number }) {
+// A hajó létszámához mérve: a sáv a helyek betöltöttségét mutatja. Ha többen jönnek (pl. hajószerelésre
+// az egész csapat), az nem hiba, csak tájékoztatjuk a kapitányt.
+function CapacityAttendance({
+  confirmed,
+  unanswered,
+  breakdown,
+  capacity,
+}: {
+  confirmed: number
+  unanswered: number
+  breakdown: string
+  capacity: number
+}) {
+  const confirmedShare = Math.min(confirmed, capacity)
+  const unansweredShare = Math.min(unanswered, capacity - confirmedShare)
+  const percent = (value: number) => `${(value / capacity) * 100}%`
+  const note =
+    confirmed < capacity
+      ? `${capacity - confirmed} hely szabad`
+      : confirmed === capacity
+        ? "Megvan a teljes létszám"
+        : `${confirmed - capacity} fővel többen jönnek, mint a hajó létszáma`
+
+  return (
+    <>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="font-semibold">{`${confirmed} fő jön · ${capacity} fős hajó`}</p>
+        {breakdown ? <p className="text-sm text-muted-foreground">{breakdown}</p> : null}
+      </div>
+      <div
+        role="img"
+        aria-label={`${confirmed} fő jön a ${capacity} fős hajóra, ${unanswered} még nem válaszolt`}
+        className="mt-2.5 flex h-2.5 overflow-hidden rounded-full bg-secondary"
+      >
+        <span className="bg-brand-ink" style={{ width: percent(confirmedShare) }} />
+        <span className="bg-brand-orange" style={{ width: percent(unansweredShare) }} />
+      </div>
+      <p className="mt-2 text-sm text-muted-foreground">{note}</p>
+    </>
+  )
+}
+
+function LaterEvents({ events, upcomingCount, capacity }: { events: HomeEvent[]; upcomingCount: number; capacity: number | null }) {
   if (events.length === 0) return null
   // Az első esemény fent külön kártyán van, ezért a "további" szám a teljesből és a látható listából adódik.
   const remaining = upcomingCount - events.length - 1
@@ -423,7 +522,13 @@ function LaterEvents({ events, upcomingCount }: { events: HomeEvent[]; upcomingC
       <ul>
         {events.map((event) => {
           const { confirmed, declined, total } = event.attendance
-          const status = total === 0 ? "" : confirmed + declined === 0 ? "Még nincs válasz" : `${confirmed} / ${total} jön`
+          const status = total === 0
+            ? ""
+            : confirmed + declined === 0
+              ? "Még nincs válasz"
+              : capacity
+                ? `${confirmed} / ${capacity} fő`
+                : `${confirmed} / ${total} jön`
           return (
             <li key={event.id} className="border-b border-border/70 last:border-b-0">
               <Link
@@ -436,7 +541,7 @@ function LaterEvents({ events, upcomingCount }: { events: HomeEvent[]; upcomingC
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold">{event.title}</span>
                   <span className="block truncate text-sm text-muted-foreground">
-                    {[event.type, event.location].filter(Boolean).join(" · ")}
+                    {[meaningfulType(event.type), event.location].filter(Boolean).join(" · ")}
                   </span>
                 </span>
                 {status ? <span className="shrink-0 text-sm text-muted-foreground">{status}</span> : null}
@@ -465,14 +570,19 @@ function BoatCard({ data }: { data: CaptainHomeData }) {
   ]
 
   return (
-    <section aria-labelledby="captain-boat" className="overflow-hidden rounded-2xl border border-border bg-card">
+    <section aria-labelledby="captain-boat" className="group relative overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-brand/40">
       <div className="relative h-[170px] bg-brand">
         {data.boat.imageUrl ? (
           <Image src={data.boat.imageUrl} alt={`A ${data.boat.name} vitorlás`} fill sizes="360px" className="object-cover object-[center_60%]" />
         ) : null}
       </div>
       <div className="px-5 pb-5 pt-4">
-        <h2 id="captain-boat" className="text-lg font-bold">{data.boat.name}</h2>
+        <h2 id="captain-boat" className="text-lg font-bold">
+          {/* A teljes kártya kattintható: a link a kártyára feszül. */}
+          <Link href="/kapitany-dashboard" className="after:absolute after:inset-0 after:rounded-2xl group-hover:text-brand-ink focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-brand">
+            {data.boat.name} <span aria-hidden="true" className="text-muted-foreground">→</span>
+          </Link>
+        </h2>
         <p className="text-sm text-muted-foreground">{[data.boat.type, data.boat.harbor].filter(Boolean).join(" · ")}</p>
         <ul className="mt-3.5 grid grid-cols-3 gap-2">
           {stats.map((stat) => (
@@ -482,9 +592,6 @@ function BoatCard({ data }: { data: CaptainHomeData }) {
             </li>
           ))}
         </ul>
-        <Link href="/kapitany-dashboard" className={`mt-3.5 w-full ${secondaryButton}`}>
-          Kapitányi felület
-        </Link>
       </div>
     </section>
   )
@@ -518,7 +625,9 @@ function MyListings({ listings }: { listings: HomeListing[] }) {
               >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold">{listing.title}</span>
-                  <span className="block text-sm text-muted-foreground">{formatExpiry(listing)}</span>
+                  <span className={`block text-sm ${isExpiringSoon(listing) ? "font-medium text-attention-ink" : "text-muted-foreground"}`}>
+                    {formatExpiry(listing)}
+                  </span>
                 </span>
                 {listing.pending > 0 ? (
                   <span className="shrink-0 rounded-full bg-brand-orange px-2.5 py-0.5 text-[13px] font-bold text-brand-orange-foreground">

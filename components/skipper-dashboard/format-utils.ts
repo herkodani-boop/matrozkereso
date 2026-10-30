@@ -39,25 +39,6 @@ export function experienceLevelLabel(level?: string): Applicant["level"] {
   }
 }
 
-export function formatPositionLabel(positionRaw: unknown) {
-  const normalized = String(positionRaw ?? "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-
-  if (normalized === "kormanyos") return "Kormányos"
-  if (normalized === "taktikus") return "Taktikus"
-  if (normalized === "main-trim" || normalized === "main trim") return "Main Trim"
-  if (normalized === "jib-trim" || normalized === "jib trim") return "Jib trim"
-  if (normalized === "mast") return "Mast"
-  if (normalized === "fordeck" || normalized === "foredeck") return "Fordeck"
-  if (normalized === "barmilyen" || normalized === "mindegy" || normalized === "egyeb") return "Bármilyen"
-  if (normalized === "mancsaft" || normalized === "matroz" || normalized === "trimmer") return "Mancsaft"
-  if (!normalized) return "Legénység"
-  return String(positionRaw)
-}
-
 export function normalizeMatchText(value: string | null | undefined) {
   return String(value ?? "")
     .trim()

@@ -6,7 +6,7 @@ import Link from "next/link"
 import { useAuth } from "@/components/auth-provider"
 import { supabase } from "@/lib/supabase"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
-import { formatPositionLabel } from "@/components/skipper-dashboard/format-utils"
+import { crewRoleLabel } from "@/lib/crew-roles"
 
 const LISTINGS_SHOWN = 3
 
@@ -62,7 +62,7 @@ export function CaptainOtherListings() {
             title: (ad.title as string) || "Hirdetés",
             location: (ad.location as string) || "",
             dateText: (ad.date_text as string) || "",
-            positions: ((ad.positions as unknown[] | null) ?? []).map((position) => formatPositionLabel(position)),
+            positions: ((ad.positions as unknown[] | null) ?? []).map((position) => crewRoleLabel(position)),
             boatName: boat?.name ?? "Hajó",
             boatType: boat?.type ?? "",
             imageUrl: boat?.image_url ?? null,

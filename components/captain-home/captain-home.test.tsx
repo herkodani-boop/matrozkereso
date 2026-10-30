@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { CaptainHome } from "./captain-home"
 import type { CaptainHomeData, HomeEvent } from "./use-captain-home-data"
 
@@ -14,6 +14,8 @@ vi.mock("@/components/captain-boats-provider", () => ({
   useCaptainBoats: () => ({ status: "ready", firstName: "Dani", boats: [{ id: "boat-1", name: "Sirocco", imageUrl: "https://example.com/sirocco.jpg" }], ownerId: "captain" }),
 }))
 vi.mock("./captain-other-listings", () => ({ CaptainOtherListings: () => null }))
+vi.mock("@/components/home-events-hub", () => ({ HomeEventsHub: () => null }))
+vi.mock("./event-extras", () => ({ EventWeatherPanel: () => null, EventMessageButton: () => null }))
 
 vi.mock("./use-captain-home-data", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./use-captain-home-data")>()),
@@ -34,6 +36,8 @@ function event(overrides: Partial<HomeEvent>): HomeEvent {
     startDate: inDays(6),
     endDate: null,
     location: "Balatonfüred",
+    note: "",
+    audience: { confirmed: 0, unanswered: 0, declined: 0 },
     attendance: { confirmed: 0, declined: 0, unanswered: 0, total: 14 },
     confirmedPeople: [],
     linkedListing: null,
@@ -44,7 +48,7 @@ function event(overrides: Partial<HomeEvent>): HomeEvent {
 // A jóváhagyott terv "forgalmas hajó" változata.
 function busyBoat(): CaptainHomeData {
   return {
-    boat: { id: "boat-1", name: "Sirocco", imageUrl: null, type: "70-es cirkáló", harbor: "Balatonfüred" },
+    boat: { id: "boat-1", name: "Sirocco", imageUrl: null, type: "70-es cirkáló", harbor: "Balatonfüred", maxCrew: 6 },
     crewCount: 14,
     upcomingCount: 12,
     events: [
@@ -67,14 +71,13 @@ function busyBoat(): CaptainHomeData {
     ],
     todos: [
       { id: "a", tone: "attention", icon: "applicants", title: "9 új jelentkező vár elbírálásra", detail: "", actionLabel: "Elbírálás", href: "/kapitany-dashboard?jelentkezok=ad-kek", primary: true },
-      { id: "b", tone: "attention", icon: "declined", title: "Bence nem jön: Dér Kupa", detail: "", actionLabel: "Hiányzó helyre hirdetek", href: "/x", primary: false },
+      { id: "b", tone: "attention", icon: "shortfall", title: "2 ember hiányzik: Dér Kupa", detail: "", actionLabel: "Hiányzó helyre hirdetek", href: "/x", primary: false },
       { id: "c", tone: "info", icon: "calendar", title: "3 csapattag még nem jelzett vissza", detail: "", actionLabel: "Résztvevők", href: "/x", primary: false },
-      { id: "d", tone: "info", icon: "clock", title: "Egy hirdetésed 3 nap múlva lejár", detail: "", actionLabel: "Megnézem", href: "/x", primary: false },
+      { id: "d", tone: "info", icon: "invite", title: "Egy hirdetésed 3 nap múlva lejár", detail: "", actionLabel: "Meghívó újraküldése", href: "/x", primary: false },
       { id: "e", tone: "info", icon: "calendar", title: "Ötödik teendő", detail: "", actionLabel: "Megnézem", href: "/x", primary: false },
       { id: "f", tone: "info", icon: "calendar", title: "Hatodik teendő", detail: "", actionLabel: "Megnézem", href: "/x", primary: false },
     ],
     totalPending: 9,
-    daysUntilNextRace: 6,
     onboarding: { invitedCrew: true, createdEvent: true, createdListing: true },
   }
 }
@@ -84,18 +87,18 @@ describe("CaptainHome", () => {
     mockState.data = busyBoat()
   })
 
-  it("greets the captain and summarizes todos and the next race", () => {
+  it("greets the captain and summarizes todos and the next event", () => {
     render(<CaptainHome />)
 
     expect(screen.getByRole("heading", { name: "Szia, Dani!" })).toBeInTheDocument()
-    expect(screen.getByText("6 dolog vár a döntésedre, köztük 9 új jelentkező. A következő versenyig 6 nap van hátra.")).toBeInTheDocument()
+    expect(screen.getByText("6 teendőd van, köztük 9 új jelentkező. A következő esemény 6 nap múlva: Dér Kupa.")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Hirdetés feladása/ })).toHaveAttribute("href", "/kapitany-dashboard?hirdetes=uj")
   })
 
   it("shows the first four todos and reveals the rest on demand", () => {
     render(<CaptainHome />)
 
-    expect(screen.getByText("Bence nem jön: Dér Kupa")).toBeInTheDocument()
+    expect(screen.getByText("2 ember hiányzik: Dér Kupa")).toBeInTheDocument()
     expect(screen.queryByText("Ötödik teendő")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /További 2 teendő/ }))
@@ -107,18 +110,20 @@ describe("CaptainHome", () => {
   it("shows attendance and the linked listing for the next event", () => {
     render(<CaptainHome />)
 
-    expect(screen.getByText("9 / 14 fő jön")).toBeInTheDocument()
+    // A 6 fős hajóra 9-en jönnek: ez nem hiba, csak jelezzük.
+    expect(screen.getByText("9 fő jön · 6 fős hajó")).toBeInTheDocument()
     expect(screen.getByText("2 nem jön · 3 nem válaszolt")).toBeInTheDocument()
-    expect(screen.getByRole("img", { name: "Részvétel: 9 jön, 2 nem jön, 3 nem válaszolt a 14 főből" })).toBeInTheDocument()
+    expect(screen.getByText("3 fővel többen jönnek, mint a hajó létszáma")).toBeInTheDocument()
+    expect(screen.getByRole("img", { name: "9 fő jön a 6 fős hajóra, 3 még nem válaszolt" })).toBeInTheDocument()
     // 7 avatar látszik, a maradék 2 egy "+2" jelzésben.
     expect(screen.getByText("+2")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Jelentkezők (4)" })).toHaveAttribute("href", "/kapitany-dashboard?jelentkezok=ad-der")
+    expect(screen.getByRole("link", { name: "4 új jelentkező" })).toHaveAttribute("href", "/kapitany-dashboard?jelentkezok=ad-der")
   })
 
   it("lists later events with the remaining count", () => {
     render(<CaptainHome />)
 
-    expect(screen.getByText("11 / 14 jön")).toBeInTheDocument()
+    expect(screen.getByText("11 / 6 fő")).toBeInTheDocument()
     expect(screen.getByText("Még nincs válasz")).toBeInTheDocument()
     // 12 közelgőből 1 fent, 2 a listában → 9 további.
     expect(screen.getByRole("link", { name: "További 9 esemény" })).toBeInTheDocument()
@@ -134,16 +139,39 @@ describe("CaptainHome", () => {
     expect(screen.getByRole("link", { name: "Összes (3)" })).toHaveAttribute("href", "/kapitany-dashboard?ful=hirdetesek")
   })
 
-  it("uses the captain's own boat photo behind the greeting", () => {
+  it("shows the boat photo only once, on the boat card", () => {
     const { container } = render(<CaptainHome />)
 
-    expect(container.querySelector("section[aria-labelledby=\"captain-greeting\"] img")?.getAttribute("src")).toContain("sirocco.jpg")
+    expect(container.querySelector("section[aria-labelledby=\"captain-greeting\"] img")?.getAttribute("src")).toContain("hero-sailing")
+  })
+
+  it("offers a listing for the next event only while the boat is not full", () => {
+    const data = busyBoat()
+    const withoutListing = { ...data.events[0], linkedListing: null }
+    mockState.data = { ...data, boat: { ...data.boat, maxCrew: 12 }, events: [withoutListing, ...data.events.slice(1)] }
+    const { unmount } = render(<CaptainHome />)
+    const nextEvent = () => within(screen.getByRole("region", { name: "Következő esemény" }))
+    expect(nextEvent().getByRole("link", { name: "Hirdetés feladása" })).toHaveAttribute("href", "/kapitany-dashboard?hirdetes-esemenyre=der")
+    unmount()
+
+    mockState.data = { ...data, boat: { ...data.boat, maxCrew: 6 }, events: [withoutListing, ...data.events.slice(1)] }
+    render(<CaptainHome />)
+    expect(nextEvent().queryByRole("link", { name: "Hirdetés feladása" })).not.toBeInTheDocument()
+  })
+
+  it("shows free places when fewer people come than the boat holds", () => {
+    const data = busyBoat()
+    mockState.data = { ...data, boat: { ...data.boat, maxCrew: 12 } }
+    render(<CaptainHome />)
+
+    expect(screen.getByText("9 fő jön · 12 fős hajó")).toBeInTheDocument()
+    expect(screen.getByText("3 hely szabad")).toBeInTheDocument()
   })
 
   it("guides a new captain with getting-started steps instead of an empty todo list", () => {
     mockState.data = {
       ...busyBoat(),
-      events: [], listings: [], todos: [], totalPending: 0, upcomingCount: 0, daysUntilNextRace: null,
+      events: [], listings: [], todos: [], totalPending: 0, upcomingCount: 0,
       onboarding: { invitedCrew: false, createdEvent: false, createdListing: false },
     }
     render(<CaptainHome />)
@@ -155,11 +183,11 @@ describe("CaptainHome", () => {
   })
 
   it("handles a quiet boat without events, listings or todos", () => {
-    mockState.data = { ...busyBoat(), events: [], listings: [], todos: [], totalPending: 0, upcomingCount: 0, daysUntilNextRace: null }
+    mockState.data = { ...busyBoat(), events: [], listings: [], todos: [], totalPending: 0, upcomingCount: 0 }
     render(<CaptainHome />)
 
-    expect(screen.getByText("Minden rendben, most nincs döntésre váró teendőd.")).toBeInTheDocument()
-    expect(screen.getByText("Nincs döntésre váró teendőd.")).toBeInTheDocument()
+    expect(screen.getByText("Minden rendben, most nincs teendőd.")).toBeInTheDocument()
+    expect(screen.getByText("Nincs teendőd.")).toBeInTheDocument()
     expect(screen.getByText("Még nincs közelgő eseményed")).toBeInTheDocument()
     expect(screen.getByText(/Nincs aktív hirdetésed/)).toBeInTheDocument()
   })

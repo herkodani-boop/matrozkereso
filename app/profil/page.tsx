@@ -502,23 +502,21 @@ export default function ProfilPage() {
               {profileErrors.birthdate ? <p className="text-sm text-destructive" role="alert">{profileErrors.birthdate}</p> : null}
             </div>
 
-            {role !== "kapitany" && role !== "skipper" ? (
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="profile-level">Tapasztalati szint</Label>
-                <Select value={level} onValueChange={(value) => setLevel(value as string)}>
-                  <SelectTrigger id="profile-level" className="h-11 min-h-11 w-full">
-                    <SelectValue>{(value: string) => experienceLevelLabels[value] ?? "Válassz szintet"}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(experienceLevelLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="profile-level">Tapasztalati szint</Label>
+              <Select value={level} onValueChange={(value) => setLevel(value as string)}>
+                <SelectTrigger id="profile-level" className="h-11 min-h-11 w-full">
+                  <SelectValue>{(value: string) => experienceLevelLabels[value] ?? "Válassz szintet"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(experienceLevelLabels).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {notice ? (

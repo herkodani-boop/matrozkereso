@@ -42,6 +42,7 @@ export const adminCategoryConfig: Record<
       "end_date",
       "captain_note",
       "max_applicants",
+      "crew_needed",
       "is_active",
     ],
   },
@@ -113,7 +114,7 @@ export function pickEditableFields(category: AdminCategory, value: unknown): Rec
   const output: Record<string, unknown> = {}
   const arrayFields = new Set(["positions"])
   const booleanFields = new Set(["is_one_day", "is_active"])
-  const numberFields = new Set(["max_crew_size", "max_applicants"])
+  const numberFields = new Set(["max_crew_size", "max_applicants", "crew_needed"])
 
   for (const [key, fieldValue] of Object.entries(input)) {
     if (!allowed.has(key)) return null

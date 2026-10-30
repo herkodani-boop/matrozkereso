@@ -3,7 +3,7 @@
 import type React from "react"
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Anchor, Mail, Lock, UserPlus, ArrowLeft, Camera, Sailboat, ImagePlus, CheckCircle2, KeyRound } from "lucide-react"
+import { Anchor, Mail, Lock, UserPlus, ArrowLeft, Camera, Sailboat, ImagePlus, CheckCircle2, KeyRound, X } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -30,6 +30,7 @@ import { ListingImageFocusPicker } from "@/components/listing-image-focus-picker
 import { ImageUploadErrorDialog } from "@/components/image-upload-error-dialog"
 import { optimizeAvatarImage } from "@/lib/avatar-image-optimization"
 import { clearHungarianValidationMessage, setHungarianValidationMessage } from "@/lib/hungarian-form-validation"
+import { CREW_ROLES, MAX_CUSTOM_ROLE_LENGTH, crewRoleLabel } from "@/lib/crew-roles"
 
 
 const levelOptions: Record<string, string> = {
@@ -59,14 +60,15 @@ function isValidPhoneNumber(value: string) {
   return /^\+?[0-9\s().-]+$/.test(phone) && digitCount >= 7 && digitCount <= 15
 }
 
-const listingPostOptions: { value: string; label: string }[] = [
-  { value: "kormanyos", label: "Kormányos" },
-  { value: "taktikus", label: "Taktikus" },
-  { value: "main-trim", label: "Main Trim" },
-  { value: "jib-trim", label: "Jib trim" },
-  { value: "mast", label: "Mast" },
-  { value: "fordeck", label: "Fordeck" },
+type ListingMode = "segito" | "posztok"
+
+const listingModeOptions: { value: ListingMode; title: string; description: string }[] = [
+  { value: "segito", title: "Segítő kezeket", description: "Bárkit szívesen látsz, a fedélzeten megtanítod." },
+  { value: "posztok", title: "Konkrét posztokra", description: "Pl. kormányost vagy orrembert keresel." },
 ]
+
+const MIN_CREW_NEEDED = 1
+const MAX_CREW_NEEDED = 30
 
 async function triggerWelcomeEmail() {
   try {
@@ -88,9 +90,28 @@ async function triggerWelcomeEmail() {
   }
 }
 
-const commitmentOptions: Record<string, string> = {
-  "egy-verseny": "Csak egy konkrét versenyre / hétvégére",
-  szezon: "Hosszú távra / Szezoncsapatba",
+const listingCommitmentOptions: { value: string; label: string }[] = [
+  { value: "egy-verseny", label: "Egy eseményre" },
+  { value: "szezon", label: "Egész szezonra" },
+]
+
+const listingMaxApplicantOptions: { value: string; label: string; pro: boolean }[] = [
+  { value: "10", label: "10", pro: false },
+  { value: "25", label: "25", pro: false },
+  { value: "50", label: "50", pro: true },
+  { value: "unlimited", label: "Korlátlan", pro: true },
+]
+
+const HU_SHORT_MONTHS = ["jan", "febr", "márc", "ápr", "máj", "jún", "júl", "aug", "szept", "okt", "nov", "dec"]
+
+function formatShortMonth(dateValue: string) {
+  const month = Number(dateValue.slice(5, 7))
+  return HU_SHORT_MONTHS[month - 1] ?? ""
+}
+
+function formatDayOfMonth(dateValue: string) {
+  const day = Number(dateValue.slice(8, 10))
+  return day > 0 ? String(day) : ""
 }
 
 const crewTypeOptions: { value: string; label: string }[] = [
@@ -162,8 +183,12 @@ export function AuthGateModal({
   const [listingCommitment, setListingCommitment] = useState<string>("egy-verseny")
   const [listingEventId, setListingEventId] = useState<string | null>(null)
   const [isEventPrefilledListing, setIsEventPrefilledListing] = useState(false)
+  const [listingEventDetailsOpen, setListingEventDetailsOpen] = useState(false)
+  const [listingMode, setListingMode] = useState<ListingMode>("segito")
   const [listingPosts, setListingPosts] = useState<string[]>([])
-  const [listingLevel, setListingLevel] = useState<string>("kezdo")
+  const [listingCustomPost, setListingCustomPost] = useState("")
+  const [listingCrewNeeded, setListingCrewNeeded] = useState(2)
+  const [listingBeginnerFriendly, setListingBeginnerFriendly] = useState(true)
   const [listingFocus, setListingFocus] = useState({ x: 50, y: 50 })
   const [listingNote, setListingNote] = useState("")
   const [listingMaxApplicants, setListingMaxApplicants] = useState<string>("25")
@@ -243,8 +268,11 @@ export function AuthGateModal({
     setListingEndDate("")
     setListingOneDay(false)
     setListingCommitment("egy-verseny")
+    setListingMode("segito")
     setListingPosts([])
-    setListingLevel("kezdo")
+    setListingCustomPost("")
+    setListingCrewNeeded(2)
+    setListingBeginnerFriendly(true)
     setListingFocus({ x: 50, y: 50 })
     setListingNote("")
     setListingMaxApplicants("25")
@@ -264,6 +292,24 @@ export function AuthGateModal({
       setListingErrors((prev) => ({ ...prev, post: undefined }))
     }
   }
+
+  function addCustomListingPost() {
+    const value = listingCustomPost.trim().slice(0, MAX_CUSTOM_ROLE_LENGTH)
+    if (!value) return
+    const exists = listingPosts.some((post) => crewRoleLabel(post).toLowerCase() === value.toLowerCase())
+    if (!exists) toggleListingPost(value)
+    setListingCustomPost("")
+  }
+
+  // A kezdőbarát jelölés a meglévő experience_level mezőbe kerül.
+  const listingLevel = listingBeginnerFriendly ? "kezdo" : "halado"
+  const listingPositions = listingMode === "segito" ? ["mancsaft"] : listingPosts
+  const listingCustomPosts = listingPosts.filter((post) => !CREW_ROLES.some((role) => role.value === post))
+  const isListingFlow = view === "listing" || view === "preview"
+  // Eseményből indítva az eseményadatok összecsukva látszanak; hibánál vagy kérésre kinyílnak.
+  const hasListingEventErrors = Boolean(listingErrors.title || listingErrors.location || listingErrors.startDate || listingErrors.endDate)
+  const showListingEventSummary =
+    isEventPrefilledListing && !listingEventDetailsOpen && !hasListingEventErrors && Boolean(listingTitle && listingStartDate)
 
   // Megnyitáskor a kért nézetre ugrunk; skipper esetén alapból a regisztráció.
   useEffect(() => {
@@ -287,6 +333,7 @@ export function AuthGateModal({
       setListingOneDay(Boolean(prefill.oneDay))
       setListingCommitment("egy-verseny")
       setIsEventPrefilledListing(true)
+      setListingEventDetailsOpen(false)
     } else {
       setIsEventPrefilledListing(false)
     }
@@ -803,12 +850,8 @@ export function AuthGateModal({
       newErrors.endDate = "A végdátum nem lehet mai vagy múltbeli."
     }
 
-    if (listingPosts.length === 0) {
-      newErrors.post = "Legalább egy keresett poszt kiválasztása kötelező."
-    }
-
-    if (!listingLevel) {
-      newErrors.level = "Elvárt tapasztalati szint kiválasztása kötelező."
+    if (listingPositions.length === 0) {
+      newErrors.post = "Jelölj be legalább egy posztot, vagy válaszd a segítő kezeket."
     }
 
     if (!boatId) {
@@ -834,7 +877,7 @@ export function AuthGateModal({
     setIsListingSaving(true)
 
     try {
-      const positions = listingPosts
+      const positions = listingPositions
       const dateText = formatDateText(listingStartDate, listingEndDate, listingOneDay)
       const listingPayload = {
         boat_id: boatId,
@@ -848,6 +891,7 @@ export function AuthGateModal({
         location: listingLocation.trim(),
         positions,
         experience_level: listingLevel,
+        crew_needed: listingCrewNeeded,
         captain_note: listingNote.trim() || null,
         max_applicants: listingMaxApplicants === "unlimited" ? null : Number(listingMaxApplicants),
         image_focus_x: Math.round(listingFocus.x),
@@ -883,8 +927,9 @@ export function AuthGateModal({
       event: listingTitle.trim(),
       location: listingLocation.trim(),
       date: formatDateText(listingStartDate, listingEndDate, listingOneDay),
-      roles: listingPosts as ListingRow["roles"],
-      level: listingLevel as ListingRow["level"],
+      roles: listingPositions,
+      crewNeeded: listingCrewNeeded,
+      level: listingLevel,
       applied: false,
       applicationId: null,
       applicationCount: 0,
@@ -912,8 +957,10 @@ export function AuthGateModal({
     <>
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        showCloseButton
-        className="max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] gap-0 overflow-y-auto overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch] rounded-2xl p-0 sm:max-w-lg"
+        showCloseButton={!isListingFlow}
+        className={`max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] gap-0 overflow-y-auto overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch] rounded-2xl p-0 ${
+          isListingFlow ? "sm:max-w-2xl" : "sm:max-w-lg"
+        }`}
       >
         {confirmationRequired ? (
           <div className="flex flex-col gap-6 p-6 sm:p-8">
@@ -1546,17 +1593,13 @@ export function AuthGateModal({
             </form>
           </div>
         ) : view === "preview" ? (
-          <div className="flex flex-col gap-5 p-6 sm:p-8">
-            <DialogHeader className="gap-2">
-              <DialogTitle className="text-balance text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                Így fog kinézni a hirdetésed
-              </DialogTitle>
-              <DialogDescription className="text-pretty leading-relaxed">
-                Ellenőrizd az adatokat, és állítsd be, melyik képrész látszódjon a kártyán.
-              </DialogDescription>
-            </DialogHeader>
+          <form onSubmit={handleListingSubmit} className="flex flex-col">
+            <ListingDialogHeader boatName={boatDisplayName ?? ""} step={2} onClose={() => handleOpenChange(false)} />
 
-            <form onSubmit={handleListingSubmit} className="flex flex-col gap-5">
+            <div className="flex flex-col gap-5 px-5 py-6 sm:px-6">
+              <p className="text-pretty text-sm leading-relaxed text-muted-foreground">
+                Így fog kinézni a hirdetésed. Állítsd be, melyik képrész látszódjon a kártyán.
+              </p>
               <div className="mx-auto w-full max-w-[280px]" aria-hidden="true" inert>
                 <BoatCard
                   listing={buildPreviewListing()}
@@ -1578,308 +1621,420 @@ export function AuthGateModal({
                   </p>
                 </div>
               ) : null}
-
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-                <Button type="button" variant="outline" size="lg" className="h-11" onClick={() => setView("listing")}>
-                  Vissza a szerkesztéshez
-                </Button>
-                <Button
-                  type="submit"
-                  size="lg"
-                  className="h-11 bg-accent! text-base text-accent-foreground! hover:bg-accent/90!"
-                  disabled={isListingSaving}
-                >
-                  {isListingSaving ? "Hirdetés mentése..." : "Hirdetés közzététele"}
-                </Button>
-              </div>
               {listingErrors.submit ? <p className="text-sm text-destructive" role="alert">{listingErrors.submit}</p> : null}
-            </form>
-          </div>
+            </div>
+
+            <div className="sticky bottom-0 z-10 flex flex-col-reverse gap-2 border-t border-border bg-popover px-5 py-3 sm:flex-row sm:justify-between sm:px-6">
+              <Button type="button" variant="outline" className="h-11" onClick={() => setView("listing")}>
+                Vissza a szerkesztéshez
+              </Button>
+              <Button type="submit" className="h-11 bg-brand px-5 text-base text-white hover:bg-brand/90" disabled={isListingSaving}>
+                {isListingSaving ? "Hirdetés mentése..." : "Hirdetés közzététele"}
+              </Button>
+            </div>
+          </form>
         ) : (
-          <div className="flex flex-col gap-6 p-6 sm:p-8">
-            <DialogHeader className="gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                <Anchor className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <DialogTitle className="text-balance text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                Szabad hely hirdetése a fedélzeten
-              </DialogTitle>
-              <DialogDescription className="text-pretty leading-relaxed">
-                Melyik eseményre vagy időszakra keresel legénységet?
-              </DialogDescription>
-            </DialogHeader>
+          <form noValidate onSubmit={handleListingSubmit} className="flex flex-col">
+            <ListingDialogHeader boatName={boatDisplayName ?? ""} step={1} onClose={() => handleOpenChange(false)} />
 
-            <form noValidate onSubmit={handleListingSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-8 px-5 py-6 sm:px-6">
+              <section aria-labelledby="listing-section-when" className="flex flex-col gap-3.5">
+                <ListingSectionTitle id="listing-section-when" number={1}>
+                  Mire keresel?
+                </ListingSectionTitle>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-2 sm:col-span-2">
-                  <Label>Elköteleződés típusa</Label>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {Object.entries(commitmentOptions).map(([value, label]) => {
-                      const active = listingCommitment === value
-                      const disabled = isEventPrefilledListing && value === "szezon"
-
-                      return (
-                        <label
-                          key={value}
-                          className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition-colors ${
-                            active
-                              ? "border-accent bg-accent/10 text-foreground"
-                              : disabled
-                                ? "border-border bg-card text-muted-foreground opacity-50"
-                                : "border-border bg-card text-foreground hover:border-accent/60"
-                          } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
-                        >
-                          <span
-                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                              active ? "border-accent" : "border-muted-foreground"
+                {showListingEventSummary ? (
+                  <>
+                    <div className="flex flex-wrap items-center gap-3.5 rounded-xl bg-secondary/60 p-3.5">
+                      <div className="flex h-13 w-13 shrink-0 flex-col items-center justify-center rounded-xl border border-border bg-card leading-tight">
+                        <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                          {formatShortMonth(listingStartDate)}
+                        </span>
+                        <span className="text-xl font-bold text-brand">{formatDayOfMonth(listingStartDate)}</span>
+                      </div>
+                      <div className="min-w-0 flex-1 basis-48">
+                        <p className="truncate text-base font-bold text-foreground">{listingTitle}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {[formatDateText(listingStartDate, listingEndDate, listingOneDay), listingLocation].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                      <Button type="button" variant="outline" className="h-11" onClick={() => setListingEventDetailsOpen(true)}>
+                        Módosítás
+                      </Button>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Az esemény adatait átvettük, csak azt kell megadnod, kit keresel.</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex gap-1 rounded-xl bg-secondary p-1" role="radiogroup" aria-label="Időtartam">
+                      {listingCommitmentOptions.map((option) => {
+                        const active = listingCommitment === option.value
+                        const disabled = isEventPrefilledListing && option.value === "szezon"
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            disabled={disabled}
+                            onClick={() => {
+                              setListingCommitment(option.value)
+                              if (option.value === "szezon") setListingOneDay(false)
+                            }}
+                            className={`h-10 min-w-0 flex-1 rounded-lg text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:text-[15px] ${
+                              active ? "bg-card text-brand shadow-sm" : "text-muted-foreground hover:text-foreground"
                             }`}
                           >
-                            {active ? <span className="h-2 w-2 rounded-full bg-accent" /> : null}
-                          </span>
-                          <input
-                            type="radio"
-                            name="listing-commitment"
-                            value={value}
-                            checked={active}
-                            disabled={disabled}
-                            onChange={() => {
-                              if (disabled) {
-                                return
-                              }
-                              setListingCommitment(value)
-                              if (value === "szezon") {
-                                setListingOneDay(false)
-                              }
-                            }}
-                            className="sr-only"
-                          />
-                          {label}
-                        </label>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <Label htmlFor="listing-title">Hirdetés címe</Label>
-                  <Input
-                    id="listing-title"
-                    type="text"
-                    value={listingTitle}
-                    onChange={(e) => {
-                      setListingTitle(e.target.value)
-                      if (listingErrors.title) {
-                        setListingErrors((prev) => ({ ...prev, title: undefined }))
-                      }
-                    }}
-                    placeholder='Pl. "Kékszalag Erste Kör"'
-                    className="h-11"
-                    aria-invalid={!!listingErrors.title}
-                  />
-                  {listingErrors.title ? (
-                    <p className="text-sm text-destructive" role="alert">
-                      {listingErrors.title}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <Label htmlFor="listing-location">Helyszín</Label>
-                  <Input
-                    id="listing-location"
-                    type="text"
-                    value={listingLocation}
-                    onChange={(e) => {
-                      setListingLocation(e.target.value)
-                      if (listingErrors.location) {
-                        setListingErrors((prev) => ({ ...prev, location: undefined }))
-                      }
-                    }}
-                    placeholder="Pl. Balatonfüred"
-                    className="h-11"
-                    aria-invalid={!!listingErrors.location}
-                  />
-                  {listingErrors.location ? (
-                    <p className="text-sm text-destructive" role="alert">
-                      {listingErrors.location}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="listing-start-date">
-                      {listingCommitment === "szezon" ? "Szezon kezdete" : "Kezdő dátum"}
-                    </Label>
-                    <DatePicker
-                      id="listing-start-date"
-                      min={getTomorrowDateInputValue()}
-                      value={listingStartDate}
-                      onChange={(value) => {
-                        setListingStartDate(value)
-                        if (listingErrors.startDate) setListingErrors((prev) => ({ ...prev, startDate: undefined }))
-                      }}
-                      aria-invalid={!!listingErrors.startDate}
-                    />
-                    {listingErrors.startDate ? <p className="text-sm text-destructive" role="alert">{listingErrors.startDate}</p> : null}
-                  </div>
-
-                  {listingOneDay ? null : (
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="listing-end-date">
-                        {listingCommitment === "szezon" ? "Szezon vége" : "Végdátum"}
-                      </Label>
-                      <DatePicker
-                        id="listing-end-date"
-                        min={listingStartDate > getTomorrowDateInputValue() ? listingStartDate : getTomorrowDateInputValue()}
-                        value={listingEndDate}
-                        onChange={(value) => {
-                          setListingEndDate(value)
-                          if (listingErrors.endDate) setListingErrors((prev) => ({ ...prev, endDate: undefined }))
-                        }}
-                        aria-invalid={!!listingErrors.endDate}
-                      />
-                      {listingErrors.endDate ? <p className="text-sm text-destructive" role="alert">{listingErrors.endDate}</p> : null}
+                            {option.label}
+                          </button>
+                        )
+                      })}
                     </div>
-                  )}
+
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="listing-title">Cím</Label>
+                      <Input
+                        id="listing-title"
+                        type="text"
+                        value={listingTitle}
+                        onChange={(e) => {
+                          setListingTitle(e.target.value)
+                          if (listingErrors.title) setListingErrors((prev) => ({ ...prev, title: undefined }))
+                        }}
+                        placeholder="Pl. Kékszalag 2027"
+                        className="h-11"
+                        aria-invalid={!!listingErrors.title}
+                      />
+                      {listingErrors.title ? <p className="text-sm text-destructive" role="alert">{listingErrors.title}</p> : null}
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="listing-location">Helyszín</Label>
+                      <Input
+                        id="listing-location"
+                        type="text"
+                        value={listingLocation}
+                        onChange={(e) => {
+                          setListingLocation(e.target.value)
+                          if (listingErrors.location) setListingErrors((prev) => ({ ...prev, location: undefined }))
+                        }}
+                        placeholder="Pl. Balatonfüred"
+                        className="h-11"
+                        aria-invalid={!!listingErrors.location}
+                      />
+                      {listingErrors.location ? <p className="text-sm text-destructive" role="alert">{listingErrors.location}</p> : null}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="listing-start-date">{listingCommitment === "szezon" ? "Szezon kezdete" : "Kezdete"}</Label>
+                        <DatePicker
+                          id="listing-start-date"
+                          min={getTomorrowDateInputValue()}
+                          value={listingStartDate}
+                          onChange={(value) => {
+                            setListingStartDate(value)
+                            if (listingErrors.startDate) setListingErrors((prev) => ({ ...prev, startDate: undefined }))
+                          }}
+                          aria-invalid={!!listingErrors.startDate}
+                        />
+                        {listingErrors.startDate ? <p className="text-sm text-destructive" role="alert">{listingErrors.startDate}</p> : null}
+                      </div>
+
+                      {listingOneDay ? null : (
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor="listing-end-date">{listingCommitment === "szezon" ? "Szezon vége" : "Vége"}</Label>
+                          <DatePicker
+                            id="listing-end-date"
+                            min={listingStartDate > getTomorrowDateInputValue() ? listingStartDate : getTomorrowDateInputValue()}
+                            value={listingEndDate}
+                            onChange={(value) => {
+                              setListingEndDate(value)
+                              if (listingErrors.endDate) setListingErrors((prev) => ({ ...prev, endDate: undefined }))
+                            }}
+                            aria-invalid={!!listingErrors.endDate}
+                          />
+                          {listingErrors.endDate ? <p className="text-sm text-destructive" role="alert">{listingErrors.endDate}</p> : null}
+                        </div>
+                      )}
+                    </div>
+
+                    {listingCommitment === "egy-verseny" ? (
+                      <label htmlFor="listing-one-day" className="flex min-h-11 w-fit cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground">
+                        <input
+                          id="listing-one-day"
+                          type="checkbox"
+                          checked={listingOneDay}
+                          onChange={(e) => setListingOneDay(e.target.checked)}
+                          className="h-4 w-4 rounded border-border accent-accent"
+                        />
+                        Egynapos esemény
+                      </label>
+                    ) : null}
+                  </>
+                )}
+              </section>
+
+              <section aria-labelledby="listing-section-who" className="flex flex-col gap-3.5">
+                <ListingSectionTitle id="listing-section-who" number={2}>
+                  Kit keresel?
+                </ListingSectionTitle>
+
+                <div className="flex gap-1 rounded-xl bg-secondary p-1" role="radiogroup" aria-label="Kit keresel?">
+                  {listingModeOptions.map((option) => {
+                    const active = listingMode === option.value
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => {
+                          setListingMode(option.value)
+                          if (listingErrors.post) setListingErrors((prev) => ({ ...prev, post: undefined }))
+                        }}
+                        className={`h-10 min-w-0 flex-1 rounded-lg text-sm font-semibold transition-colors sm:text-[15px] ${
+                          active ? "bg-card text-brand shadow-sm" : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {option.title}
+                      </button>
+                    )
+                  })}
                 </div>
 
-                {listingCommitment === "egy-verseny" ? (
-                  <div className="sm:col-span-2">
-                    <label
-                      htmlFor="listing-one-day"
-                      className="flex w-fit cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground"
+                {listingMode === "segito" ? (
+                  <p className="text-sm text-muted-foreground">
+                    Bárkit szívesen látsz, a fedélzeten megtanítod. A hirdetésen „Segítő legénység” szerepel.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <div
+                      id="listing-post"
+                      role="group"
+                      aria-label="Keresett posztok"
+                      className={`flex flex-wrap gap-2 rounded-lg ${listingErrors.post ? "outline outline-1 outline-offset-4 outline-destructive" : ""}`}
                     >
-                      <input
-                        id="listing-one-day"
-                        type="checkbox"
-                        checked={listingOneDay}
-                        onChange={(e) => setListingOneDay(e.target.checked)}
-                        className="h-4 w-4 rounded border-border text-accent accent-accent"
+                      {CREW_ROLES.map((role) => {
+                        const selected = listingPosts.includes(role.value)
+                        return (
+                          <button
+                            key={role.value}
+                            type="button"
+                            aria-pressed={selected}
+                            title={role.help}
+                            onClick={() => toggleListingPost(role.value)}
+                            className={`inline-flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-colors ${
+                              selected ? "border-brand bg-brand text-white" : "border-border bg-card text-foreground hover:border-brand/50"
+                            }`}
+                          >
+                            {role.label}
+                            <span className={`text-xs font-normal ${selected ? "text-white/75" : "text-muted-foreground"}`}>{role.term}</span>
+                          </button>
+                        )
+                      })}
+                      {listingCustomPosts.map((post) => (
+                        <button
+                          key={post}
+                          type="button"
+                          aria-label={`${post} törlése`}
+                          onClick={() => toggleListingPost(post)}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-full border border-brand bg-brand px-3.5 text-sm font-medium text-white"
+                        >
+                          {post}
+                          <span aria-hidden="true" className="text-white/75">×</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Input
+                        aria-label="Egyéb poszt neve"
+                        value={listingCustomPost}
+                        maxLength={MAX_CUSTOM_ROLE_LENGTH}
+                        onChange={(e) => setListingCustomPost(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            addCustomListingPost()
+                          }
+                        }}
+                        placeholder="Egyéb poszt, pl. fotós, szerelő"
+                        className="h-11"
                       />
-                      1 napos esemény
-                    </label>
+                      <Button type="button" variant="outline" className="h-11" onClick={addCustomListingPost} disabled={!listingCustomPost.trim()}>
+                        Hozzáadás
+                      </Button>
+                    </div>
                   </div>
+                )}
+
+                {listingErrors.post ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {listingErrors.post}
+                  </p>
                 ) : null}
 
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <Label htmlFor="listing-post">Keresett poszt(ok)</Label>
-                  <div id="listing-post" className={`grid grid-cols-1 gap-2 rounded-lg sm:grid-cols-2 ${listingErrors.post ? "outline outline-1 outline-destructive" : ""}`}>
-                    {listingPostOptions.map((option) => {
-                      const checked = listingPosts.includes(option.value)
-                      return (
-                        <label
-                          key={option.value}
-                          className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-sm transition-colors hover:border-accent/50"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleListingPost(option.value)}
-                            className="h-4 w-4 rounded border-border text-accent accent-accent"
-                          />
-                          <span className="font-medium text-foreground">{option.label}</span>
-                        </label>
-                      )
-                    })}
+                <div className="flex flex-col divide-y divide-border rounded-xl bg-secondary/60">
+                  <div className="flex items-center justify-between gap-3 px-3.5 py-2">
+                    <p className="text-sm font-semibold text-foreground">Hány főt keresel?</p>
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-11 w-11 text-lg"
+                        aria-label="Eggyel kevesebb"
+                        disabled={listingCrewNeeded <= MIN_CREW_NEEDED}
+                        onClick={() => setListingCrewNeeded((n) => Math.max(MIN_CREW_NEEDED, n - 1))}
+                      >
+                        −
+                      </Button>
+                      <span className="w-8 text-center text-lg font-bold text-foreground" aria-live="polite">
+                        {listingCrewNeeded}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-11 w-11 text-lg"
+                        aria-label="Eggyel több"
+                        disabled={listingCrewNeeded >= MAX_CREW_NEEDED}
+                        onClick={() => setListingCrewNeeded((n) => Math.min(MAX_CREW_NEEDED, n + 1))}
+                      >
+                        +
+                      </Button>
+                    </div>
                   </div>
-                  {listingPosts.length > 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      Kiválasztva: {listingPosts
-                        .map((value) => listingPostOptions.find((option) => option.value === value)?.label ?? value)
-                        .join(", ")}
-                    </p>
-                  ) : null}
-                  {listingErrors.post ? (
-                    <p className="text-sm text-destructive" role="alert">
-                      {listingErrors.post}
-                    </p>
-                  ) : null}
+                  <label className="flex min-h-11 cursor-pointer items-center gap-3 px-3.5 py-2">
+                    <input
+                      type="checkbox"
+                      checked={listingBeginnerFriendly}
+                      onChange={(e) => setListingBeginnerFriendly(e.target.checked)}
+                      className="h-4 w-4 rounded border-border accent-accent"
+                    />
+                    <span className="text-sm text-foreground">
+                      <span className="font-medium">Kezdőket is szívesen látok</span>
+                      <span className="text-muted-foreground"> · „Kezdőbarát” jelölést kap</span>
+                    </span>
+                  </label>
                 </div>
+              </section>
 
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <Label htmlFor="listing-note">Megjegyzés a hirdetéshez (opcionális)</Label>
+              <section aria-labelledby="listing-section-details" className="flex flex-col gap-3.5">
+                <ListingSectionTitle id="listing-section-details" number={3} hint="nem kötelező">
+                  Részletek
+                </ListingSectionTitle>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="listing-note">Üzenet a jelentkezőknek</Label>
                   <textarea
                     id="listing-note"
                     value={listingNote}
                     onChange={(e) => setListingNote(e.target.value.slice(0, 300))}
                     maxLength={300}
-                    rows={3}
-                    placeholder="Pl. összeszokott csapat vagyunk, versenytapasztalat előny, indulás péntek este..."
-                    className="min-h-[88px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    rows={2}
+                    placeholder="Pl. összeszokott csapat vagyunk, indulás péntek este."
+                    className="min-h-[68px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   />
-                  <p className="text-xs text-muted-foreground">{listingNote.length}/300 karakter</p>
+                  <p className="text-right text-xs text-muted-foreground">{listingNote.length} / 300</p>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="listing-level">Elvárt tapasztalati szint</Label>
-                  <Select value={listingLevel} onValueChange={(v) => {
-                    setListingLevel(v as string)
-                    if (listingErrors.level) {
-                      setListingErrors((prev) => ({ ...prev, level: undefined }))
-                    }
-                  }}>
-                    <SelectTrigger id="listing-level" className="h-11 w-full" aria-invalid={!!listingErrors.level}>
-                      <SelectValue>{(v: string) => levelOptions[v] ?? "Válassz"}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(levelOptions).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {listingErrors.level ? (
-                    <p className="text-sm text-destructive" role="alert">
-                      {listingErrors.level}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="listing-max-applicants">Maximum jelentkezők száma</Label>
-                  <Select value={listingMaxApplicants} onValueChange={(v) => setListingMaxApplicants(v as string)}>
-                    <SelectTrigger id="listing-max-applicants" className="h-11 w-full">
-                      <SelectValue>{(v: string) => (v === "unlimited" ? "Korlátlan" : `${v} jelentkező`)}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {["10", "25", "50", "unlimited"].map((value) => (
-                        <SelectItem key={value} value={value}>
-                          <span className="flex w-full items-center justify-between gap-3">
-                            {value === "unlimited" ? "Korlátlan" : `${value} jelentkező`}
-                            {value === "50" || value === "unlimited" ? (
-                              <span className="rounded-md bg-brand-orange px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-brand">
-                                Pro
-                              </span>
-                            ) : null}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <span id="listing-max-applicants" className="text-sm font-medium text-foreground">
+                    Legfeljebb ennyi jelentkezőt fogadsz
+                  </span>
+                  <div role="radiogroup" aria-labelledby="listing-max-applicants" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {listingMaxApplicantOptions.map((option) => {
+                      const active = listingMaxApplicants === option.value
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => setListingMaxApplicants(option.value)}
+                          className={`flex h-11 items-center justify-center gap-1.5 rounded-lg border text-sm font-semibold transition-colors ${
+                            active ? "border-2 border-brand bg-brand/5 text-brand" : "border-border bg-card text-foreground hover:border-brand/50"
+                          }`}
+                        >
+                          {option.label}
+                          {option.pro ? (
+                            <span className="rounded-md bg-brand-orange px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-brand-orange-foreground">
+                              Pro
+                            </span>
+                          ) : null}
+                        </button>
+                      )
+                    })}
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    Az elutasított jelentkezők nem számítanak bele. Betelés után nem lehet újra jelentkezni. A „Pro” opciók egyelőre demó jelleggel ingyenesen kiválaszthatók.
+                    Az elutasítottak nem számítanak bele. A Pro opciók egyelőre ingyen kipróbálhatók.
                   </p>
                 </div>
-              </div>
-
-              <Button
-                type="submit"
-                size="lg"
-                className="mt-1 h-11 w-full bg-accent! text-base text-accent-foreground! hover:bg-accent/90!"
-                disabled={isListingSaving}
-              >
-                {isListingSaving ? "Hirdetés mentése..." : "Tovább az előnézethez"}
-              </Button>
+              </section>
               {listingErrors.submit ? <p className="text-sm text-destructive" role="alert">{listingErrors.submit}</p> : null}
-            </form>
-          </div>
+            </div>
+
+            <div className="sticky bottom-0 z-10 flex flex-col gap-3 border-t border-border bg-popover px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <p className="min-w-0 text-sm text-muted-foreground">
+                <span className="font-bold text-foreground">{listingCrewNeeded} fő</span>
+                {listingPositions.length > 0 ? ` · ${listingPositions.map((post) => crewRoleLabel(post).toLowerCase()).join(", ")}` : ""}
+                {listingBeginnerFriendly ? " · kezdőbarát" : ""}
+              </p>
+              <div className="flex shrink-0 gap-2">
+                <Button type="button" variant="outline" className="h-11 flex-1 sm:flex-none" onClick={() => handleOpenChange(false)}>
+                  Mégse
+                </Button>
+                <Button type="submit" className="h-11 flex-[2] bg-brand px-5 text-base text-white hover:bg-brand/90 sm:flex-none" disabled={isListingSaving}>
+                  Tovább az előnézethez
+                </Button>
+              </div>
+            </div>
+          </form>
         )}
       </DialogContent>
     </Dialog>
     <ImageUploadErrorDialog message={avatarError} onClose={() => setAvatarError(null)} />
     </>
+  )
+}
+
+function ListingDialogHeader({ boatName, step, onClose }: { boatName: string; step: 1 | 2; onClose: () => void }) {
+  return (
+    <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-popover px-5 py-4 sm:px-6">
+      <DialogHeader className="min-w-0 gap-0.5">
+        <DialogTitle className="text-xl font-bold tracking-tight text-foreground">Hirdetés feladása</DialogTitle>
+        <DialogDescription className="text-sm">
+          {boatName ? `${boatName} · ` : ""}
+          <span className={step === 1 ? "font-semibold text-brand" : undefined}>1. Adatok</span>
+          <span aria-hidden="true"> → </span>
+          <span className={step === 2 ? "font-semibold text-brand" : undefined}>2. Előnézet</span>
+        </DialogDescription>
+      </DialogHeader>
+      <Button type="button" variant="ghost" size="icon" className="h-11 w-11 shrink-0" aria-label="Bezárás" onClick={onClose}>
+        <X className="h-5 w-5" aria-hidden="true" />
+      </Button>
+    </div>
+  )
+}
+
+function ListingSectionTitle({
+  id,
+  number,
+  hint,
+  children,
+}: {
+  id: string
+  number: number
+  hint?: string
+  children: React.ReactNode
+}) {
+  return (
+    <h3 id={id} className="flex items-center gap-2.5 text-base font-bold text-foreground">
+      <span className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[13px] font-bold text-brand-ink">
+        {number}
+      </span>
+      {children}
+      {hint ? <span className="text-sm font-medium text-muted-foreground">{hint}</span> : null}
+    </h3>
   )
 }

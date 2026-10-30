@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
-import { Flag, CalendarDays, MapPin, Users, Award, Sailboat, ChevronDown, TriangleAlert, UserCheck } from "lucide-react"
+import { Flag, CalendarDays, MapPin, Users, Award, Sailboat, TriangleAlert, UserCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -28,8 +28,10 @@ import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/components/auth-provider"
 import { type Commitment, type Level } from "@/lib/mock-data"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
+import { CREW_ROLES, crewRoleLabel, isCrewRoleKey, normalizeCrewRoles } from "@/lib/crew-roles"
 
-type ListingPost = "kormanyos" | "taktikus" | "main-trim" | "jib-trim" | "mast" | "fordeck" | "barmilyen"
+// Poszt-kulcs (lib/crew-roles) vagy a kapitány által beírt egyedi poszt.
+type ListingPost = string
 
 export type ListingRow = {
   id: string
@@ -43,6 +45,7 @@ export type ListingRow = {
   location: string
   date: string
   roles: ListingPost[]
+  crewNeeded: number | null
   level: Level
   applied: boolean
   applicationId: string | null
@@ -59,18 +62,8 @@ const commitmentLabels: Record<Commitment, string> = {
   szezon: "Szezonra",
 }
 
-const roleLabels: Record<ListingPost, string> = {
-  kormanyos: "Kormányos",
-  taktikus: "Taktikus",
-  "main-trim": "Main Trim",
-  "jib-trim": "Jib trim",
-  mast: "Mast",
-  fordeck: "Fordeck",
-  barmilyen: "Bármilyen",
-}
-
 const levelLabels: Record<Level, string> = {
-  kezdo: "Kezdő",
+  kezdo: "Kezdőbarát",
   halado: "Haladó",
   profi: "Profi / Versenyző",
 }
@@ -88,16 +81,6 @@ const commitmentFilterLabels: Record<string, string> = {
   [ALL]: "Összes",
   "egy-verseny": "Csak egy verseny",
   szezon: "Hosszútávú / Szezoncsapat",
-}
-
-const postFilterLabels: Record<string, string> = {
-  [ALL]: "Összes",
-  kormanyos: "Kormányos",
-  taktikus: "Taktikus",
-  "main-trim": "Main Trim",
-  "jib-trim": "Jib trim",
-  mast: "Mast",
-  fordeck: "Fordeck",
 }
 
 type SortMode = "soon" | "newest"
@@ -131,31 +114,9 @@ function applySort<T>(query: T, sort: SortMode): T {
   ) as T
 }
 
-const levelFilterLabels: Record<string, string> = {
-  [ALL]: "Mindegy",
-  ...levelLabels,
-}
-
 function toIlikeValue(term: string) {
   const escaped = term.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_").replace(/"/g, '\\"')
   return `"%${escaped}%"`
-}
-
-function normalizePost(positionRaw: unknown): ListingPost {
-  const normalized = String(positionRaw ?? "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-
-  if (normalized === "kormanyos") return "kormanyos"
-  if (normalized === "taktikus") return "taktikus"
-  if (normalized === "main-trim" || normalized === "main trim") return "main-trim"
-  if (normalized === "jib-trim" || normalized === "jib trim") return "jib-trim"
-  if (normalized === "mast") return "mast"
-  if (normalized === "fordeck" || normalized === "foredeck") return "fordeck"
-  if (normalized === "barmilyen" || normalized === "mindegy" || normalized === "egyeb") return "barmilyen"
-  return "barmilyen"
 }
 
 export function BrowseBoats() {
@@ -166,7 +127,7 @@ export function BrowseBoats() {
   const initialPosts = (searchParams.get("post") ?? "")
     .split(",")
     .map((value) => value.trim())
-    .filter((value): value is ListingPost => value in roleLabels)
+    .filter(isCrewRoleKey)
 
   const [commitment, setCommitmentState] = useState<string>(() => searchParams.get("commitment") ?? ALL)
   const [posts, setPostsState] = useState<ListingPost[]>(() => Array.from(new Set(initialPosts)))
@@ -178,8 +139,6 @@ export function BrowseBoats() {
   const sortRef = useRef<SortMode>(sort)
   const [searchInput, setSearchInput] = useState<string>(() => searchParams.get("q") ?? "")
   const [search, setSearch] = useState<string>(() => searchParams.get("q") ?? "")
-  const [postDropdownOpen, setPostDropdownOpen] = useState(false)
-  const postDropdownRef = useRef<HTMLDivElement | null>(null)
 
   function setCommitment(v: string) {
     setCommitmentState(v)
@@ -230,27 +189,6 @@ export function BrowseBoats() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput])
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (!postDropdownRef.current?.contains(event.target as Node)) {
-        setPostDropdownOpen(false)
-      }
-    }
-
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setPostDropdownOpen(false)
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside)
-    document.addEventListener("keydown", handleEscape)
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside)
-      document.removeEventListener("keydown", handleEscape)
-    }
-  }, [])
   const [listingsData, setListingsData] = useState<ListingRow[]>([])
   const [authOpen, setAuthOpen] = useState(false)
   const [selectedBoat, setSelectedBoat] = useState<string | undefined>(undefined)
@@ -428,7 +366,7 @@ export function BrowseBoats() {
       }
       setLoadError(null)
 
-      const adsSelect = "id, user_id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url, original_image_url)"
+      const adsSelect = "id, user_id, title, date_text, location, positions, crew_needed, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url, original_image_url)"
       const from = pageIndex * PAGE_SIZE
       const to = from + PAGE_SIZE - 1
 
@@ -553,9 +491,7 @@ export function BrowseBoats() {
       const visibleAds = (data ?? []).filter((ad: any) => isAdVisibleByDate(ad))
 
       const mapped: ListingRow[] = visibleAds.map((ad: any) => {
-        const rawPositions = Array.isArray(ad.positions) ? ad.positions : []
-        const roles = Array.from(new Set(rawPositions.map((position: unknown) => normalizePost(position)))) as ListingPost[]
-        const normalizedRoles: ListingPost[] = roles.length > 0 ? roles : ["barmilyen"]
+        const roles = normalizeCrewRoles(ad.positions)
         const captainData = usersById.get(ad.user_id)
         const applicationCounts = applicationCountsByAdId.get(String(ad.id))
 
@@ -570,7 +506,8 @@ export function BrowseBoats() {
           event: ad.title ?? "",
           location: ad.location ?? "",
           date: ad.date_text ?? "",
-          roles: normalizedRoles,
+          roles: roles.length > 0 ? roles : ["mancsaft"],
+          crewNeeded: typeof ad.crew_needed === "number" ? ad.crew_needed : null,
           level: (ad.experience_level ?? "halado") as Level,
           applied: appliedAdIdMap.has(ad.id),
           applicationId: appliedAdIdMap.get(ad.id) ?? null,
@@ -626,12 +563,6 @@ export function BrowseBoats() {
     window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname)
   }
 
-  const selectedPostsLabel = useMemo(() => {
-    if (posts.length === 0) return postFilterLabels[ALL]
-    if (posts.length === 1) return roleLabels[posts[0]]
-    return `${posts.length} kiválasztva`
-  }, [posts])
-
   const filterTriggerClass = "h-8 w-full sm:w-56"
 
   return (
@@ -671,71 +602,16 @@ export function BrowseBoats() {
           </Select>
         </FilterField>
 
-        <FilterField label="Keresett pozíció">
-          <div className="relative" ref={postDropdownRef}>
-            <button
-              type="button"
-              onClick={() => setPostDropdownOpen((prev) => !prev)}
-              className="flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:w-56"
-              aria-haspopup="listbox"
-              aria-expanded={postDropdownOpen}
-            >
-              <span className="block flex-1 truncate text-left">{selectedPostsLabel}</span>
-              <ChevronDown
-                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${postDropdownOpen ? "rotate-180" : "rotate-0"}`}
-                aria-hidden="true"
-              />
-            </button>
-
-            {postDropdownOpen ? (
-              <div className="absolute z-20 mt-1 w-full rounded-md border border-border bg-popover p-1 shadow-md sm:w-56">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPostsState([])
-                    updateUrl({ commitment, posts: [], level, q: search })
-                  }}
-                  className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent/10"
-                >
-                  <span>Összes</span>
-                  {posts.length === 0 ? <span className="text-accent">✓</span> : null}
-                </button>
-
-                {(Object.keys(roleLabels) as ListingPost[])
-                  .filter((value) => value !== "barmilyen")
-                  .map((value) => {
-                    const selected = posts.includes(value)
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => togglePost(value)}
-                        className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent/10"
-                        role="option"
-                        aria-selected={selected}
-                      >
-                        <span>{roleLabels[value]}</span>
-                        {selected ? <span className="text-accent">✓</span> : null}
-                      </button>
-                    )
-                  })}
-              </div>
-            ) : null}
-          </div>
-        </FilterField>
-
-        <FilterField label="Tapasztalati szint">
-          <Select value={level} onValueChange={(v) => setLevel(v as string)}>
-            <SelectTrigger className={filterTriggerClass}>
-              <SelectValue>{(v: string) => levelFilterLabels[v] ?? "Mindegy"}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Mindegy</SelectItem>
-              <SelectItem value="kezdo">Kezdő</SelectItem>
-              <SelectItem value="halado">Haladó</SelectItem>
-              <SelectItem value="profi">Profi / Versenyző</SelectItem>
-            </SelectContent>
-          </Select>
+        <FilterField label="Tapasztalat">
+          <label className="flex h-8 cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
+            <input
+              type="checkbox"
+              checked={level === "kezdo"}
+              onChange={(event) => setLevel(event.target.checked ? "kezdo" : ALL)}
+              className="h-4 w-4 rounded border-border accent-accent"
+            />
+            Csak kezdőbarát
+          </label>
         </FilterField>
 
         <FilterField label="Rendezés">
@@ -757,6 +633,31 @@ export function BrowseBoats() {
               ? `${totalCount} szabad hely (${listingsData.length} betöltve)`
               : `${listingsData.length} szabad hely`}
         </p>
+
+        <div className="flex flex-col gap-2 sm:basis-full">
+          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Mit vállalnál?</span>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Mit vállalnál?">
+            {CREW_ROLES.map((role) => {
+              const selected = posts.includes(role.value)
+              return (
+                <button
+                  key={role.value}
+                  type="button"
+                  onClick={() => togglePost(role.value)}
+                  aria-pressed={selected}
+                  title={role.term}
+                  className={`inline-flex h-10 items-center rounded-full border px-4 text-sm font-medium transition-colors ${
+                    selected
+                      ? "border-brand bg-brand text-white"
+                      : "border-border bg-background text-foreground hover:border-brand/50"
+                  }`}
+                >
+                  {role.shortLabel}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
       {loadError ? (
@@ -1017,12 +918,13 @@ export function BoatCard({
         <div className="flex flex-wrap gap-1.5">
           <Badge
             className="max-w-full gap-1 border-0 bg-secondary font-normal text-secondary-foreground"
-            aria-label={`Szükséges poszt: ${listing.roles.map((role) => roleLabels[role]).join(", ")}`}
-            title={listing.roles.map((role) => roleLabels[role]).join(", ")}
+            aria-label={`Szükséges poszt: ${listing.roles.map((role) => crewRoleLabel(role)).join(", ")}`}
+            title={listing.roles.map((role) => crewRoleLabel(role)).join(", ")}
           >
             <Users className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="truncate" aria-hidden="true">
-              {listing.roles.slice(0, 2).map((role) => roleLabels[role]).join(", ")}
+              {listing.crewNeeded ? `${listing.crewNeeded} fő · ` : ""}
+              {listing.roles.slice(0, 2).map((role) => crewRoleLabel(role)).join(", ")}
               {listing.roles.length > 2 ? ` +${listing.roles.length - 2}` : ""}
             </span>
           </Badge>
@@ -1253,7 +1155,8 @@ function ListingDetailsDialog({
             <DetailLine icon={Flag} label="Esemény" value={listing.event} />
             {listing.location ? <DetailLine icon={MapPin} label="Helyszín" value={listing.location} /> : null}
             <DetailLine icon={CalendarDays} label="Dátum" value={listing.date} />
-            <DetailLine icon={Users} label="Szükséges poszt" value={listing.roles.map((role) => roleLabels[role]).join(", ")} />
+            {listing.crewNeeded ? <DetailLine icon={Users} label="Keresett létszám" value={`${listing.crewNeeded} fő`} /> : null}
+            <DetailLine icon={Users} label="Szükséges poszt" value={listing.roles.map((role) => crewRoleLabel(role)).join(", ")} />
             <DetailLine icon={Award} label="Elvárt tapasztalat" value={levelLabels[listing.level]} />
           </div>
 
@@ -1503,7 +1406,7 @@ function ApplyDialog({
   isSubmitting: boolean
   onSubmit: (applicationMessage?: string) => void
 }) {
-  const selectableRoles = useMemo(() => listing.roles.filter((role) => role !== "barmilyen"), [listing.roles])
+  const selectableRoles = useMemo(() => listing.roles, [listing.roles])
   const [selectedRole, setSelectedRole] = useState<ListingPost | "">(selectableRoles[0] ?? "")
   const [message, setMessage] = useState("")
   const wasSubmittingRef = useRef(false)
@@ -1526,7 +1429,7 @@ function ApplyDialog({
   const handleSubmit = () => {
     const parts: string[] = []
     if (selectableRoles.length > 1 && selectedRole) {
-      parts.push(`Jelentkezett pozíció: ${roleLabels[selectedRole]}`)
+      parts.push(`Jelentkezett pozíció: ${crewRoleLabel(selectedRole)}`)
     }
     const trimmedMessage = message.trim()
     if (trimmedMessage) parts.push(trimmedMessage)
@@ -1557,12 +1460,12 @@ function ApplyDialog({
               </Label>
               <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as ListingPost)}>
                 <SelectTrigger id="apply-role" className="w-full">
-                  <SelectValue>{(v: string) => roleLabels[v as ListingPost] ?? "Válassz pozíciót"}</SelectValue>
+                  <SelectValue>{(v: string) => (v ? crewRoleLabel(v) : undefined) ?? "Válassz pozíciót"}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {selectableRoles.map((role) => (
                     <SelectItem key={role} value={role}>
-                      {roleLabels[role]}
+                      {crewRoleLabel(role)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1572,7 +1475,7 @@ function ApplyDialog({
             <div className="flex flex-wrap gap-1.5">
               <Badge className="gap-1 border-0 bg-secondary font-normal text-secondary-foreground">
                 <Users className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
-                {listing.roles.map((role) => roleLabels[role]).join(", ")}
+                {listing.roles.map((role) => crewRoleLabel(role)).join(", ")}
               </Badge>
               <Badge className="gap-1 border-0 bg-secondary font-normal text-secondary-foreground">
                 <Award className="h-3 w-3 text-muted-foreground" aria-hidden="true" />

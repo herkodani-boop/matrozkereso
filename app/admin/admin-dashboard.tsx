@@ -98,6 +98,7 @@ const categoryFields: Record<Exclude<PlatformArea, "reports">, FieldDefinition[]
     { key: "end_date", label: "Záró dátum", type: "date" },
     { key: "captain_note", label: "Megjegyzés" },
     { key: "max_applicants", label: "Jelentkezők maximális száma", type: "number" },
+    { key: "crew_needed", label: "Keresett létszám", type: "number" },
     { key: "is_active", label: "Aktív hirdetés", type: "boolean" },
   ],
   events: [

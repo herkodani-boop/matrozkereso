@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 import {
   calculateAge,
   experienceLevelLabel,
-  formatPositionLabel,
   isMatchingListingToEvent,
   normalizeMatchText,
   resolveCrewTypeLabel,
@@ -31,18 +30,6 @@ describe("experienceLevelLabel", () => {
   it("falls back to Kezdő for unknown values", () => {
     expect(experienceLevelLabel(undefined)).toBe("Kezdő")
     expect(experienceLevelLabel("ismeretlen")).toBe("Kezdő")
-  })
-})
-
-describe("formatPositionLabel", () => {
-  it("normalizes accented/hyphenated position keys to display labels", () => {
-    expect(formatPositionLabel("kormanyos")).toBe("Kormányos")
-    expect(formatPositionLabel("main-trim")).toBe("Main Trim")
-    expect(formatPositionLabel("jib trim")).toBe("Jib trim")
-  })
-
-  it("falls back to Legénység for empty input", () => {
-    expect(formatPositionLabel(null)).toBe("Legénység")
   })
 })
 

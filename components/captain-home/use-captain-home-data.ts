@@ -13,6 +13,10 @@ export type HomeEvent = {
   startDate: string
   endDate: string | null
   location: string
+  // Az esemény megjegyzésének első sora (pl. gyülekező), üres, ha nincs.
+  note: string
+  // Üzenetküldéshez: hány címzett van csoportonként (a kapitány nélkül).
+  audience: { confirmed: number; unanswered: number; declined: number }
   // Ugyanaz a kör, mint a dashboard résztvevőlistájában: csapattagok (aktív és meghívott) és a többi résztvevő.
   attendance: { confirmed: number; declined: number; unanswered: number; total: number }
   confirmedPeople: HomePerson[]
@@ -30,7 +34,7 @@ export type HomeTodo = {
   id: string
   // "attention": döntésre vár (narancs ikon), "info": érdemes ránézni
   tone: "attention" | "info"
-  icon: "applicants" | "declined" | "calendar" | "clock"
+  icon: "shortfall" | "applicants" | "calendar" | "accepted" | "invite"
   title: string
   detail: string
   actionLabel: string
@@ -39,22 +43,25 @@ export type HomeTodo = {
 }
 
 export type CaptainHomeData = {
-  boat: { id: string; name: string; imageUrl: string | null; type: string; harbor: string }
+  boat: { id: string; name: string; imageUrl: string | null; type: string; harbor: string; maxCrew: number | null }
   crewCount: number
   upcomingCount: number
   events: HomeEvent[]
   listings: HomeListing[]
   todos: HomeTodo[]
   totalPending: number
-  daysUntilNextRace: number | null
   // Kezdő lépések egy új hajónál; ha mind kész, a lépéssor eltűnik.
   onboarding: { invitedCrew: boolean; createdEvent: boolean; createdListing: boolean }
 }
 
 const EVENTS_SHOWN = 6
-const RECENT_DECLINE_DAYS = 7
-const UNANSWERED_WINDOW_DAYS = 14
-const EXPIRY_WARNING_DAYS = 3
+// Ennyi napon belüli versenynél jelezzük, ha kevés a jelentkező.
+const SHORTFALL_WINDOW_DAYS = 21
+// Ennyi napon belüli eseménynél soroljuk fel, ki nem válaszolt még.
+const UNANSWERED_WINDOW_DAYS = 7
+const STALE_INVITE_DAYS = 7
+// A "Hirdetéseid" listában ennyi napon belüli lejáratot emelünk ki.
+export const EXPIRY_WARNING_DAYS = 3
 
 export function getTodayKey() {
   const today = new Date()
@@ -67,6 +74,21 @@ export function daysUntil(dateKey: string) {
 }
 
 const longDate = new Intl.DateTimeFormat("hu-HU", { month: "long", day: "numeric" })
+
+function whenLabel(days: number) {
+  return days <= 0 ? "ma" : days === 1 ? "holnap" : `${days} nap múlva`
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+// "Gábor", "Gábor és Réka", "Gábor, Réka és még 2 fő"
+function joinNames(names: string[]) {
+  if (names.length <= 1) return names[0] ?? ""
+  if (names.length === 2) return `${names[0]} és ${names[1]}`
+  return `${names[0]}, ${names[1]} és még ${names.length - 2} fő`
+}
 
 export function formatLongDate(dateKey: string) {
   return longDate.format(new Date(`${dateKey}T12:00:00`))
@@ -81,13 +103,14 @@ type RawAd = { id: string; title: string | null; commitment: string | null; star
 
 // A lekérdezések nyers eredménye; a feldolgozás külön, tiszta függvényben van, hogy tesztelhető legyen.
 export type RawCaptainHome = {
-  boat: { id: string; name: string | null; image_url: string | null; original_image_url: string | null; type: string | null; harbor: string | null }
-  team: { user_id: string | null; status: string }[]
-  events: { id: string; title: string | null; type: string | null; start_date: string; end_date: string | null; location: string | null }[]
+  boat: { id: string; name: string | null; image_url: string | null; original_image_url: string | null; type: string | null; harbor: string | null; max_crew_size?: number | null }
+  team: { user_id: string | null; status: string; display_name?: string | null; email?: string | null; invited_at?: string | null }[]
+  events: { id: string; title: string | null; type: string | null; start_date: string; end_date: string | null; location: string | null; notes?: string | null }[]
   upcomingCount: number | null
   ads: RawAd[]
   attendees: { event_id: string; user_id: string; status: string; updated_at: string }[]
-  pendingApplications: { ad_id: string }[]
+  // Függő és elfogadott jelentkezések az élő hirdetésekre.
+  applications: { ad_id: string; user_id: string | null; status: string }[]
   profiles: { id: string; full_name: string | null; avatar_url: string | null }[]
   // Volt-e valaha eseménye / hirdetése (a múltbeliek és lezártak is számítanak).
   hasAnyEvent: boolean
@@ -99,11 +122,11 @@ async function loadCaptainHome(boatId: string, captainId: string): Promise<Capta
 
   // 1. kör: minden, ami csak a hajótól függ. A két "head" számlálás a kezdő lépéssorhoz kell.
   const [boatResult, teamResult, eventsResult, adsResult, anyEventResult, anyListingResult] = await Promise.all([
-    supabase.from("boats").select("id, name, image_url, original_image_url, type, harbor").eq("id", boatId).maybeSingle(),
-    supabase.from("boat_team_members").select("user_id, status").eq("boat_id", boatId).in("status", ["active", "invited"]),
+    supabase.from("boats").select("id, name, image_url, original_image_url, type, harbor, max_crew_size").eq("id", boatId).maybeSingle(),
+    supabase.from("boat_team_members").select("user_id, status, display_name, email, invited_at").eq("boat_id", boatId).in("status", ["active", "invited"]),
     supabase
       .from("boat_events")
-      .select("id, title, type, start_date, end_date, location", { count: "exact" })
+      .select("id, title, type, start_date, end_date, location, notes", { count: "exact" })
       .eq("boat_id", boatId)
       .or(`end_date.gte.${todayKey},and(end_date.is.null,start_date.gte.${todayKey})`)
       .order("start_date", { ascending: true })
@@ -132,23 +155,25 @@ async function loadCaptainHome(boatId: string, captainId: string): Promise<Capta
       ? supabase.from("users").select("id, full_name, avatar_url").in("id", ids)
       : Promise.resolve({ data: [] as ProfileRow[], error: null })
 
-  // 2. kör: résztvevők, függő jelentkezések és a csapattagok profiljai egyszerre.
+  // 2. kör: résztvevők, függő és elfogadott jelentkezések és a csapattagok profiljai egyszerre.
   const [attendeesResult, applicationsResult, teamProfilesResult] = await Promise.all([
     eventIds.length > 0
       ? supabase.from("boat_event_attendees").select("event_id, user_id, status, updated_at").in("event_id", eventIds)
       : Promise.resolve({ data: [] as RawCaptainHome["attendees"], error: null }),
     visibleAds.length > 0
-      ? supabase.from("applications").select("ad_id").in("ad_id", visibleAds.map((ad) => ad.id)).eq("status", "pending")
-      : Promise.resolve({ data: [] as { ad_id: string }[], error: null }),
+      ? supabase.from("applications").select("ad_id, user_id, status").in("ad_id", visibleAds.map((ad) => ad.id)).in("status", ["pending", "accepted"])
+      : Promise.resolve({ data: [] as RawCaptainHome["applications"], error: null }),
     loadProfiles(teamUserIds),
   ])
   const secondError = attendeesResult.error ?? applicationsResult.error ?? teamProfilesResult.error
   if (secondError) throw secondError
 
-  // 3. kör csak akkor, ha egy eseményen csapaton kívüli résztvevő is van (pl. elfogadott jelentkező).
+  // 3. kör csak akkor, ha csapaton kívüli résztvevő vagy elfogadott jelentkező is van.
   const attendees = (attendeesResult.data ?? []) as RawCaptainHome["attendees"]
+  const applications = (applicationsResult.data ?? []) as RawCaptainHome["applications"]
   const knownIds = new Set(teamUserIds)
-  const missingIds = Array.from(new Set(attendees.map((row) => String(row.user_id)).filter((id) => !knownIds.has(id))))
+  const acceptedIds = applications.filter((row) => row.status === "accepted" && row.user_id).map((row) => String(row.user_id))
+  const missingIds = Array.from(new Set([...attendees.map((row) => String(row.user_id)), ...acceptedIds].filter((id) => !knownIds.has(id))))
   const extraProfilesResult = await loadProfiles(missingIds)
   if (extraProfilesResult.error) throw extraProfilesResult.error
 
@@ -159,7 +184,7 @@ async function loadCaptainHome(boatId: string, captainId: string): Promise<Capta
     upcomingCount: eventsResult.count,
     ads: (adsResult.data ?? []) as RawAd[],
     attendees,
-    pendingApplications: (applicationsResult.data ?? []) as RawCaptainHome["pendingApplications"],
+    applications,
     profiles: [...(teamProfilesResult.data ?? []), ...(extraProfilesResult.data ?? [])] as ProfileRow[],
     hasAnyEvent: (anyEventResult.count ?? 0) > 0,
     hasAnyListing: (anyListingResult.count ?? 0) > 0,
@@ -183,7 +208,8 @@ export function buildCaptainHome(raw: RawCaptainHome, captainId: string, now = D
   }
 
   const pendingByAd = new Map<string, number>()
-  for (const application of raw.pendingApplications) {
+  for (const application of raw.applications) {
+    if (application.status !== "pending") continue
     pendingByAd.set(String(application.ad_id), (pendingByAd.get(String(application.ad_id)) ?? 0) + 1)
   }
 
@@ -196,6 +222,13 @@ export function buildCaptainHome(raw: RawCaptainHome, captainId: string, now = D
     }))
     .sort((first, second) => second.pending - first.pending || (first.expiryDate ?? "9999").localeCompare(second.expiryDate ?? "9999"))
 
+  // A hirdetés időpontja a teendők sorrendjéhez: a hozzá tartozó esemény vagy a hirdetés kezdete.
+  const listingDate = new Map(visibleAds.map((ad) => {
+    const linkedEvent = eventRows.find((row) => String(row.id) === String(ad.event_id ?? ""))
+    return [String(ad.id), String(linkedEvent?.start_date ?? ad.start_date ?? "9999-12-31")] as const
+  }))
+  const unansweredByEvent = new Map<string, HomePerson[]>()
+
   const events: HomeEvent[] = eventRows.map((row) => {
     const eventId = String(row.id)
     const rows = attendees.filter((attendee) => String(attendee.event_id) === eventId)
@@ -207,6 +240,11 @@ export function buildCaptainHome(raw: RawCaptainHome, captainId: string, now = D
       .map((attendee) => personFor(String(attendee.user_id)))
       .sort((first, second) => Number(second.id === captainId) - Number(first.id === captainId))
     const linkedAd = visibleAds.find((ad) => String(ad.event_id ?? "") === eventId)
+    const answeredIds = new Set(rows.filter((attendee) => attendee.status === "confirmed" || attendee.status === "declined").map((attendee) => String(attendee.user_id)))
+    unansweredByEvent.set(
+      eventId,
+      Array.from(roster).filter((userId) => !answeredIds.has(userId) && userId !== captainId).map((userId) => personFor(userId)),
+    )
 
     return {
       id: eventId,
@@ -215,6 +253,12 @@ export function buildCaptainHome(raw: RawCaptainHome, captainId: string, now = D
       startDate: String(row.start_date),
       endDate: (row.end_date as string | null) ?? null,
       location: (row.location as string) || "",
+      note: String(row.notes ?? "").split("\n").map((line) => line.trim()).find(Boolean) ?? "",
+      audience: {
+        confirmed: confirmedRows.filter((attendee) => String(attendee.user_id) !== captainId).length,
+        unanswered: (unansweredByEvent.get(eventId) ?? []).length,
+        declined: rows.filter((attendee) => attendee.status === "declined" && String(attendee.user_id) !== captainId).length,
+      },
       attendance: {
         confirmed: confirmedRows.length,
         declined,
@@ -226,12 +270,46 @@ export function buildCaptainHome(raw: RawCaptainHome, captainId: string, now = D
     }
   })
 
-  const todos: HomeTodo[] = []
-  const totalPending = listings.reduce((sum, listing) => sum + listing.pending, 0)
+  // Minden teendőhöz tartozik egy dátum (a kapcsolódó esemény napja): ami időben a legsürgetőbb, az kerül előre.
+  type RankedTodo = HomeTodo & { sortDate: string; rank: number }
+  const ranked: RankedTodo[] = []
+  const capacity = typeof raw.boat.max_crew_size === "number" && raw.boat.max_crew_size > 0 ? raw.boat.max_crew_size : null
+  const teamIdSet = new Set(teamUserIds)
 
+  // 1. Kevés a jelentkező egy közelgő versenyre: a hajó létszámának kevesebb mint fele jelezte, hogy jön.
+  //    Edzésre, hajószerelésre nem kell teljes legénység, ezért csak versenyt figyelünk. Ha már van
+  //    hirdetés az eseményre, a kapitány lépett; az új jelentkezőket a 2. pont jelzi.
+  for (const event of events) {
+    const days = daysUntil(event.startDate)
+    if (!capacity || event.type !== "Verseny" || event.linkedListing || days < 0 || days > SHORTFALL_WINDOW_DAYS) continue
+    const { confirmed, unanswered } = event.attendance
+    if (confirmed * 2 >= capacity) continue
+    ranked.push({
+      id: `shortfall-${event.id}`,
+      tone: "attention",
+      icon: "shortfall",
+      title: confirmed === 0
+        ? `${event.title}: még senki nem jelezte, hogy jön`
+        : `${event.title}: eddig ${confirmed} fő jelezte, hogy jön`,
+      detail: [capitalize(whenLabel(days)), `${capacity} fős hajó`, unanswered > 0 ? `${unanswered} még nem válaszolt` : null]
+        .filter(Boolean)
+        .join(" · "),
+      actionLabel: "Hirdetés feladása",
+      href: `/kapitany-dashboard?hirdetes-esemenyre=${encodeURIComponent(event.id)}`,
+      primary: false,
+      sortDate: event.startDate,
+      rank: 0,
+    })
+  }
+
+  // 2. Új jelentkezők: az időpontot a hirdetés (vagy a hozzá tartozó esemény) kezdete adja.
+  const totalPending = listings.reduce((sum, listing) => sum + listing.pending, 0)
   if (totalPending > 0) {
     const withPending = listings.filter((listing) => listing.pending > 0)
-    todos.push({
+    const earliest = withPending
+      .map((listing) => listingDate.get(listing.id) ?? "9999-12-31")
+      .sort()[0]
+    ranked.push({
       id: "applicants",
       tone: "attention",
       icon: "applicants",
@@ -239,73 +317,101 @@ export function buildCaptainHome(raw: RawCaptainHome, captainId: string, now = D
       detail: withPending.slice(0, 3).map((listing) => `${listing.title} (${listing.pending})`).join(" · "),
       actionLabel: "Elbírálás",
       href: `/kapitany-dashboard?jelentkezok=${encodeURIComponent(withPending[0].id)}`,
-      primary: true,
-    })
-  }
-
-  const declineCutoff = now - RECENT_DECLINE_DAYS * 86_400_000
-  for (const event of events) {
-    const recentDecliners = attendees
-      .filter((attendee) =>
-        String(attendee.event_id) === event.id &&
-        attendee.status === "declined" &&
-        String(attendee.user_id) !== captainId &&
-        new Date(attendee.updated_at).getTime() >= declineCutoff,
-      )
-      .map((attendee) => personFor(String(attendee.user_id)).name)
-    if (recentDecliners.length === 0) continue
-    const canAdvertise = !event.linkedListing
-    todos.push({
-      id: `declined-${event.id}`,
-      tone: "attention",
-      icon: "declined",
-      title: recentDecliners.length === 1
-        ? `${recentDecliners[0]} nem jön: ${event.title}`
-        : `${recentDecliners.length} csapattag nem jön: ${event.title}`,
-      detail: [formatLongDate(event.startDate), event.location].filter(Boolean).join(", "),
-      actionLabel: canAdvertise ? "Hiányzó helyre hirdetek" : "Résztvevők",
-      href: canAdvertise
-        ? `/kapitany-dashboard?hirdetes-esemenyre=${encodeURIComponent(event.id)}`
-        : `/kapitany-dashboard?esemeny=${encodeURIComponent(event.id)}`,
       primary: false,
+      sortDate: earliest,
+      rank: 1,
     })
   }
 
+  // 3. Közeli esemény, ahol valaki még nem válaszolt: név szerint, mert őket kell megkeresni.
   for (const event of events) {
-    if (event.attendance.unanswered === 0 || daysUntil(event.startDate) > UNANSWERED_WINDOW_DAYS) continue
-    todos.push({
+    const days = daysUntil(event.startDate)
+    const people = unansweredByEvent.get(event.id) ?? []
+    if (people.length === 0 || days < 0 || days > UNANSWERED_WINDOW_DAYS) continue
+    ranked.push({
       id: `unanswered-${event.id}`,
       tone: "info",
       icon: "calendar",
-      title: `${event.attendance.unanswered} csapattag még nem jelzett vissza`,
-      detail: [event.title, formatLongDate(event.startDate), event.location].filter(Boolean).join(" · "),
+      title: `${joinNames(people.map((person) => person.name))} még nem jelzett vissza`,
+      detail: `${event.title} · ${whenLabel(days)}`,
       actionLabel: "Résztvevők",
       href: `/kapitany-dashboard?esemeny=${encodeURIComponent(event.id)}`,
       primary: false,
+      sortDate: event.startDate,
+      rank: 2,
     })
   }
 
-  const expiring = listings.filter((listing) => {
-    if (!listing.expiryDate) return false
-    const days = daysUntil(listing.expiryDate)
-    return days >= 0 && days <= EXPIRY_WARNING_DAYS
-  })
-  if (expiring.length > 0) {
-    const days = daysUntil(expiring[0].expiryDate as string)
-    const when = days === 0 ? "ma" : days === 1 ? "holnap" : `${days} nap múlva`
-    todos.push({
-      id: "expiring",
+  // 4. Elfogadott jelentkező, aki még nincs az esemény résztvevői között.
+  for (const event of events) {
+    const ad = visibleAds.find((candidate) => String(candidate.event_id ?? "") === event.id)
+    if (!ad) continue
+    const onEvent = new Set(attendees.filter((row) => String(row.event_id) === event.id).map((row) => String(row.user_id)))
+    const waiting = raw.applications
+      .filter((application) =>
+        String(application.ad_id) === String(ad.id) &&
+        application.status === "accepted" &&
+        application.user_id &&
+        !onEvent.has(String(application.user_id)) &&
+        !teamIdSet.has(String(application.user_id)),
+      )
+      .map((application) => personFor(String(application.user_id)))
+    if (waiting.length === 0) continue
+    const days = daysUntil(event.startDate)
+    ranked.push({
+      id: `accepted-${event.id}`,
       tone: "info",
-      icon: "clock",
-      title: expiring.length === 1 ? `Egy hirdetésed ${when} lejár` : `${expiring.length} hirdetésed ${EXPIRY_WARNING_DAYS} napon belül lejár`,
-      detail: expiring.map((listing) => listing.title).join(" · "),
-      actionLabel: "Megnézem",
-      href: `/kapitany-dashboard?jelentkezok=${encodeURIComponent(expiring[0].id)}`,
+      icon: "accepted",
+      title: waiting.length === 1
+        ? `${waiting[0].name} elfogadva, de még nincs a résztvevők között`
+        : `${waiting.length} elfogadott jelentkező még nincs a résztvevők között`,
+      detail: `${event.title} · ${whenLabel(days)}`,
+      actionLabel: "Hozzáadás az eseményhez",
+      href: `/kapitany-dashboard?jelentkezok=${encodeURIComponent(String(ad.id))}`,
       primary: false,
+      sortDate: event.startDate,
+      rank: 3,
     })
   }
 
-  const nextRace = events.find((event) => event.type === "Verseny")
+  // 5. Régóta függő csapatmeghívó. Nincs eseménydátuma, ezért a lista végére kerül.
+  const inviteCutoff = now - STALE_INVITE_DAYS * 86_400_000
+  const staleInvites = raw.team.filter((member) =>
+    member.status === "invited" && member.invited_at && new Date(member.invited_at).getTime() < inviteCutoff,
+  )
+  if (staleInvites.length > 0) {
+    const first = staleInvites[0]
+    const firstName = first.display_name?.trim() || first.email || "Egy meghívott"
+    const waitedDays = Math.floor((now - new Date(first.invited_at as string).getTime()) / 86_400_000)
+    ranked.push({
+      id: "invites",
+      tone: "info",
+      icon: "invite",
+      title: staleInvites.length === 1
+        ? `${firstName} ${waitedDays} napja nem fogadta el a meghívódat`
+        : `${staleInvites.length} csapatmeghívód régóta függőben van`,
+      detail: staleInvites.length === 1 ? "Érdemes újraküldeni vagy rákérdezni." : staleInvites.slice(0, 3).map((member) => member.display_name?.trim() || member.email).filter(Boolean).join(" · "),
+      actionLabel: "Meghívó újraküldése",
+      href: "/kapitany-dashboard?ful=csapat",
+      primary: false,
+      sortDate: "9999-12-31",
+      rank: 4,
+    })
+  }
+
+  ranked.sort((first, second) => first.sortDate.localeCompare(second.sortDate) || first.rank - second.rank)
+  // Egyetlen kiemelt gomb: a legsürgetőbb teendőé.
+  const todos: HomeTodo[] = ranked.map((item, index) => ({
+    id: item.id,
+    tone: item.tone,
+    icon: item.icon,
+    title: item.title,
+    detail: item.detail,
+    actionLabel: item.actionLabel,
+    href: item.href,
+    primary: index === 0,
+  }))
+
   const boat = raw.boat
 
   return {
@@ -315,6 +421,7 @@ export function buildCaptainHome(raw: RawCaptainHome, captainId: string, now = D
       imageUrl: (boat.original_image_url as string | null) ?? (boat.image_url as string | null) ?? null,
       type: (boat.type as string) || "",
       harbor: (boat.harbor as string) || "",
+      maxCrew: typeof boat.max_crew_size === "number" && boat.max_crew_size > 0 ? boat.max_crew_size : null,
     },
     crewCount: activeCrewCount,
     upcomingCount: raw.upcomingCount ?? events.length,
@@ -322,7 +429,6 @@ export function buildCaptainHome(raw: RawCaptainHome, captainId: string, now = D
     listings,
     todos,
     totalPending,
-    daysUntilNextRace: nextRace ? daysUntil(nextRace.startDate) : null,
     onboarding: {
       invitedCrew: raw.team.length > 0,
       createdEvent: raw.hasAnyEvent || events.length > 0,

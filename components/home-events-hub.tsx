@@ -97,10 +97,12 @@ function normalizeBoat(boat: unknown) {
   return Array.isArray(boat) ? boat[0] ?? null : boat
 }
 
-export function HomeEventsHub() {
+// otherBoatsOnly: a kapitányi kezdőlapon csak a más hajókon (csapattagként) elérhető események,
+// a saját hajó eseményei nélkül.
+export function HomeEventsHub({ otherBoatsOnly = false }: { otherBoatsOnly?: boolean } = {}) {
   const { status: authStatus, user } = useAuth()
   const authResolved = authStatus === "ready"
-  const [role, setRole] = useState<string | null>(null)
+  const [ownsBoat, setOwnsBoat] = useState(false)
   const [profileMissing, setProfileMissing] = useState(false)
   const [isTeamMember, setIsTeamMember] = useState(false)
   const [events, setEvents] = useState<PersonalEvent[]>([])
@@ -114,7 +116,7 @@ export function HomeEventsHub() {
 
   useEffect(() => {
     if (!user) {
-      setRole(null)
+      setOwnsBoat(false)
       setProfileMissing(false)
       setIsTeamMember(false)
       setEvents([])
@@ -129,7 +131,7 @@ export function HomeEventsHub() {
       const today = getTodayKey()
 
       const [profileResult, boatsResult, membershipsResult, attendeesResult] = await Promise.all([
-        supabase.from("users").select("role").eq("id", user.id).maybeSingle(),
+        supabase.from("users").select("id").eq("id", user.id).maybeSingle(),
         supabase.from("boats").select("id").eq("user_id", user.id),
         supabase.from("boat_team_members").select("boat_id").eq("user_id", user.id).eq("status", "active"),
         supabase.from("boat_event_attendees").select("event_id, status").eq("user_id", user.id),
@@ -141,10 +143,12 @@ export function HomeEventsHub() {
 
       // Hiányzó profilsor törölt/árva auth munkamenetre utal (pl. a felhasználó közvetlenül az adatbázisból lett törölve).
       const profileIsMissing = !profileResult.error && !profileResult.data
-      const profileRole = profileResult.data?.role ?? null
       const ownedBoatIds = (boatsResult.data ?? []).map((boat) => String(boat.id))
       const teamBoatIds = (membershipsResult.data ?? []).map((member) => String(member.boat_id))
-      const boatIds = Array.from(new Set([...ownedBoatIds, ...teamBoatIds]))
+      const isOwnedBoat = (boatId: unknown) => ownedBoatIds.includes(String(boatId))
+      const boatIds = otherBoatsOnly
+        ? teamBoatIds.filter((boatId) => !isOwnedBoat(boatId))
+        : Array.from(new Set([...ownedBoatIds, ...teamBoatIds]))
       const attendeeRows = attendeesResult.data ?? []
       const attendeeStatuses = new Map(attendeeRows.map((row) => [String(row.event_id), row.status]))
       const attendeeEventIds = attendeeRows.map((row) => String(row.event_id))
@@ -178,6 +182,7 @@ export function HomeEventsHub() {
       // visszavonhassa a lemondást; a többi a "Következő eseményeid" alatt szerepel.
       const teamEventRows = (boatEventsResult.data ?? []).filter((event: any) => {
         const boatId = String(event.boat_id)
+        if (otherBoatsOnly && isOwnedBoat(boatId)) return false
         if (teamBoatIds.includes(boatId)) return true
         const status = attendeeStatuses.get(String(event.id))
         return ownedBoatIds.includes(boatId) && (status === "declined" || status === "unset")
@@ -185,6 +190,7 @@ export function HomeEventsHub() {
 
       const eventRows = new Map<string, any>()
       ;[...(boatEventsResult.data ?? []), ...(attendeeEventsResult.data ?? [])].forEach((event: any) => {
+        if (otherBoatsOnly && isOwnedBoat(event.boat_id)) return
         eventRows.set(String(event.id), event)
       })
 
@@ -244,7 +250,7 @@ export function HomeEventsHub() {
         })
 
       if (!active) return
-      setRole(profileRole)
+      setOwnsBoat(ownedBoatIds.length > 0)
       setProfileMissing(profileIsMissing)
       setIsTeamMember(teamBoatIds.length > 0)
       setEvents(nextEvents)
@@ -264,7 +270,7 @@ export function HomeEventsHub() {
     return () => {
       active = false
     }
-  }, [user, retryKey])
+  }, [user, retryKey, otherBoatsOnly])
 
   async function respondToEvent(event: EventOpportunity, status: "confirmed" | "declined") {
     if (!user || respondingEventId) return
@@ -383,19 +389,28 @@ export function HomeEventsHub() {
   if (!loading && profileMissing) return null
   if (loading || (!loadError && !actionError && events.length === 0 && opportunities.length === 0)) return null
 
-  const isCaptain = role === "skipper" || role === "kapitany"
+  const isCaptain = ownsBoat
 
   return (
-    <section className="bg-secondary/35" aria-labelledby="home-events-heading">
-      <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
+    <section
+      className={otherBoatsOnly ? "rounded-2xl border border-border bg-card" : "bg-secondary/35"}
+      aria-labelledby="home-events-heading"
+    >
+      <div className={otherBoatsOnly ? "p-5 sm:p-6" : "mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9"}>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-accent">Személyes áttekintés</p>
-            <h2 id="home-events-heading" className="mt-1 text-xl font-semibold text-foreground sm:text-2xl">
-              A következő vitorlázásod
+          {otherBoatsOnly ? (
+            <h2 id="home-events-heading" className="text-base font-semibold text-foreground">
+              Eseményeim más hajókon
             </h2>
-          </div>
-          {isCaptain ? (
+          ) : (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-accent">Személyes áttekintés</p>
+              <h2 id="home-events-heading" className="mt-1 text-xl font-semibold text-foreground sm:text-2xl">
+                A következő vitorlázásod
+              </h2>
+            </div>
+          )}
+          {isCaptain && !otherBoatsOnly ? (
             <Link
               href="/kapitany-dashboard"
               className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
@@ -441,7 +456,7 @@ export function HomeEventsHub() {
                   Következő eseményeid
                 </h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {isCaptain ? "Saját, közelgő eseményeid." : "Események, amelyekre jelentkeztél."}
+                  {isCaptain && !otherBoatsOnly ? "Saját, közelgő eseményeid." : "Események, amelyekre jelentkeztél."}
                 </p>
               </div>
               {events.length > 0 ? (

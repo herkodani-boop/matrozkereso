@@ -21,9 +21,9 @@ function raw(overrides: Partial<RawCaptainHome> = {}): RawCaptainHome {
     team: [
       { user_id: "bence", status: "active" },
       { user_id: "reka", status: "active" },
-      { user_id: "mate", status: "invited" },
+      { user_id: "mate", status: "invited", invited_at: daysAgoIso(2) },
       // E-mailben meghívott, még fiók nélkül: nem számít a résztvevők közé.
-      { user_id: null, status: "invited" },
+      { user_id: null, status: "invited", email: "uj@example.com", invited_at: daysAgoIso(1) },
     ],
     events: [
       { id: "der", title: "Dér Kupa", type: "Verseny", start_date: inDays(6), end_date: inDays(7), location: "Balatonszemes" },
@@ -31,7 +31,7 @@ function raw(overrides: Partial<RawCaptainHome> = {}): RawCaptainHome {
     upcomingCount: 1,
     ads: [],
     attendees: [],
-    pendingApplications: [],
+    applications: [],
     profiles: [
       { id: "captain", full_name: "Dani", avatar_url: null },
       { id: "bence", full_name: "Bence", avatar_url: "/bence.jpg" },
@@ -44,6 +44,8 @@ function raw(overrides: Partial<RawCaptainHome> = {}): RawCaptainHome {
     ...overrides,
   }
 }
+
+const withCapacity = (maxCrew: number) => ({ ...raw().boat, max_crew_size: maxCrew })
 
 describe("buildCaptainHome", () => {
   it("counts attendance like the dashboard roster: team members plus other attendees", () => {
@@ -62,55 +64,79 @@ describe("buildCaptainHome", () => {
     expect(home.boat.imageUrl).toBe("/big.jpg")
   })
 
-  it("reports a recent decline with a shortcut to advertise the empty spot", () => {
+  it("flags a race where fewer than half of the boat's places are confirmed", () => {
     const home = buildCaptainHome(raw({
-      attendees: [{ event_id: "der", user_id: "bence", status: "declined", updated_at: daysAgoIso(2) }],
+      boat: withCapacity(6),
+      attendees: [
+        { event_id: "der", user_id: "captain", status: "confirmed", updated_at: daysAgoIso(3) },
+        { event_id: "der", user_id: "bence", status: "confirmed", updated_at: daysAgoIso(2) },
+      ],
     }), "captain")
 
-    const decline = home.todos.find((todo) => todo.icon === "declined")
-    expect(decline).toMatchObject({
-      title: "Bence nem jön: Dér Kupa",
-      actionLabel: "Hiányzó helyre hirdetek",
+    expect(home.todos.find((todo) => todo.icon === "shortfall")).toMatchObject({
+      title: "Dér Kupa: eddig 2 fő jelezte, hogy jön",
+      detail: "6 nap múlva · 6 fős hajó · 2 még nem válaszolt",
+      actionLabel: "Hirdetés feladása",
       href: "/kapitany-dashboard?hirdetes-esemenyre=der",
     })
   })
 
-  it("ignores old declines and the captain's own decline", () => {
-    const home = buildCaptainHome(raw({
-      attendees: [
-        { event_id: "der", user_id: "bence", status: "declined", updated_at: daysAgoIso(10) },
-        { event_id: "der", user_id: "captain", status: "declined", updated_at: daysAgoIso(1) },
-      ],
+  it("stays quiet at half capacity, for non-race events, with a listing or without capacity", () => {
+    const halfFull = buildCaptainHome(raw({
+      boat: withCapacity(6),
+      attendees: ["captain", "bence", "reka"].map((user_id) => ({ event_id: "der", user_id, status: "confirmed", updated_at: daysAgoIso(1) })),
     }), "captain")
+    expect(halfFull.todos.some((todo) => todo.icon === "shortfall")).toBe(false)
 
-    expect(home.todos.some((todo) => todo.icon === "declined")).toBe(false)
+    const maintenance = buildCaptainHome(raw({
+      boat: withCapacity(10),
+      events: [{ id: "fix", title: "Hajószerelés", type: "Egyéb", start_date: inDays(8), end_date: null, location: "Balatonalmádi" }],
+    }), "captain")
+    expect(maintenance.todos.some((todo) => todo.icon === "shortfall")).toBe(false)
+
+    const advertised = buildCaptainHome(raw({
+      boat: withCapacity(10),
+      ads: [{ id: "der-ad", title: "Dér Kupa legénység", commitment: "egy-verseny", start_date: inDays(6), end_date: null, event_id: "der" }],
+    }), "captain")
+    expect(advertised.todos.some((todo) => todo.icon === "shortfall")).toBe(false)
+
+    const unknown = buildCaptainHome(raw(), "captain")
+    expect(unknown.todos.some((todo) => todo.icon === "shortfall")).toBe(false)
   })
 
-  it("asks for missing answers only for events in the next two weeks", () => {
+  it("names who has not answered, only for events within a week", () => {
     const home = buildCaptainHome(raw({
       events: [
         { id: "soon", title: "Dér Kupa", type: "Verseny", start_date: inDays(6), end_date: null, location: "Balatonszemes" },
-        { id: "later", title: "Tavaszi regatta", type: "Verseny", start_date: inDays(40), end_date: null, location: "Tihany" },
+        { id: "later", title: "Tavaszi regatta", type: "Verseny", start_date: inDays(10), end_date: null, location: "Tihany" },
       ],
       upcomingCount: 2,
+      attendees: [{ event_id: "soon", user_id: "bence", status: "confirmed", updated_at: daysAgoIso(1) }],
     }), "captain")
 
     const unanswered = home.todos.filter((todo) => todo.icon === "calendar")
     expect(unanswered).toHaveLength(1)
-    expect(unanswered[0]).toMatchObject({ title: "3 csapattag még nem jelzett vissza", href: "/kapitany-dashboard?esemeny=soon" })
+    expect(unanswered[0]).toMatchObject({
+      title: "Réka és Máté még nem jelzett vissza",
+      detail: "Dér Kupa · 6 nap múlva",
+      href: "/kapitany-dashboard?esemeny=soon",
+    })
   })
 
   it("counts pending applicants only on listings that are still visible", () => {
     const home = buildCaptainHome(raw({
+      events: [],
+      upcomingCount: 0,
       ads: [
         { id: "kek", title: "Kékszalag", commitment: "egy-verseny", start_date: inDays(200), end_date: null, event_id: null },
         { id: "der-ad", title: "Dér Kupa legénység", commitment: "egy-verseny", start_date: inDays(6), end_date: null, event_id: "der" },
         { id: "expired", title: "Régi", commitment: "egy-verseny", start_date: inDays(-3), end_date: null, event_id: null },
       ],
-      pendingApplications: [
-        { ad_id: "der-ad" },
-        { ad_id: "kek" }, { ad_id: "kek" }, { ad_id: "kek" },
-        { ad_id: "expired" },
+      applications: [
+        { ad_id: "der-ad", user_id: "a1", status: "pending" },
+        { ad_id: "kek", user_id: "a2", status: "pending" }, { ad_id: "kek", user_id: "a3", status: "pending" }, { ad_id: "kek", user_id: "a4", status: "pending" },
+        { ad_id: "kek", user_id: "a5", status: "accepted" },
+        { ad_id: "expired", user_id: "a6", status: "pending" },
       ],
     }), "captain")
 
@@ -122,20 +148,46 @@ describe("buildCaptainHome", () => {
       href: "/kapitany-dashboard?jelentkezok=kek",
       primary: true,
     })
-    // Az eseményhez kötött hirdetés megjelenik az esemény kártyáján.
-    expect(home.events[0].linkedListing).toEqual({ id: "der-ad", pending: 1 })
   })
 
-  it("warns about listings expiring within three days", () => {
+  it("reminds about accepted applicants who are not on the event yet", () => {
     const home = buildCaptainHome(raw({
-      ads: [
-        { id: "soon", title: "Őszi edzések", commitment: "szezon", start_date: inDays(-60), end_date: inDays(2), event_id: null },
-        { id: "far", title: "Szezon 2027", commitment: "szezon", start_date: inDays(-60), end_date: inDays(100), event_id: null },
+      ads: [{ id: "der-ad", title: "Dér Kupa legénység", commitment: "egy-verseny", start_date: inDays(6), end_date: null, event_id: "der" }],
+      applications: [
+        { ad_id: "der-ad", user_id: "applicant", status: "accepted" },
+        { ad_id: "der-ad", user_id: "added", status: "accepted" },
+      ],
+      attendees: [{ event_id: "der", user_id: "added", status: "confirmed", updated_at: daysAgoIso(1) }],
+    }), "captain")
+
+    expect(home.todos.find((todo) => todo.icon === "accepted")).toMatchObject({
+      title: "Anna elfogadva, de még nincs a résztvevők között",
+      actionLabel: "Hozzáadás az eseményhez",
+      href: "/kapitany-dashboard?jelentkezok=der-ad",
+    })
+  })
+
+  it("flags team invitations pending for over a week, but not fresh ones", () => {
+    const home = buildCaptainHome(raw({
+      team: [
+        { user_id: "bence", status: "active" },
+        { user_id: null, status: "invited", display_name: "Kovács Péter", email: "peter@example.com", invited_at: daysAgoIso(9) },
+        { user_id: null, status: "invited", email: "friss@example.com", invited_at: daysAgoIso(2) },
       ],
     }), "captain")
 
-    const expiring = home.todos.filter((todo) => todo.icon === "clock")
-    expect(expiring).toEqual([expect.objectContaining({ title: "Egy hirdetésed 2 nap múlva lejár", detail: "Őszi edzések" })])
+    const invites = home.todos.filter((todo) => todo.icon === "invite")
+    expect(invites).toEqual([expect.objectContaining({ title: "Kovács Péter 9 napja nem fogadta el a meghívódat", href: "/kapitany-dashboard?ful=csapat" })])
+  })
+
+  it("no longer lists expiring listings as todos", () => {
+    const home = buildCaptainHome(raw({
+      events: [],
+      upcomingCount: 0,
+      ads: [{ id: "soon", title: "Őszi edzések", commitment: "szezon", start_date: inDays(-60), end_date: inDays(2), event_id: null }],
+    }), "captain")
+
+    expect(home.todos).toEqual([])
   })
 
   it("tracks onboarding steps, counting past events and closed listings too", () => {
@@ -146,19 +198,22 @@ describe("buildCaptainHome", () => {
     expect(seasoned.onboarding).toEqual({ invitedCrew: true, createdEvent: true, createdListing: true })
   })
 
-  it("orders todos by urgency and finds the next race, skipping trainings", () => {
+  it("orders todos by how soon they matter and highlights only the first", () => {
     const home = buildCaptainHome(raw({
+      boat: withCapacity(8),
       events: [
         { id: "training", title: "Edzés", type: "Edzés", start_date: inDays(2), end_date: null, location: "Balatonfüred" },
         { id: "der", title: "Dér Kupa", type: "Verseny", start_date: inDays(6), end_date: null, location: "Balatonszemes" },
       ],
       upcomingCount: 2,
-      ads: [{ id: "ad", title: "Őszi edzések", commitment: "szezon", start_date: inDays(-10), end_date: inDays(1), event_id: null }],
-      pendingApplications: [{ ad_id: "ad" }],
-      attendees: [{ event_id: "der", user_id: "bence", status: "declined", updated_at: daysAgoIso(1) }],
+      // A jelentkezők egy távoli hirdetésre jöttek: a közeli hiányok megelőzik őket.
+      ads: [{ id: "far", title: "Kékszalag", commitment: "egy-verseny", start_date: inDays(200), end_date: null, event_id: null }],
+      applications: [{ ad_id: "far", user_id: "x", status: "pending" }],
     }), "captain")
 
-    expect(home.todos.map((todo) => todo.icon)).toEqual(["applicants", "declined", "calendar", "calendar", "clock"])
-    expect(home.daysUntilNextRace).toBe(6)
+    expect(home.todos.map((todo) => todo.id)).toEqual([
+      "unanswered-training", "shortfall-der", "unanswered-der", "applicants",
+    ])
+    expect(home.todos.map((todo) => todo.primary)).toEqual([true, false, false, false])
   })
 })

@@ -54,7 +54,6 @@ import {
   getEventTypeBadgeClass,
   calculateAge,
   experienceLevelLabel,
-  formatPositionLabel,
   normalizeMatchText,
   isMatchingListingToEvent,
   resolveAvatarUrl,
@@ -62,6 +61,7 @@ import {
   formatEventDate,
   formatListingExpiryDate,
 } from "@/components/skipper-dashboard/format-utils"
+import { crewRoleLabel } from "@/lib/crew-roles"
 import { BoatRegistrationModal } from "@/components/skipper-dashboard/boat-registration-modal"
 import { RaceCalendarPicker } from "@/components/skipper-dashboard/race-calendar-picker"
 import { EventTypeSelector } from "@/components/skipper-dashboard/event-type-selector"
@@ -534,7 +534,7 @@ export function SkipperDashboard() {
           isActive: ad.is_active !== false,
           isDeleted: ad.is_deleted === true,
           isHistorical: ad.is_deleted === true || ad.is_active === false || !isAdVisibleByDate(ad),
-          positions: (ad.positions ?? []).map((p: unknown) => formatPositionLabel(p)),
+          positions: (ad.positions ?? []).map((p: unknown) => crewRoleLabel(p)),
           applicants: [],
         }))
 
