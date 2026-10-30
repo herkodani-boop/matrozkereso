@@ -11,7 +11,14 @@ export const adminCategoryConfig: Record<
   users: {
     table: "users",
     searchColumns: ["full_name", "email", "phone"],
-    sortableColumns: ["full_name", "email", "created_at"],
+    sortableColumns: [
+      "full_name",
+      "email",
+      "created_at",
+      "admin_deleted_listings",
+      "received_reports",
+      "invalid_reports_sent",
+    ],
     editableColumns: ["full_name", "phone", "birthdate", "role", "level", "avatar_url"],
   },
   boats: {

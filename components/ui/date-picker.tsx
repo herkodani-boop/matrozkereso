@@ -36,6 +36,10 @@ type DatePickerProps = {
   // A naptár ennél a dátumnál nyílik meg, ha még nincs kiválasztott érték.
   initialMonth?: string
   min?: string
+  max?: string
+  yearSelect?: boolean
+  required?: boolean
+  "aria-invalid"?: boolean
 }
 
 export function DatePicker({
@@ -47,6 +51,10 @@ export function DatePicker({
   disabled,
   initialMonth,
   min,
+  max,
+  yearSelect = false,
+  required,
+  "aria-invalid": ariaInvalid,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false)
   const [view, setView] = React.useState(() => {
@@ -71,6 +79,10 @@ export function DatePicker({
 
   const firstWeekday = (new Date(view.year, view.month, 1).getDay() + 6) % 7
   const daysInMonth = new Date(view.year, view.month + 1, 0).getDate()
+  const maxYear = parseKey(max)?.year ?? new Date().getFullYear()
+  const selectedYear = parseKey(value)?.year
+  const firstYear = Math.min(maxYear - 120, selectedYear ?? maxYear - 120)
+  const years = Array.from({ length: maxYear - firstYear + 1 }, (_, index) => maxYear - index)
   const cells: Array<number | null> = [
     ...Array.from({ length: firstWeekday }, () => null),
     ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
@@ -82,8 +94,10 @@ export function DatePicker({
       <PopoverPrimitive.Trigger
         id={id}
         disabled={disabled}
+        aria-required={required}
+        aria-invalid={ariaInvalid}
         className={cn(
-          "flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 text-left text-sm outline-none transition-colors focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/30 disabled:cursor-not-allowed disabled:opacity-50",
+          "flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 text-left text-sm outline-none transition-colors focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/30 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-50",
           value ? "text-foreground" : "text-muted-foreground",
           className,
         )}
@@ -103,9 +117,25 @@ export function DatePicker({
               >
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               </button>
-              <p className="text-sm font-semibold">
-                {view.year}. {MONTH_NAMES[view.month]}
-              </p>
+              <div className="flex items-center gap-1 text-sm font-semibold">
+                <span>{MONTH_NAMES[view.month]}</span>
+                {yearSelect ? (
+                  <select
+                    aria-label="Év kiválasztása"
+                    value={view.year}
+                    onChange={(event) => setView((previous) => ({ ...previous, year: Number(event.target.value) }))}
+                    className="rounded-md bg-transparent px-1 py-1 font-semibold outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+                  >
+                    {years.map((year) => (
+                      <option key={year} value={year}>
+                        {year}.
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span>{view.year}.</span>
+                )}
+              </div>
               <button
                 type="button"
                 aria-label="Következő hónap"
@@ -125,7 +155,7 @@ export function DatePicker({
                 if (day === null) return <span key={`empty-${index}`} />
                 const key = toKey(view.year, view.month, day)
                 const isSelected = key === value
-                const isDisabled = Boolean(min && key < min)
+                const isDisabled = Boolean((min && key < min) || (max && key > max))
                 return (
                   <button
                     key={key}

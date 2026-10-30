@@ -1016,6 +1016,13 @@ export function SkipperDashboard() {
   const [contactSharingId, setContactSharingId] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [eventErrors, setEventErrors] = useState<{
+    title?: string
+    startDate?: string
+    endDate?: string
+    location?: string
+    submit?: string
+  }>({})
 
   useEffect(() => {
     if (!actionNotice && !actionError) return
@@ -1029,6 +1036,7 @@ export function SkipperDashboard() {
   }, [actionNotice, actionError])
 
   function resetNewEventForm() {
+    setEventErrors({})
     setNewEventForm({
       type: "Verseny",
       title: "",
@@ -1040,7 +1048,12 @@ export function SkipperDashboard() {
     })
   }
 
+  function clearEventError(field: "title" | "startDate" | "endDate" | "location") {
+    setEventErrors((previous) => ({ ...previous, [field]: undefined }))
+  }
+
   function openEditEventModal(event: EventItem) {
+    setEventErrors({})
     setEditingEventId(event.id)
     setEditEventForm({
       type: event.type,
@@ -1056,40 +1069,44 @@ export function SkipperDashboard() {
 
   async function handleCreateEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setEventErrors({})
     setActionError(null)
 
+    const errors: typeof eventErrors = {}
     if (!boat?.id) {
-      setActionError("Előbb hozzá kell adni a hajót, mielőtt eseményt mentesz.")
-      return
+      errors.submit = "Előbb hozzá kell adni a hajót, mielőtt eseményt mentesz."
     }
 
     if (!newEventForm.title.trim()) {
-      setActionError("Az esemény megnevezése kötelező.")
-      return
+      errors.title = "Az esemény megnevezése kötelező."
     }
 
     if (!newEventForm.startDate) {
-      setActionError("Az esemény kezdő időpontja kötelező.")
-      return
+      errors.startDate = "Az esemény kezdő időpontja kötelező."
     }
 
-    if (newEventForm.startDate < getTodayKey()) {
-      setActionError("Múltbeli esemény nem hozható létre.")
-      return
+    if (newEventForm.startDate && newEventForm.startDate < getTodayKey()) {
+      errors.startDate = "Múltbeli esemény nem hozható létre."
     }
 
     if (!newEventForm.oneDay && !newEventForm.endDate) {
-      setActionError("Az esemény végdátuma kötelező, ha nem egy napos esemény.")
-      return
+      errors.endDate = "Az esemény végdátuma kötelező, ha nem egy napos esemény."
     }
 
     if (!newEventForm.oneDay && newEventForm.endDate && newEventForm.endDate < newEventForm.startDate) {
-      setActionError("A végdátum nem lehet korábbi, mint a kezdő dátum.")
-      return
+      errors.endDate = "A végdátum nem lehet korábbi, mint a kezdő dátum."
     }
 
     if (!newEventForm.location.trim()) {
-      setActionError("A helyszín megadása kötelező.")
+      errors.location = "A helyszín megadása kötelező."
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setEventErrors(errors)
+      return
+    }
+    if (!boat?.id) {
+      setEventErrors({ submit: "Előbb hozzá kell adni a hajót, mielőtt eseményt mentesz." })
       return
     }
 
@@ -1111,7 +1128,7 @@ export function SkipperDashboard() {
 
       if (error) {
         console.error("Esemény mentési hiba:", error)
-        setActionError("Az esemény mentése nem sikerült.")
+        setEventErrors({ submit: "Az esemény mentése nem sikerült." })
         return
       }
 
@@ -1157,7 +1174,7 @@ export function SkipperDashboard() {
       resetNewEventForm()
     } catch (error) {
       console.error("Esemény mentési hiba:", error)
-      setActionError("Az esemény mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+      setEventErrors({ submit: "Az esemény mentése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra." })
     } finally {
       setEventSaveMode(null)
     }
@@ -1165,34 +1182,25 @@ export function SkipperDashboard() {
 
   async function handleUpdateEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setEventErrors({})
     setActionError(null)
 
     if (!editingEventId) {
       return
     }
 
-    if (!editEventForm.title.trim()) {
-      setActionError("Az esemény megnevezése kötelező.")
-      return
-    }
-
-    if (!editEventForm.startDate) {
-      setActionError("Az esemény kezdő időpontja kötelező.")
-      return
-    }
-
+    const errors: typeof eventErrors = {}
+    if (!editEventForm.title.trim()) errors.title = "Az esemény megnevezése kötelező."
+    if (!editEventForm.startDate) errors.startDate = "Az esemény kezdő időpontja kötelező."
     if (!editEventForm.oneDay && !editEventForm.endDate) {
-      setActionError("Az esemény végdátuma kötelező, ha nem egy napos esemény.")
-      return
+      errors.endDate = "Az esemény végdátuma kötelező, ha nem egy napos esemény."
     }
-
     if (!editEventForm.oneDay && editEventForm.endDate && editEventForm.endDate < editEventForm.startDate) {
-      setActionError("A végdátum nem lehet korábbi, mint a kezdő dátum.")
-      return
+      errors.endDate = "A végdátum nem lehet korábbi, mint a kezdő dátum."
     }
-
-    if (!editEventForm.location.trim()) {
-      setActionError("A helyszín megadása kötelező.")
+    if (!editEventForm.location.trim()) errors.location = "A helyszín megadása kötelező."
+    if (Object.keys(errors).length > 0) {
+      setEventErrors(errors)
       return
     }
 
@@ -1218,7 +1226,7 @@ export function SkipperDashboard() {
 
       if (error) {
         console.error("Esemény frissítési hiba:", error)
-        setActionError("Az esemény frissítése nem sikerült.")
+        setEventErrors({ submit: "Az esemény frissítése nem sikerült." })
         return
       }
 
@@ -1261,7 +1269,7 @@ export function SkipperDashboard() {
       })
     } catch (error) {
       console.error("Esemény frissítési hiba:", error)
-      setActionError("Az esemény frissítése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra.")
+      setEventErrors({ submit: "Az esemény frissítése nem sikerült. Ellenőrizd a kapcsolatot, majd próbáld újra." })
     } finally {
       setEventSaveMode(null)
     }
@@ -3726,7 +3734,7 @@ export function SkipperDashboard() {
         }
       }}>
         <DialogContent className="max-w-2xl rounded-2xl p-0">
-          <form onSubmit={handleCreateEvent} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-0">
+          <form noValidate onSubmit={handleCreateEvent} className="flex flex-col gap-0">
             <div className="border-b border-border px-6 py-5">
               <DialogHeader className="gap-2">
                 <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
@@ -3739,11 +3747,6 @@ export function SkipperDashboard() {
             </div>
 
             <div className="grid gap-5 px-6 py-6 md:grid-cols-2">
-              {actionError ? (
-                <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive md:col-span-2">
-                  {actionError}
-                </div>
-              ) : null}
               <div className="space-y-1.5 md:col-span-2">
                 <Label htmlFor="event-type">Esemény típusa</Label>
                 <select
@@ -3763,10 +3766,15 @@ export function SkipperDashboard() {
                 <Input
                   id="event-title"
                   value={newEventForm.title}
-                  onChange={(event) => setNewEventForm((prev) => ({ ...prev, title: event.target.value }))}
+                  onChange={(event) => {
+                    setNewEventForm((prev) => ({ ...prev, title: event.target.value }))
+                    clearEventError("title")
+                  }}
                   placeholder="Pl. Balaton-felvezető verseny"
                   className="h-11"
+                  aria-invalid={!!eventErrors.title}
                 />
+                {eventErrors.title ? <p className="text-sm text-destructive" role="alert">{eventErrors.title}</p> : null}
               </div>
 
               <div className="space-y-1.5">
@@ -3775,8 +3783,13 @@ export function SkipperDashboard() {
                   id="event-start-date"
                   min={getTodayKey()}
                   value={newEventForm.startDate}
-                  onChange={(value) => setNewEventForm((prev) => ({ ...prev, startDate: value }))}
+                  onChange={(value) => {
+                    setNewEventForm((prev) => ({ ...prev, startDate: value }))
+                    clearEventError("startDate")
+                  }}
+                  aria-invalid={!!eventErrors.startDate}
                 />
+                {eventErrors.startDate ? <p className="text-sm text-destructive" role="alert">{eventErrors.startDate}</p> : null}
               </div>
 
               {!newEventForm.oneDay ? (
@@ -3785,10 +3798,15 @@ export function SkipperDashboard() {
                   <DatePicker
                     id="event-end-date"
                     value={newEventForm.endDate}
-                    onChange={(value) => setNewEventForm((prev) => ({ ...prev, endDate: value }))}
+                    onChange={(value) => {
+                      setNewEventForm((prev) => ({ ...prev, endDate: value }))
+                      clearEventError("endDate")
+                    }}
                     initialMonth={newEventForm.startDate || undefined}
                     min={newEventForm.startDate || getTodayKey()}
+                    aria-invalid={!!eventErrors.endDate}
                   />
+                  {eventErrors.endDate ? <p className="text-sm text-destructive" role="alert">{eventErrors.endDate}</p> : null}
                 </div>
               ) : null}
               <div className="flex items-center gap-2 md:col-span-2">
@@ -3815,10 +3833,15 @@ export function SkipperDashboard() {
                 <Input
                   id="event-location"
                   value={newEventForm.location}
-                  onChange={(event) => setNewEventForm((prev) => ({ ...prev, location: event.target.value }))}
+                  onChange={(event) => {
+                    setNewEventForm((prev) => ({ ...prev, location: event.target.value }))
+                    clearEventError("location")
+                  }}
                   placeholder="Pl. Balatonfüred, Déli kikötő"
                   className="h-11"
+                  aria-invalid={!!eventErrors.location}
                 />
+                {eventErrors.location ? <p className="text-sm text-destructive" role="alert">{eventErrors.location}</p> : null}
               </div>
 
               <div className="space-y-1.5 md:col-span-2">
@@ -3842,6 +3865,7 @@ export function SkipperDashboard() {
                 {eventSaveMode === "create" ? "Mentés..." : "Esemény mentése"}
               </Button>
             </div>
+            {eventErrors.submit ? <p className="px-6 pb-4 text-sm text-destructive" role="alert">{eventErrors.submit}</p> : null}
           </form>
         </DialogContent>
       </Dialog>
@@ -3849,6 +3873,7 @@ export function SkipperDashboard() {
       <Dialog open={isEditEventModalOpen} onOpenChange={(open) => {
         setIsEditEventModalOpen(open)
         if (!open) {
+          setEventErrors({})
           setEditingEventId(null)
           setEditEventForm({
             type: "Verseny",
@@ -3862,7 +3887,7 @@ export function SkipperDashboard() {
         }
       }}>
         <DialogContent className="max-w-2xl rounded-2xl p-0">
-          <form onSubmit={handleUpdateEvent} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-0">
+          <form noValidate onSubmit={handleUpdateEvent} className="flex flex-col gap-0">
             <div className="border-b border-border px-6 py-5">
               <DialogHeader className="gap-2">
                 <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
@@ -3875,11 +3900,6 @@ export function SkipperDashboard() {
             </div>
 
             <div className="grid gap-5 px-6 py-6 md:grid-cols-2">
-              {actionError ? (
-                <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive md:col-span-2">
-                  {actionError}
-                </div>
-              ) : null}
               <div className="space-y-1.5 md:col-span-2">
                 <Label htmlFor="edit-event-type">Esemény típusa</Label>
                 <select
@@ -3899,9 +3919,14 @@ export function SkipperDashboard() {
                 <Input
                   id="edit-event-title"
                   value={editEventForm.title}
-                  onChange={(event) => setEditEventForm((prev) => ({ ...prev, title: event.target.value }))}
+                  onChange={(event) => {
+                    setEditEventForm((prev) => ({ ...prev, title: event.target.value }))
+                    clearEventError("title")
+                  }}
                   className="h-11"
+                  aria-invalid={!!eventErrors.title}
                 />
+                {eventErrors.title ? <p className="text-sm text-destructive" role="alert">{eventErrors.title}</p> : null}
               </div>
 
               <div className="space-y-1.5">
@@ -3909,8 +3934,13 @@ export function SkipperDashboard() {
                 <DatePicker
                   id="edit-event-start-date"
                   value={editEventForm.startDate}
-                  onChange={(value) => setEditEventForm((prev) => ({ ...prev, startDate: value }))}
+                  onChange={(value) => {
+                    setEditEventForm((prev) => ({ ...prev, startDate: value }))
+                    clearEventError("startDate")
+                  }}
+                  aria-invalid={!!eventErrors.startDate}
                 />
+                {eventErrors.startDate ? <p className="text-sm text-destructive" role="alert">{eventErrors.startDate}</p> : null}
               </div>
 
               {!editEventForm.oneDay ? (
@@ -3919,10 +3949,15 @@ export function SkipperDashboard() {
                   <DatePicker
                     id="edit-event-end-date"
                     value={editEventForm.endDate}
-                    onChange={(value) => setEditEventForm((prev) => ({ ...prev, endDate: value }))}
+                    onChange={(value) => {
+                      setEditEventForm((prev) => ({ ...prev, endDate: value }))
+                      clearEventError("endDate")
+                    }}
                     initialMonth={editEventForm.startDate || undefined}
                     min={editEventForm.startDate || undefined}
+                    aria-invalid={!!eventErrors.endDate}
                   />
+                  {eventErrors.endDate ? <p className="text-sm text-destructive" role="alert">{eventErrors.endDate}</p> : null}
                 </div>
               ) : null}
               <div className="flex items-center gap-2 md:col-span-2">
@@ -3949,9 +3984,14 @@ export function SkipperDashboard() {
                 <Input
                   id="edit-event-location"
                   value={editEventForm.location}
-                  onChange={(event) => setEditEventForm((prev) => ({ ...prev, location: event.target.value }))}
+                  onChange={(event) => {
+                    setEditEventForm((prev) => ({ ...prev, location: event.target.value }))
+                    clearEventError("location")
+                  }}
                   className="h-11"
+                  aria-invalid={!!eventErrors.location}
                 />
+                {eventErrors.location ? <p className="text-sm text-destructive" role="alert">{eventErrors.location}</p> : null}
               </div>
 
               <div className="space-y-1.5 md:col-span-2">
@@ -3986,6 +4026,7 @@ export function SkipperDashboard() {
                 </Button>
               </div>
             </div>
+            {eventErrors.submit ? <p className="px-6 pb-4 text-sm text-destructive" role="alert">{eventErrors.submit}</p> : null}
           </form>
         </DialogContent>
       </Dialog>

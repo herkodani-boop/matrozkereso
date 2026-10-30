@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react"
 import {
   BarChart3,
-  Ban,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   Flag,
   LoaderCircle,
   Megaphone,
+  RotateCcw,
   Search,
   Sailboat,
   Save,
@@ -21,10 +21,26 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 type AdminSection = "statistics" | "platform"
 type PlatformArea = "users" | "boats" | "listings" | "events" | "reports"
-type ListStatus = "all" | "active" | "deleted" | "reported"
+type ListStatus =
+  | "all"
+  | "active"
+  | "deleted"
+  | "reported"
+  | "admin_deleted_listings"
+  | "valid_reports_received"
+  | "pending_reports_received"
+  | "invalid_reports_sent"
 type AdminRow = Record<string, unknown> & { id: string }
 type FieldDefinition = { key: string; label: string; type?: "text" | "date" | "number" | "boolean" | "array" }
 
@@ -36,6 +52,7 @@ const reportColumns = [
   { key: "evaluation_status", label: "Értékelés" },
   { key: "extra_text", label: "Leírás" },
   { key: "created_at", label: "Dátum" },
+  { key: "listing_deletion_reason", label: "Hirdetés törlésének oka" },
   { key: "is_deleted", label: "Állapot" },
 ]
 
@@ -98,8 +115,9 @@ const columns: Record<Exclude<PlatformArea, "reports">, { key: string; label: st
   users: [
     { key: "full_name", label: "Név" },
     { key: "email", label: "Email" },
-    { key: "role", label: "Szerep" },
-    { key: "created_at", label: "Regisztráció" },
+    { key: "admin_deleted_listings", label: "Admin által törölt hirdetések" },
+    { key: "received_reports", label: "Hirdetéseire érkezett bejelentések" },
+    { key: "invalid_reports_sent", label: "Érvénytelen bejelentései" },
   ],
   boats: [
     { key: "name", label: "Hajó" },
@@ -111,7 +129,6 @@ const columns: Record<Exclude<PlatformArea, "reports">, { key: string; label: st
     { key: "title", label: "Hirdetés" },
     { key: "creator_name", label: "Létrehozta" },
     { key: "location", label: "Helyszín" },
-    { key: "positions", label: "Pozíciók" },
     { key: "start_date", label: "Kezdés" },
     { key: "report_count", label: "Bejelentések" },
   ],
@@ -123,7 +140,16 @@ const columns: Record<Exclude<PlatformArea, "reports">, { key: string; label: st
   ],
 }
 
-type Counts = { total: number; active: number; reported: number; deleted: number }
+type Counts = {
+  total: number
+  active: number
+  reported: number
+  deleted: number
+  adminDeletedListingUsers?: number
+  validReportsReceivedUsers?: number
+  pendingReportsReceivedUsers?: number
+  invalidReports?: number
+}
 
 export function AdminDashboard() {
   const [activeSection, setActiveSection] = useState<AdminSection>("statistics")
@@ -197,10 +223,11 @@ function PlatformManagement({
   activeArea: PlatformArea
   onAreaChange: (area: PlatformArea) => void
 }) {
-  const [status, setStatus] = useState<ListStatus>(activeArea === "reports" ? "all" : "active")
+  const [status, setStatus] = useState<ListStatus>(activeArea === "reports" || activeArea === "users" ? "all" : "active")
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
-  const [sort, setSort] = useState(activeArea === "listings" ? "report_count" : "created_at")
+  const [sort, setSort] = useState(activeArea === "listings" ? "report_count" : activeArea === "users" ? "full_name" : "created_at")
+  const [deletionReason, setDeletionReason] = useState("all")
   const [direction, setDirection] = useState<"asc" | "desc">("desc")
   const [page, setPage] = useState(1)
   const [rows, setRows] = useState<AdminRow[]>([])
@@ -211,6 +238,8 @@ function PlatformManagement({
   const [notice, setNotice] = useState<string | null>(null)
   const [selectedRow, setSelectedRow] = useState<AdminRow | null>(null)
   const [saving, setSaving] = useState(false)
+  const [deleteConfirmation, setDeleteConfirmation] = useState<AdminRow | null>(null)
+  const [deletePending, setDeletePending] = useState(false)
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -232,6 +261,7 @@ function PlatformManagement({
         search,
         sort,
         direction,
+        deletionReason,
       })
       const response = await fetch(`/api/admin/platform?${params}`, { cache: "no-store" })
       const payload = await response.json()
@@ -245,7 +275,7 @@ function PlatformManagement({
     } finally {
       setLoading(false)
     }
-  }, [activeArea, direction, page, search, sort, status])
+  }, [activeArea, deletionReason, direction, page, search, sort, status])
 
   useEffect(() => {
     void loadRows()
@@ -256,8 +286,9 @@ function PlatformManagement({
     setError(null)
     setSearchInput("")
     setSearch("")
-    setSort(area === "listings" ? "report_count" : "created_at")
-    setStatus(area === "reports" ? "all" : "active")
+    setSort(area === "listings" ? "report_count" : area === "users" ? "full_name" : "created_at")
+    setStatus(area === "users" || area === "reports" ? "all" : "active")
+    setDeletionReason("all")
     setPage(1)
     onAreaChange(area)
   }
@@ -277,25 +308,30 @@ function PlatformManagement({
     return payload
   }
 
-  async function handleDelete(row: AdminRow) {
-    if (!window.confirm(`Biztosan törlöd ezt az elemet? A törlés visszavonása nem érhető el innen.`)) return
+  async function handleDelete() {
+    if (!deleteConfirmation) return
     try {
-      await mutate({ category: activeArea, id: row.id, action: "delete" }, "Az elem törölve lett.")
+      setDeletePending(true)
+      await mutate(
+        { category: activeArea, id: deleteConfirmation.id, action: "delete" },
+        "Az elem törölve lett.",
+      )
+      setDeleteConfirmation(null)
     } catch (mutationError) {
       setError(mutationError instanceof Error ? mutationError.message : "A törlés nem sikerült.")
+    } finally {
+      setDeletePending(false)
     }
   }
 
-  async function handleUserBan(row: AdminRow) {
-    const isBanned = Boolean(row.is_banned)
-    if (!isBanned && !window.confirm("Letiltod ezt a felhasználót? A tiltás a bejelentkezést is megakadályozza.")) return
+  async function handleUserRestore(row: AdminRow) {
     try {
       await mutate(
-        { category: activeArea, id: row.id, action: isBanned ? "unban" : "ban" },
-        isBanned ? "A felhasználó tiltása feloldva." : "A felhasználó letiltva.",
+        { category: "users", id: row.id, action: "restore" },
+        "A felhasználó és a törléskor vele együtt törölt adatai vissza lettek állítva.",
       )
     } catch (mutationError) {
-      setError(mutationError instanceof Error ? mutationError.message : "A felhasználói művelet nem sikerült.")
+      setError(mutationError instanceof Error ? mutationError.message : "A felhasználó visszaállítása nem sikerült.")
     }
   }
 
@@ -339,7 +375,15 @@ function PlatformManagement({
 
   const categoryLabel = platformAreas.find((area) => area.id === activeArea)?.label ?? ""
   const sortOptions = activeArea === "reports"
-    ? []
+    ? reportColumns.map(({ key, label }) => ({ key, label }))
+    : activeArea === "users"
+      ? [
+          { key: "full_name", label: "Név" },
+          { key: "email", label: "Email" },
+          { key: "admin_deleted_listings", label: "Admin által törölt hirdetések" },
+          { key: "received_reports", label: "Hirdetéseire érkezett bejelentések" },
+          { key: "invalid_reports_sent", label: "Érvénytelen bejelentései" },
+        ]
     : activeArea === "listings"
       ? [
           { key: "title", label: "Hirdetés neve" },
@@ -374,7 +418,36 @@ function PlatformManagement({
       </nav>
 
       <>
-          {activeArea === "reports" ? (
+          {activeArea === "users" ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Felhasználók szűrése">
+              {([
+                ["all", "Összes felhasználó", counts.total],
+                ["active", "Aktív", counts.active],
+                ["reported", "Jelentett", counts.reported],
+                ["deleted", "Törölt", counts.deleted],
+              ] as const).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={status === value}
+                  onClick={() => {
+                    setStatus(value)
+                    setPage(1)
+                  }}
+                  className={`rounded-2xl border p-4 text-left shadow-sm transition-colors ${
+                    status === value
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "border-border bg-card hover:bg-muted/60"
+                  }`}
+                >
+                  <span className="text-sm text-muted-foreground">{label}</span>
+                  <span className="mt-1 block text-2xl font-semibold tracking-tight text-foreground">
+                    {count.toLocaleString("hu-HU")}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : activeArea === "reports" ? (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Bejelentések szűrése">
               {([
                 ["all", "Összes", counts.total],
@@ -432,25 +505,22 @@ function PlatformManagement({
               ))}
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {([
                 ["all", "Összes", counts.total],
                 ["active", "Aktív", counts.active],
-                ["reported", "Jelentett", counts.reported],
                 ["deleted", "Törölt", counts.deleted],
               ] as const).map(([value, label, count]) => {
-                const disabled = value === "reported"
                 return (
                   <button
                     key={value}
                     type="button"
                     aria-pressed={status === value}
-                    disabled={disabled}
                     onClick={() => {
                       setStatus(value)
                       setPage(1)
                     }}
-                    className={`rounded-2xl border p-4 text-left shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition-colors ${
                       status === value
                         ? "border-primary bg-primary/5 ring-1 ring-primary"
                         : "border-border bg-card hover:bg-muted/60"
@@ -467,7 +537,7 @@ function PlatformManagement({
           )}
 
           <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm xl:flex-row xl:items-end">
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 xl:w-80 xl:flex-none">
               <Label htmlFor="admin-search">Keresés</Label>
               <div className="relative mt-1.5">
                 <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
@@ -480,8 +550,10 @@ function PlatformManagement({
                 />
               </div>
             </div>
-            <div className="grid items-end gap-3 sm:grid-cols-2 xl:w-auto">
-              {activeArea !== "reports" ? <label className="text-sm font-medium">
+            <div className={`grid items-end gap-3 ${
+              activeArea === "reports" ? "sm:grid-cols-3" : "sm:grid-cols-2"
+            } xl:w-auto`}>
+              <label className="text-sm font-medium">
                 Rendezés
                 <select
                   value={sort}
@@ -495,8 +567,8 @@ function PlatformManagement({
                     <option key={key} value={key}>{label}</option>
                   ))}
                 </select>
-              </label> : null}
-              {activeArea !== "reports" ? <Button
+              </label>
+              <Button
                 type="button"
                 variant="outline"
                 onClick={() => {
@@ -508,7 +580,27 @@ function PlatformManagement({
                 className="h-9 w-full self-end"
               >
                 {direction === "desc" ? "↓ Csökkenő" : "↑ Növekvő"}
-              </Button> : null}
+              </Button>
+              {activeArea === "reports" ? (
+                <label className="text-sm font-medium">
+                  Hirdetés törlésének oka
+                  <select
+                    value={deletionReason}
+                    onChange={(event) => {
+                      setDeletionReason(event.target.value)
+                      setPage(1)
+                    }}
+                    className="mt-1.5 flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="all">Mindegyik</option>
+                    <option value="expired">Lejárt</option>
+                    <option value="admin">Admin törölte</option>
+                    <option value="owner">Felhasználó törölte</option>
+                    <option value="not_deleted">Nincs törölve</option>
+                    <option value="unknown">Ismeretlen ok</option>
+                  </select>
+                </label>
+              ) : null}
             </div>
           </div>
 
@@ -521,23 +613,32 @@ function PlatformManagement({
                   <thead className="bg-muted/70 text-xs uppercase tracking-wide text-muted-foreground">
                     <tr>
                       {(activeArea === "reports" ? reportColumns : columns[activeArea]).map(({ key, label }) => (
-                        <th key={key} scope="col" className={`px-4 py-3 font-semibold ${activeArea === "listings" && key === "report_count" ? "text-center" : ""}`}>{label}</th>
+                        <th key={key} scope="col" className={`px-4 py-3 font-semibold ${
+                          activeArea === "listings" && key === "report_count"
+                          || activeArea === "users" && ["admin_deleted_listings", "received_reports", "invalid_reports_sent"].includes(key)
+                            ? "text-center"
+                            : ""
+                        }`}>{label}</th>
                       ))}
-                      {activeArea === "users" && <th scope="col" className="px-4 py-3 font-semibold">Állapot</th>}
                       {activeArea !== "reports" && <th scope="col" className="px-4 py-3 text-right font-semibold">Művelet</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {loading ? (
-                      <tr><td colSpan={(activeArea === "reports" ? reportColumns.length : columns[activeArea].length) + (activeArea === "reports" ? 0 : 2)} className="px-4 py-12 text-center text-muted-foreground"><LoaderCircle className="mr-2 inline size-4 animate-spin" />Betöltés...</td></tr>
+                      <tr><td colSpan={(activeArea === "reports" ? reportColumns.length : columns[activeArea].length) + (activeArea === "reports" ? 0 : 1)} className="px-4 py-12 text-center text-muted-foreground"><LoaderCircle className="mr-2 inline size-4 animate-spin" />Betöltés...</td></tr>
                     ) : rows.length === 0 ? (
-                      <tr><td colSpan={(activeArea === "reports" ? reportColumns.length : columns[activeArea].length) + (activeArea === "reports" ? 0 : 2)} className="px-4 py-12 text-center text-muted-foreground">{error ? "Az adatok nem tölthetők be." : "Nincs megjeleníthető elem."}</td></tr>
+                      <tr><td colSpan={(activeArea === "reports" ? reportColumns.length : columns[activeArea].length) + (activeArea === "reports" ? 0 : 1)} className="px-4 py-12 text-center text-muted-foreground">{error ? "Az adatok nem tölthetők be." : "Nincs megjeleníthető elem."}</td></tr>
                     ) : rows.map((row) => (
                       <tr key={row.id} className="hover:bg-muted/40">
                         {(activeArea === "reports" ? reportColumns : columns[activeArea]).map(({ key }) => (
                           <td
                             key={key}
-                            className={`max-w-64 px-4 py-3 ${key === "extra_text" ? "whitespace-pre-wrap break-words" : "truncate"} ${activeArea === "listings" && key === "report_count" ? "text-center tabular-nums" : ""}`}
+                            className={`max-w-64 px-4 py-3 ${key === "extra_text" ? "whitespace-pre-wrap break-words" : "truncate"} ${
+                              activeArea === "listings" && key === "report_count"
+                              || activeArea === "users" && ["admin_deleted_listings", "received_reports", "invalid_reports_sent"].includes(key)
+                                ? "text-center tabular-nums"
+                                : ""
+                            }`}
                           >
                             {key === "report_type"
                               ? formatReportType(row[key])
@@ -545,26 +646,26 @@ function PlatformManagement({
                               ? formatReportEvaluation(row[key])
                               : key === "is_deleted"
                               ? row[key] ? "Törölt" : "Aktív"
+                              : key === "listing_deletion_reason"
+                              ? formatDeletionReason(row[key])
+                              : key === "received_reports"
+                              ? formatValue(Number(row.valid_reports_received ?? 0) + Number(row.pending_reports_received ?? 0))
                               : key === "positions" && Array.isArray(row[key])
                               ? row[key].join(", ")
                               : formatValue(row[key])}
                           </td>
                         ))}
-                        {activeArea === "users" ? <td className="px-4 py-3">
-                          {row.is_banned ? <span className="text-destructive">Letiltva</span> : "Aktív"}
-                        </td> : null}
                         {activeArea !== "reports" ? <td className="px-4 py-3">
                           <div className="flex justify-end gap-2">
-                            {activeArea === "users" && status === "active" && (
+                            {activeArea === "users" && Boolean(row.is_deleted) && (
                               <Button
                                 type="button"
-                                variant={row.is_banned ? "outline" : "destructive"}
+                                variant="outline"
                                 size="sm"
-                                title={row.is_banned ? "Tiltás feloldása" : "Felhasználó letiltása"}
-                                onClick={() => void handleUserBan(row)}
+                                onClick={() => void handleUserRestore(row)}
                               >
-                                <Ban className="size-4" aria-hidden="true" />
-                                <span className="hidden sm:inline">{row.is_banned ? "Feloldás" : "Tiltás"}</span>
+                                <RotateCcw className="size-4" aria-hidden="true" />
+                                <span>Visszaállítás</span>
                               </Button>
                             )}
                             {status !== "deleted" && !row.is_deleted && (
@@ -573,7 +674,7 @@ function PlatformManagement({
                               </Button>
                             )}
                             {status !== "deleted" && !row.is_deleted && (
-                              <Button type="button" variant="destructive" size="icon-sm" title="Soft törlés" onClick={() => void handleDelete(row)}>
+                              <Button type="button" variant="destructive" size="icon-sm" title="Soft törlés" onClick={() => setDeleteConfirmation(row)}>
                                 <Trash2 className="size-4" aria-hidden="true" />
                               </Button>
                             )}
@@ -598,6 +699,38 @@ function PlatformManagement({
               </div>
             </div>
         </>
+
+      <Dialog
+        open={deleteConfirmation !== null}
+        onOpenChange={(open) => {
+          if (!open && !deletePending) setDeleteConfirmation(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Elem törlése</DialogTitle>
+            <DialogDescription>
+              {activeArea === "users"
+                ? "Biztosan törlöd ezt a felhasználót? A törléskor vele együtt törölt hajókat, hirdetéseket és eseményeket később a felhasználó visszaállításával lehet visszaállítani."
+                : "Biztosan törlöd ezt az elemet? A művelet nem vonható vissza."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deletePending}
+              onClick={() => setDeleteConfirmation(null)}
+            >
+              Mégse
+            </Button>
+            <Button type="button" variant="destructive" disabled={deletePending} onClick={() => void handleDelete()}>
+              {deletePending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
+              Törlés
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {selectedRow && activeArea !== "reports" && (
         <EditDialog
@@ -641,6 +774,15 @@ function formatReportEvaluation(value: unknown): string {
   if (value === "valid") return "Jogos"
   if (value === "invalid") return "Nem megalapozott"
   return "Értékelésre vár"
+}
+
+function formatDeletionReason(value: unknown): string {
+  if (value === "expired") return "Lejárt"
+  if (value === "admin") return "Admin törölte"
+  if (value === "owner") return "Felhasználó törölte"
+  if (value === "not_deleted") return "Nincs törölve"
+  if (value === "unknown") return "Ismeretlen ok"
+  return "—"
 }
 
 function EditDialog({

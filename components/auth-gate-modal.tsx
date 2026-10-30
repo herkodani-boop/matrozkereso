@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { DatePicker } from "@/components/ui/date-picker"
 
 import { BoatCard, type ListingRow } from "@/components/browse-boats"
 import { ListingImageFocusPicker } from "@/components/listing-image-focus-picker"
@@ -100,6 +101,11 @@ const crewTypeOptions: { value: string; label: string }[] = [
 
 type View = "login" | "register" | "boat" | "listing" | "preview" | "forgot"
 type Mode = "sailor" | "skipper"
+type AuthFieldErrors = Partial<Record<
+  "email" | "password" | "fullName" | "phone" | "birthdate" | "terms" |
+  "boatName" | "boatClass" | "boatHarbor" | "boatCrewSize" | "submit",
+  string
+>>
 
 export function AuthGateModal({
   open,
@@ -181,10 +187,12 @@ export function AuthGateModal({
   const [resendError, setResendError] = useState<string | null>(null)
   const [isListingSaving, setIsListingSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [authErrors, setAuthErrors] = useState<AuthFieldErrors>({})
   const [listingErrors, setListingErrors] = useState<{
     title?: string
     location?: string
-    date?: string
+    startDate?: string
+    endDate?: string
     post?: string
     level?: string
     submit?: string
@@ -194,6 +202,10 @@ export function AuthGateModal({
     const url = new URL("/auth/confirm", window.location.origin)
     if (returnTo) url.searchParams.set("next", returnTo)
     return url.toString()
+  }
+
+  function clearAuthError(field: keyof AuthFieldErrors) {
+    setAuthErrors((previous) => ({ ...previous, [field]: undefined }))
   }
 
   function resetFormState() {
@@ -218,6 +230,7 @@ export function AuthGateModal({
     setResendError(null)
     setLoading(false)
     setFormError(null)
+    setAuthErrors({})
     setBoatNameValue("")
     setBoatClassValue("")
     setBoatHarbor("")
@@ -290,6 +303,14 @@ export function AuthGateModal({
   async function handleForgotPassword(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
+    if (!email.trim()) {
+      setFormError("Az e-mail cím megadása kötelező.")
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setFormError("Adj meg egy érvényes e-mail címet.")
+      return
+    }
     setLoading(true)
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
@@ -315,6 +336,16 @@ export function AuthGateModal({
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
+    setAuthErrors({})
+
+    const errors: AuthFieldErrors = {}
+    if (!email.trim()) errors.email = "Az e-mail cím megadása kötelező."
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = "Adj meg egy érvényes e-mail címet."
+    if (!password) errors.password = "A jelszó megadása kötelező."
+    if (Object.keys(errors).length > 0) {
+      setAuthErrors(errors)
+      return
+    }
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -329,14 +360,18 @@ export function AuthGateModal({
           setConfirmationRequired(true)
           return
         }
-        setFormError(error.message)
+        setAuthErrors({
+          password: error.message === "Invalid login credentials"
+            ? "Hibás e-mail cím vagy jelszó."
+            : error.message,
+        })
         return
       }
 
       if (!data?.user) {
         const errorMessage = "Bejelentkezés sikertelen."
         console.error(errorMessage)
-        setFormError(errorMessage)
+        setAuthErrors({ password: errorMessage })
         return
       }
 
@@ -360,7 +395,7 @@ export function AuthGateModal({
 
       router.refresh()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Ismeretlen hiba történt.")
+      setAuthErrors({ submit: err instanceof Error ? err.message : "Ismeretlen hiba történt." })
     }
   }
 
@@ -450,20 +485,19 @@ export function AuthGateModal({
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
-    if (!termsAccepted) {
-      setFormError("A regisztrációhoz el kell fogadnod az ÁSZF-et.")
-      return
-    }
-    if (password.length < 8) {
-      setFormError("A jelszónak legalább 8 karakter hosszúnak kell lennie.")
-      return
-    }
-    if (!birthdate) {
-      setFormError("A születési dátum megadása kötelező.")
-      return
-    }
-    if (birthdate && birthdate > getTodayDateInputValue()) {
-      setFormError("A születési dátum nem lehet a jövőben.")
+    setAuthErrors({})
+    const errors: AuthFieldErrors = {}
+    if (!fullName.trim()) errors.fullName = "A teljes név megadása kötelező."
+    if (!email.trim()) errors.email = "Az e-mail cím megadása kötelező."
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = "Adj meg egy érvényes e-mail címet."
+    if (password.length < 8) errors.password = "A jelszónak legalább 8 karakter hosszúnak kell lennie."
+    if (!phone.trim()) errors.phone = "A telefonszám megadása kötelező."
+    else if (!isValidPhoneNumber(phone)) errors.phone = "Adj meg egy érvényes telefonszámot (7–15 számjegy)."
+    if (!birthdate) errors.birthdate = "A születési dátum megadása kötelező."
+    else if (birthdate > getTodayDateInputValue()) errors.birthdate = "A születési dátum nem lehet a jövőben."
+    if (!termsAccepted) errors.terms = "A regisztrációhoz el kell fogadnod az ÁSZF-et."
+    if (Object.keys(errors).length > 0) {
+      setAuthErrors(errors)
       return
     }
 
@@ -487,14 +521,14 @@ export function AuthGateModal({
 
         if (signUpError) {
           console.error("Regisztrációs hiba:", signUpError)
-          setFormError(signUpError.message)
+          setAuthErrors({ email: signUpError.message })
           return
         }
 
         if (!data?.user) {
           const errorMessage = "Felhasználó létrehozása sikertelen."
           console.error(errorMessage)
-          setFormError(errorMessage)
+          setAuthErrors({ submit: errorMessage })
           return
         }
 
@@ -552,7 +586,7 @@ export function AuthGateModal({
 
         if (insertError) {
           console.error("Adatbázis hiba:", insertError)
-          setFormError("Profil mentése sikertelen. Próbáld újra.")
+          setAuthErrors({ submit: "Profil mentése sikertelen. Próbáld újra." })
           return
         }
 
@@ -567,14 +601,14 @@ export function AuthGateModal({
 
           if (signInError) {
             console.error("Automatikus bejelentkezés sikertelen:", signInError)
-            setFormError(signInError.message)
+            setAuthErrors({ password: signInError.message })
             return
           }
 
           if (!signInData?.user) {
             const errorMessage = "A bejelentkezés nem sikerült."
             console.error(errorMessage)
-            setFormError(errorMessage)
+            setAuthErrors({ password: errorMessage })
             return
           }
         } else {
@@ -586,7 +620,7 @@ export function AuthGateModal({
         handleOpenChange(false)
         return
       } catch (err) {
-        setFormError(err instanceof Error ? err.message : "Ismeretlen hiba történt.")
+        setAuthErrors({ submit: err instanceof Error ? err.message : "Ismeretlen hiba történt." })
       } finally {
         setLoading(false)
       }
@@ -611,14 +645,14 @@ export function AuthGateModal({
 
       if (signUpError) {
         console.error("Regisztrációs hiba:", signUpError)
-        setFormError(signUpError.message)
+        setAuthErrors({ email: signUpError.message })
         return
       }
 
       if (!data?.user) {
         const errorMessage = "Felhasználó létrehozása sikertelen."
         console.error(errorMessage)
-        setFormError(errorMessage)
+        setAuthErrors({ submit: errorMessage })
         return
       }
 
@@ -677,7 +711,7 @@ export function AuthGateModal({
 
       if (insertError) {
         console.error("Adatbázis hiba:", insertError)
-        setFormError("Profil mentése sikertelen. Próbáld újra.")
+        setAuthErrors({ submit: "Profil mentése sikertelen. Próbáld újra." })
         return
       }
 
@@ -692,14 +726,14 @@ export function AuthGateModal({
 
         if (signInError) {
           console.error("Automatikus bejelentkezés sikertelen:", signInError)
-          setFormError(signInError.message)
+          setAuthErrors({ password: signInError.message })
           return
         }
 
         if (!signInData?.user) {
           const errorMessage = "A bejelentkezés nem sikerült."
           console.error(errorMessage)
-          setFormError(errorMessage)
+          setAuthErrors({ password: errorMessage })
           return
         }
       } else {
@@ -710,7 +744,7 @@ export function AuthGateModal({
       handleOpenChange(false)
       if (returnTo) router.replace(returnTo)
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Ismeretlen hiba történt.")
+      setAuthErrors({ submit: err instanceof Error ? err.message : "Ismeretlen hiba történt." })
     } finally {
       setLoading(false)
     }
@@ -718,6 +752,18 @@ export function AuthGateModal({
 
   function handleBoatSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const errors: AuthFieldErrors = {}
+    if (!boatNameValue.trim()) errors.boatName = "A hajó neve kötelező."
+    if (!boatClassValue.trim()) errors.boatClass = "A hajó típusa kötelező."
+    if (!boatHarbor.trim()) errors.boatHarbor = "A bázis kikötő megadása kötelező."
+    if (!boatCrewSize || !Number.isInteger(Number(boatCrewSize)) || Number(boatCrewSize) < 1 || Number(boatCrewSize) > 30) {
+      errors.boatCrewSize = "1 és 30 közötti egész legénységi létszámot adj meg."
+    }
+    if (Object.keys(errors).length > 0) {
+      setAuthErrors(errors)
+      return
+    }
+    setAuthErrors({})
     // A hajó adatainak mentése után a szabad hely hirdetése következik be.
     setView("listing")
   }
@@ -737,24 +783,24 @@ export function AuthGateModal({
     }
 
     if (!listingStartDate) {
-      newErrors.date = listingCommitment === "szezon" ? "Szezon kezdő dátuma kötelező." : "Kezdő dátum megadása kötelező."
+      newErrors.startDate = listingCommitment === "szezon" ? "Szezon kezdő dátuma kötelező." : "Kezdő dátum megadása kötelező."
     } else if (listingStartDate < getTomorrowDateInputValue()) {
-      newErrors.date = "A kezdő dátum nem lehet mai vagy múltbeli."
+      newErrors.startDate = "A kezdő dátum nem lehet mai vagy múltbeli."
     }
 
     if (!listingOneDay && !listingEndDate) {
-      newErrors.date =
+      newErrors.endDate =
         listingCommitment === "szezon"
           ? "Szezon záró dátuma megadása kötelező."
           : "Végdátum megadása kötelező, vagy jelöld be az 1 napos eseményt."
     }
 
     if (listingEndDate && listingStartDate && listingEndDate < listingStartDate) {
-      newErrors.date = "A végdátumnak nem lehet korábbi a kezdő dátumnál."
+      newErrors.endDate = "A végdátumnak nem lehet korábbi a kezdő dátumnál."
     }
 
     if (listingEndDate && listingEndDate < getTomorrowDateInputValue()) {
-      newErrors.date = "A végdátum nem lehet mai vagy múltbeli."
+      newErrors.endDate = "A végdátum nem lehet mai vagy múltbeli."
     }
 
     if (listingPosts.length === 0) {
@@ -942,7 +988,7 @@ export function AuthGateModal({
                 </DialogDescription>
               </DialogHeader>
 
-              <form onSubmit={handleLogin} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
+              <form noValidate onSubmit={handleLogin} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="auth-email">Email cím</Label>
                   <div className="relative">
@@ -957,11 +1003,16 @@ export function AuthGateModal({
                       autoComplete="email"
                       placeholder="nev@example.hu"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value)
+                        clearAuthError("email")
+                      }}
                       readOnly={teamInvite && Boolean(inviteEmail)}
                       className={`h-11 pl-9 ${teamInvite && inviteEmail ? "bg-secondary/60" : ""}`}
+                      aria-invalid={!!authErrors.email}
                     />
                   </div>
+                  {authErrors.email ? <p className="text-sm text-destructive" role="alert">{authErrors.email}</p> : null}
                   {teamInvite && inviteEmail ? (
                     <p className="text-xs text-muted-foreground">Ezt az e-mail címet a meghívó alapján töltöttük ki, nem módosítható.</p>
                   ) : null}
@@ -981,10 +1032,15 @@ export function AuthGateModal({
                       autoComplete="current-password"
                       placeholder="••••••••"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value)
+                        clearAuthError("password")
+                      }}
                       className="h-11 pl-9"
+                      aria-invalid={!!authErrors.password}
                     />
                   </div>
+                  {authErrors.password ? <p className="text-sm text-destructive" role="alert">{authErrors.password}</p> : null}
                 </div>
 
                 <Button
@@ -996,18 +1052,12 @@ export function AuthGateModal({
                   {loading ? "Bejelentkezés..." : "Bejelentkezés"}
                 </Button>
 
-                {formError ? (
-                  <p className="text-sm text-destructive" role="alert">
-                    {formError === "Invalid login credentials"
-                      ? "Hibás e-mail cím vagy jelszó."
-                      : formError}
-                  </p>
-                ) : null}
+                {authErrors.submit ? <p className="text-sm text-destructive" role="alert">{authErrors.submit}</p> : null}
 
                 <div className="text-center">
                   <button
                     type="button"
-                    onClick={() => { setFormError(null); setView("forgot") }}
+                    onClick={() => { setFormError(null); setAuthErrors({}); setView("forgot") }}
                     className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                   >
                     Elfelejtettem a jelszavam
@@ -1035,6 +1085,7 @@ export function AuthGateModal({
                 className="h-11 w-full text-base"
                 onClick={() => {
                   setFormError(null)
+                  setAuthErrors({})
                   setEmail("")
                   setPassword("")
                   setView("register")
@@ -1077,10 +1128,7 @@ export function AuthGateModal({
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleForgotPassword} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
-                {formError ? (
-                  <p className="text-sm text-destructive" role="alert">{formError}</p>
-                ) : null}
+              <form noValidate onSubmit={handleForgotPassword} className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="magic-link-email">E-mail cím</Label>
                   <div className="relative">
@@ -1092,10 +1140,15 @@ export function AuthGateModal({
                       autoComplete="email"
                       placeholder="nev@example.hu"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value)
+                        setFormError(null)
+                      }}
                       className="h-11 pl-9"
+                      aria-invalid={!!formError}
                     />
                   </div>
+                  {formError ? <p className="text-sm text-destructive" role="alert">{formError}</p> : null}
                 </div>
                 <Button
                   type="submit"
@@ -1108,7 +1161,7 @@ export function AuthGateModal({
                 <div className="text-center">
                   <button
                     type="button"
-                    onClick={() => { setFormError(null); setView("login") }}
+                    onClick={() => { setFormError(null); setAuthErrors({}); setView("login") }}
                     className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                   >
                     <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1134,7 +1187,7 @@ export function AuthGateModal({
               ) : null}
             </DialogHeader>
 
-            <form onSubmit={handleRegister} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
+            <form noValidate onSubmit={handleRegister} className="flex flex-col gap-4">
               <div className="flex items-center gap-4 rounded-xl border border-border bg-secondary/40 p-4">
                 <label
                   htmlFor="reg-avatar"
@@ -1180,9 +1233,14 @@ export function AuthGateModal({
                     autoComplete="name"
                     placeholder="Pl. Kovács Anna"
                     value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    onChange={(e) => {
+                      setFullName(e.target.value)
+                      clearAuthError("fullName")
+                    }}
                     className="h-11"
+                    aria-invalid={!!authErrors.fullName}
                   />
+                  {authErrors.fullName ? <p className="text-sm text-destructive" role="alert">{authErrors.fullName}</p> : null}
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -1194,10 +1252,15 @@ export function AuthGateModal({
                     autoComplete="email"
                     placeholder="nev@example.hu"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value)
+                      clearAuthError("email")
+                    }}
                     readOnly={teamInvite && Boolean(inviteEmail)}
                     className={`h-11 ${teamInvite && inviteEmail ? "bg-secondary/60" : ""}`}
+                    aria-invalid={!!authErrors.email}
                   />
+                  {authErrors.email ? <p className="text-sm text-destructive" role="alert">{authErrors.email}</p> : null}
                   {teamInvite && inviteEmail ? (
                     <p className="text-xs text-muted-foreground">Ezt az e-mail címet a meghívó alapján töltöttük ki, nem módosítható.</p>
                   ) : null}
@@ -1213,9 +1276,14 @@ export function AuthGateModal({
                     autoComplete="new-password"
                     placeholder="••••••••"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value)
+                      clearAuthError("password")
+                    }}
                     className="h-11"
+                    aria-invalid={!!authErrors.password}
                   />
+                  {authErrors.password ? <p className="text-sm text-destructive" role="alert">{authErrors.password}</p> : null}
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -1237,22 +1305,29 @@ export function AuthGateModal({
                           ? "Adj meg egy érvényes telefonszámot (7–15 számjegy)."
                           : ""
                       )
+                      clearAuthError("phone")
                     }}
                     className="h-11"
+                    aria-invalid={!!authErrors.phone}
                   />
+                  {authErrors.phone ? <p className="text-sm text-destructive" role="alert">{authErrors.phone}</p> : null}
                 </div>
 
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="reg-birthdate">Születési dátum</Label>
-                  <Input
+                  <DatePicker
                     id="reg-birthdate"
-                    type="date"
                     required
                     max={getTodayDateInputValue()}
+                    yearSelect
                     value={birthdate}
-                    onChange={(e) => setBirthdate(e.target.value)}
-                    className="h-11"
+                    onChange={(value) => {
+                      setBirthdate(value)
+                      clearAuthError("birthdate")
+                    }}
+                    aria-invalid={!!authErrors.birthdate}
                   />
+                  {authErrors.birthdate ? <p className="text-sm text-destructive" role="alert">{authErrors.birthdate}</p> : null}
                 </div>
 
                 {mode === "skipper" ? null : (
@@ -1283,9 +1358,13 @@ export function AuthGateModal({
                   type="checkbox"
                   required
                   checked={termsAccepted}
-                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  onChange={(e) => {
+                    setTermsAccepted(e.target.checked)
+                    clearAuthError("terms")
+                  }}
                   aria-label="Kijelentem, hogy az Általános Szerződési Feltételeket elolvastam, megértettem és elfogadom."
-                  className="mt-1 h-4 w-4 shrink-0 accent-accent"
+                  aria-invalid={!!authErrors.terms}
+                  className={`mt-1 h-4 w-4 shrink-0 accent-accent ${authErrors.terms ? "outline outline-2 outline-destructive" : ""}`}
                 />
                 <p className="leading-relaxed">
                   <label htmlFor="reg-terms" className="inline cursor-pointer font-normal">
@@ -1304,12 +1383,13 @@ export function AuthGateModal({
                   </label>
                 </p>
               </div>
+              {authErrors.terms ? <p className="-mt-3 text-sm text-destructive" role="alert">{authErrors.terms}</p> : null}
 
               <Button
                 type="submit"
                 size="lg"
                 className="mt-1 h-11 w-full bg-accent! text-base text-accent-foreground! hover:bg-accent/90!"
-                disabled={loading || avatarProcessing || !termsAccepted}
+                disabled={loading || avatarProcessing}
               >
                 {loading
                   ? "Regisztráció folyamatban…"
@@ -1320,11 +1400,7 @@ export function AuthGateModal({
                       : "Profil létrehozása"}
               </Button>
 
-              {formError ? (
-                <p className="text-sm text-destructive" role="alert">
-                  {formError}
-                </p>
-              ) : null}
+              {authErrors.submit ? <p className="text-sm text-destructive" role="alert">{authErrors.submit}</p> : null}
 
               <div className="text-center">
                 <button
@@ -1332,6 +1408,7 @@ export function AuthGateModal({
                   onClick={() => {
                     setPassword("")
                     setFormError(null)
+                    setAuthErrors({})
                     setView("login")
                   }}
                   className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
@@ -1356,7 +1433,7 @@ export function AuthGateModal({
               </DialogDescription>
             </DialogHeader>
 
-            <form onSubmit={handleBoatSubmit} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
+            <form noValidate onSubmit={handleBoatSubmit} className="flex flex-col gap-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
                   <Label htmlFor="boat-name">Hajó neve</Label>
@@ -1366,9 +1443,14 @@ export function AuthGateModal({
                     required
                     placeholder="Pl. Sirocco"
                     value={boatNameValue}
-                    onChange={(e) => setBoatNameValue(e.target.value)}
+                    onChange={(e) => {
+                      setBoatNameValue(e.target.value)
+                      clearAuthError("boatName")
+                    }}
                     className="h-11"
+                    aria-invalid={!!authErrors.boatName}
                   />
+                  {authErrors.boatName ? <p className="text-sm text-destructive" role="alert">{authErrors.boatName}</p> : null}
                 </div>
 
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
@@ -1379,9 +1461,14 @@ export function AuthGateModal({
                     required
                     placeholder='Pl. "75-ös cirkáló", "Bavaria 32"'
                     value={boatClassValue}
-                    onChange={(e) => setBoatClassValue(e.target.value)}
+                    onChange={(e) => {
+                      setBoatClassValue(e.target.value)
+                      clearAuthError("boatClass")
+                    }}
                     className="h-11"
+                    aria-invalid={!!authErrors.boatClass}
                   />
+                  {authErrors.boatClass ? <p className="text-sm text-destructive" role="alert">{authErrors.boatClass}</p> : null}
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -1392,9 +1479,14 @@ export function AuthGateModal({
                     required
                     placeholder="Pl. Balatonfüred"
                     value={boatHarbor}
-                    onChange={(e) => setBoatHarbor(e.target.value)}
+                    onChange={(e) => {
+                      setBoatHarbor(e.target.value)
+                      clearAuthError("boatHarbor")
+                    }}
                     className="h-11"
+                    aria-invalid={!!authErrors.boatHarbor}
                   />
+                  {authErrors.boatHarbor ? <p className="text-sm text-destructive" role="alert">{authErrors.boatHarbor}</p> : null}
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -1406,9 +1498,14 @@ export function AuthGateModal({
                     max={30}
                     placeholder="Pl. 8"
                     value={boatCrewSize}
-                    onChange={(e) => setBoatCrewSize(e.target.value)}
+                    onChange={(e) => {
+                      setBoatCrewSize(e.target.value)
+                      clearAuthError("boatCrewSize")
+                    }}
                     className="h-11"
+                    aria-invalid={!!authErrors.boatCrewSize}
                   />
+                  {authErrors.boatCrewSize ? <p className="text-sm text-destructive" role="alert">{authErrors.boatCrewSize}</p> : null}
                 </div>
 
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
@@ -1481,12 +1578,6 @@ export function AuthGateModal({
             </DialogHeader>
 
             <form onSubmit={handleListingSubmit} className="flex flex-col gap-5">
-              {listingErrors.submit ? (
-                <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                  {listingErrors.submit}
-                </div>
-              ) : null}
-
               <div className="mx-auto w-full max-w-[280px]" aria-hidden="true" inert>
                 <BoatCard
                   listing={buildPreviewListing()}
@@ -1522,6 +1613,7 @@ export function AuthGateModal({
                   {isListingSaving ? "Hirdetés mentése..." : "Hirdetés közzététele"}
                 </Button>
               </div>
+              {listingErrors.submit ? <p className="text-sm text-destructive" role="alert">{listingErrors.submit}</p> : null}
             </form>
           </div>
         ) : (
@@ -1538,12 +1630,7 @@ export function AuthGateModal({
               </DialogDescription>
             </DialogHeader>
 
-            <form onSubmit={handleListingSubmit} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
-              {listingErrors.submit ? (
-                <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                  {listingErrors.submit}
-                </div>
-              ) : null}
+            <form noValidate onSubmit={handleListingSubmit} className="flex flex-col gap-4">
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-2 sm:col-span-2">
@@ -1646,20 +1733,17 @@ export function AuthGateModal({
                     <Label htmlFor="listing-start-date">
                       {listingCommitment === "szezon" ? "Szezon kezdete" : "Kezdő dátum"}
                     </Label>
-                    <Input
+                    <DatePicker
                       id="listing-start-date"
-                      type="date"
                       min={getTomorrowDateInputValue()}
                       value={listingStartDate}
-                      onChange={(e) => {
-                        setListingStartDate(e.target.value)
-                        if (listingErrors.date) {
-                          setListingErrors((prev) => ({ ...prev, date: undefined }))
-                        }
+                      onChange={(value) => {
+                        setListingStartDate(value)
+                        if (listingErrors.startDate) setListingErrors((prev) => ({ ...prev, startDate: undefined }))
                       }}
-                      className="h-11"
-                      aria-invalid={!!listingErrors.date}
+                      aria-invalid={!!listingErrors.startDate}
                     />
+                    {listingErrors.startDate ? <p className="text-sm text-destructive" role="alert">{listingErrors.startDate}</p> : null}
                   </div>
 
                   {listingOneDay ? null : (
@@ -1667,29 +1751,20 @@ export function AuthGateModal({
                       <Label htmlFor="listing-end-date">
                         {listingCommitment === "szezon" ? "Szezon vége" : "Végdátum"}
                       </Label>
-                      <Input
+                      <DatePicker
                         id="listing-end-date"
-                        type="date"
                         min={listingStartDate > getTomorrowDateInputValue() ? listingStartDate : getTomorrowDateInputValue()}
                         value={listingEndDate}
-                        onChange={(e) => {
-                          setListingEndDate(e.target.value)
-                          if (listingErrors.date) {
-                            setListingErrors((prev) => ({ ...prev, date: undefined }))
-                          }
+                        onChange={(value) => {
+                          setListingEndDate(value)
+                          if (listingErrors.endDate) setListingErrors((prev) => ({ ...prev, endDate: undefined }))
                         }}
-                        className="h-11"
-                        aria-invalid={!!listingErrors.date}
+                        aria-invalid={!!listingErrors.endDate}
                       />
+                      {listingErrors.endDate ? <p className="text-sm text-destructive" role="alert">{listingErrors.endDate}</p> : null}
                     </div>
                   )}
                 </div>
-
-                {listingErrors.date ? (
-                  <p className="sm:col-span-2 text-sm text-destructive" role="alert">
-                    {listingErrors.date}
-                  </p>
-                ) : null}
 
                 {listingCommitment === "egy-verseny" ? (
                   <div className="sm:col-span-2">
@@ -1711,7 +1786,7 @@ export function AuthGateModal({
 
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
                   <Label htmlFor="listing-post">Keresett poszt(ok)</Label>
-                  <div id="listing-post" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div id="listing-post" className={`grid grid-cols-1 gap-2 rounded-lg sm:grid-cols-2 ${listingErrors.post ? "outline outline-1 outline-destructive" : ""}`}>
                     {listingPostOptions.map((option) => {
                       const checked = listingPosts.includes(option.value)
                       return (
@@ -1766,7 +1841,7 @@ export function AuthGateModal({
                       setListingErrors((prev) => ({ ...prev, level: undefined }))
                     }
                   }}>
-                    <SelectTrigger id="listing-level" className="h-11 w-full">
+                    <SelectTrigger id="listing-level" className="h-11 w-full" aria-invalid={!!listingErrors.level}>
                       <SelectValue>{(v: string) => levelOptions[v] ?? "Válassz"}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
@@ -1819,6 +1894,7 @@ export function AuthGateModal({
               >
                 {isListingSaving ? "Hirdetés mentése..." : "Tovább az előnézethez"}
               </Button>
+              {listingErrors.submit ? <p className="text-sm text-destructive" role="alert">{listingErrors.submit}</p> : null}
             </form>
           </div>
         )}

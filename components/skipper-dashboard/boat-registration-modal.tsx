@@ -332,11 +332,6 @@ export function BoatRegistrationModal({
           </DialogHeader>
 
           <form onSubmit={handleBoatSubmit} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
-            {errors.submit ? (
-              <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                {errors.submit}
-              </div>
-            ) : null}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="boat-photo">Hajó fotó (opcionális)</Label>
               <label
@@ -492,7 +487,7 @@ export function BoatRegistrationModal({
 
             <div className="flex flex-col gap-2">
               <Label>Csapat jellege</Label>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className={`grid grid-cols-1 gap-2 sm:grid-cols-3 ${errors.crewType ? "rounded-xl outline outline-1 outline-destructive" : ""}`}>
                 {crewTypeOptions.map((option) => {
                   const active = crewType === option.value
                   return (
@@ -550,6 +545,7 @@ export function BoatRegistrationModal({
                     ? "Hajó adatok mentése"
                     : "Hajó mentése"}
             </Button>
+            {errors.submit ? <p className="text-sm text-destructive" role="alert">{errors.submit}</p> : null}
           </form>
         </div>
         <ImageCropDialog

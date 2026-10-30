@@ -7,12 +7,12 @@ import { ArrowLeft, Save, RotateCcw, Trash2, UserRound, Camera, KeyRound } from 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RequireAuth } from "@/components/require-auth"
 import { supabase } from "@/lib/supabase"
 import { ImageUploadErrorDialog } from "@/components/image-upload-error-dialog"
 import { optimizeAvatarImage } from "@/lib/avatar-image-optimization"
-import { clearHungarianValidationMessage, setHungarianValidationMessage } from "@/lib/hungarian-form-validation"
 
 type ProfileRow = {
   full_name: string
@@ -75,13 +75,23 @@ export default function ProfilPage() {
 
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [profileErrors, setProfileErrors] = useState<{
+    fullName?: string
+    phone?: string
+    birthdate?: string
+    submit?: string
+  }>({})
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteText, setDeleteText] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmNewPassword, setConfirmNewPassword] = useState("")
   const [passwordSaving, setPasswordSaving] = useState(false)
-  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordErrors, setPasswordErrors] = useState<{
+    newPassword?: string
+    confirmPassword?: string
+    submit?: string
+  }>({})
   const [passwordNotice, setPasswordNotice] = useState<string | null>(null)
 
   useEffect(() => {
@@ -98,6 +108,7 @@ export default function ProfilPage() {
     async function loadProfile() {
       setLoading(true)
       setError(null)
+      setProfileErrors({})
 
       const {
         data: { user },
@@ -182,6 +193,7 @@ export default function ProfilPage() {
       setPreviewUrl(null)
     }
     setError(null)
+    setProfileErrors({})
     setAvatarError(null)
     setNotice("A módosításaid elvetve.")
   }
@@ -220,14 +232,20 @@ export default function ProfilPage() {
     if (!userId || avatarProcessing) return
 
     setError(null)
+    setProfileErrors({})
     setNotice(null)
 
+    const errors: typeof profileErrors = {}
+    if (!fullName.trim()) errors.fullName = "A teljes név megadása kötelező."
+    if (!phone.trim()) errors.phone = "A telefonszám megadása kötelező."
+    else if (!isValidPhoneNumber(phone)) errors.phone = "Adj meg egy érvényes telefonszámot (7–15 számjegy)."
     if (!birthdate) {
-      setError("A születési dátum megadása kötelező.")
-      return
+      errors.birthdate = "A születési dátum megadása kötelező."
+    } else if (birthdate > getTodayDateInputValue()) {
+      errors.birthdate = "A születési dátum nem lehet a jövőben."
     }
-    if (birthdate > getTodayDateInputValue()) {
-      setError("A születési dátum nem lehet a jövőben.")
+    if (Object.keys(errors).length > 0) {
+      setProfileErrors(errors)
       return
     }
 
@@ -267,7 +285,7 @@ export default function ProfilPage() {
         .eq("id", userId)
 
       if (updateError) {
-        setError(updateError.message)
+        setProfileErrors({ submit: updateError.message })
         return
       }
 
@@ -335,16 +353,18 @@ export default function ProfilPage() {
 
   async function handlePasswordUpdate(e: React.FormEvent) {
     e.preventDefault()
-    setPasswordError(null)
+    setPasswordErrors({})
     setPasswordNotice(null)
 
     if (!newPassword || newPassword.length < 8) {
-      setPasswordError("Az új jelszónak legalább 8 karakter hosszúnak kell lennie.")
-      return
+      setPasswordErrors({ newPassword: "Az új jelszónak legalább 8 karakter hosszúnak kell lennie." })
     }
 
-    if (newPassword !== confirmNewPassword) {
-      setPasswordError("A két új jelszó nem egyezik.")
+    if (newPassword && newPassword.length >= 8 && newPassword !== confirmNewPassword) {
+      setPasswordErrors({ confirmPassword: "A két új jelszó nem egyezik." })
+    }
+
+    if (!newPassword || newPassword.length < 8 || newPassword !== confirmNewPassword) {
       return
     }
 
@@ -355,7 +375,7 @@ export default function ProfilPage() {
       })
 
       if (passwordError) {
-        setPasswordError(passwordError.message)
+        setPasswordErrors({ submit: passwordError.message })
         return
       }
 
@@ -398,7 +418,7 @@ export default function ProfilPage() {
           </div>
         ) : null}
 
-        <form onSubmit={handleSave} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-5">
+        <form noValidate onSubmit={handleSave} className="flex flex-col gap-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative h-20 w-20 overflow-hidden rounded-full border border-border bg-secondary">
               {avatarUrl ? (
@@ -431,10 +451,15 @@ export default function ProfilPage() {
               <Input
                 id="profile-full-name"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(e) => {
+                  setFullName(e.target.value)
+                  setProfileErrors((previous) => ({ ...previous, fullName: undefined }))
+                }}
                 className="h-11"
                 required
+                aria-invalid={!!profileErrors.fullName}
               />
+              {profileErrors.fullName ? <p className="text-sm text-destructive" role="alert">{profileErrors.fullName}</p> : null}
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -449,6 +474,7 @@ export default function ProfilPage() {
                 onChange={(e) => {
                   const value = e.target.value
                   setPhone(value)
+                  setProfileErrors((previous) => ({ ...previous, phone: undefined }))
                   e.currentTarget.setCustomValidity(
                     value.trim() && !isValidPhoneNumber(value)
                       ? "Adj meg egy érvényes telefonszámot (7–15 számjegy)."
@@ -457,20 +483,26 @@ export default function ProfilPage() {
                 }}
                 className="h-11"
                 placeholder="+36 ..."
+                aria-invalid={!!profileErrors.phone}
               />
+              {profileErrors.phone ? <p className="text-sm text-destructive" role="alert">{profileErrors.phone}</p> : null}
             </div>
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="profile-birthdate">Születési dátum</Label>
-              <Input
+              <DatePicker
                 id="profile-birthdate"
-                type="date"
                 required
                 max={getTodayDateInputValue()}
+                yearSelect
                 value={birthdate}
-                onChange={(e) => setBirthdate(e.target.value)}
-                className="h-11 min-h-11"
+                onChange={(value) => {
+                  setBirthdate(value)
+                  setProfileErrors((previous) => ({ ...previous, birthdate: undefined }))
+                }}
+                aria-invalid={!!profileErrors.birthdate}
               />
+              {profileErrors.birthdate ? <p className="text-sm text-destructive" role="alert">{profileErrors.birthdate}</p> : null}
             </div>
 
             {role !== "kapitany" && role !== "skipper" ? (
@@ -508,6 +540,7 @@ export default function ProfilPage() {
               Módosítások elvetése
             </Button>
           </div>
+          {profileErrors.submit ? <p className="text-sm text-destructive" role="alert">{profileErrors.submit}</p> : null}
         </form>
       </section>
 
@@ -517,7 +550,7 @@ export default function ProfilPage() {
           <p className="mt-1 text-sm text-muted-foreground">Állíts be új jelszót a fiókodhoz.</p>
         </header>
 
-        <form onSubmit={handlePasswordUpdate} onInvalidCapture={setHungarianValidationMessage} onInputCapture={clearHungarianValidationMessage} className="flex flex-col gap-4">
+        <form noValidate onSubmit={handlePasswordUpdate} className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="profile-new-password">Új jelszó</Label>
@@ -525,10 +558,15 @@ export default function ProfilPage() {
                 id="profile-new-password"
                 type="password"
                 value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
+                onChange={(e) => {
+                  setNewPassword(e.target.value)
+                  setPasswordErrors((previous) => ({ ...previous, newPassword: undefined, submit: undefined }))
+                }}
                 placeholder="Legalább 8 karakter"
                 className="h-11"
+                aria-invalid={!!passwordErrors.newPassword}
               />
+              {passwordErrors.newPassword ? <p className="text-sm text-destructive" role="alert">{passwordErrors.newPassword}</p> : null}
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -537,21 +575,18 @@ export default function ProfilPage() {
                 id="profile-confirm-new-password"
                 type="password"
                 value={confirmNewPassword}
-                onChange={(e) => setConfirmNewPassword(e.target.value)}
+                onChange={(e) => {
+                  setConfirmNewPassword(e.target.value)
+                  setPasswordErrors((previous) => ({ ...previous, confirmPassword: undefined, submit: undefined }))
+                }}
                 placeholder="Írd be újra az új jelszót"
                 className="h-11"
+                aria-invalid={!!passwordErrors.confirmPassword}
               />
+              {passwordErrors.confirmPassword ? <p className="text-sm text-destructive" role="alert">{passwordErrors.confirmPassword}</p> : null}
             </div>
           </div>
 
-          {passwordError ? (
-            <div
-              className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-              role="alert"
-            >
-              {passwordError}
-            </div>
-          ) : null}
           {passwordNotice ? (
             <div
               className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-100"
@@ -569,6 +604,7 @@ export default function ProfilPage() {
             <KeyRound className="h-4 w-4" aria-hidden="true" />
             {passwordSaving ? "Jelszó mentése..." : "Jelszó frissítése"}
           </Button>
+          {passwordErrors.submit ? <p className="text-sm text-destructive" role="alert">{passwordErrors.submit}</p> : null}
         </form>
       </section>
 
