@@ -6,6 +6,7 @@ import Link from "next/link"
 import { CalendarDays, MapPin, ArrowRight } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuth } from "@/components/auth-provider"
 import { supabase } from "@/lib/supabase"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
 
@@ -24,13 +25,16 @@ type ListingPreview = {
 export function LatestListings() {
   const [listings, setListings] = useState<ListingPreview[]>([])
   const [loading, setLoading] = useState(true)
+  const { status: authStatus, user } = useAuth()
+  const userId = user?.id ?? null
 
   useEffect(() => {
-    const fetchListings = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+    // Megvárjuk az auth-állapotot, hogy a saját és már megpályázott hirdetéseket kiszűrhessük.
+    if (authStatus === "loading") return
 
+    let active = true
+
+    const fetchListings = async () => {
       const { data, error } = await supabase
         .from("ads")
         .select(
@@ -40,6 +44,7 @@ export function LatestListings() {
         .eq("is_deleted", false)
         .order("created_at", { ascending: false })
         .limit(40)
+      if (!active) return
 
       if (error) {
         console.error("Élő hirdetések lekérdezési hiba:", error)
@@ -50,8 +55,8 @@ export function LatestListings() {
 
       const mapped: ListingPreview[] = (data ?? [])
         .filter((ad: any) => isAdVisibleByDate(ad))
-        .filter((ad: any) => !user || ad.user_id !== user.id)
-        .filter((ad: any) => !user || !(ad.applications ?? []).some((application: any) => application.user_id === user.id))
+        .filter((ad: any) => !userId || ad.user_id !== userId)
+        .filter((ad: any) => !userId || !(ad.applications ?? []).some((application: any) => application.user_id === userId))
         .slice(0, 4)
         .map((ad: any) => ({
           id: ad.id,
@@ -67,7 +72,11 @@ export function LatestListings() {
     }
 
     void fetchListings()
-  }, [])
+
+    return () => {
+      active = false
+    }
+  }, [authStatus, userId])
 
   if (loading) {
     return (

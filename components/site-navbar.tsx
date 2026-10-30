@@ -5,7 +5,7 @@ import Image from "next/image"
 import { useEffect, useState, type FormEvent } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { LogOut, Bell, User as UserIcon } from "lucide-react"
-import { type User as SupabaseUser } from "@supabase/supabase-js"
+import { useAuth } from "@/components/auth-provider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { AuthGateModal } from "@/components/auth-gate-modal"
@@ -33,9 +33,14 @@ export function SiteNavbar() {
   const router = useRouter()
   const pathname = usePathname()
   const [authOpen, setAuthOpen] = useState(false)
-  const [user, setUser] = useState<SupabaseUser | null>(null)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const { user, session } = useAuth()
+  const userId = user?.id ?? null
+  // A betöltött adatot a felhasználóhoz kötjük, így kijelentkezéskor vagy fiókváltáskor
+  // a régi felhasználó adatai külön nullázás nélkül sem jelennek meg.
+  const [adminState, setAdminState] = useState<{ userId: string; isAdmin: boolean } | null>(null)
+  const [profileState, setProfileState] = useState<{ userId: string; profile: UserProfile } | null>(null)
+  const isAdmin = adminState?.userId === userId && adminState.isAdmin
+  const profile = profileState?.userId === userId ? profileState.profile : null
   const [pendingCount, setPendingCount] = useState(0)
   const [feedbackText, setFeedbackText] = useState("")
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
@@ -98,10 +103,6 @@ export function SiteNavbar() {
     setFeedbackNotice(null)
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
       const response = await fetch("/api/feedback", {
         method: "POST",
         headers: {
@@ -128,38 +129,29 @@ export function SiteNavbar() {
   }
 
   useEffect(() => {
-    const fetchUser = async () => {
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
+    if (!userId) return
 
-      if (!currentUser) {
-        setUser(null)
-        setIsAdmin(false)
-        setProfile(null)
-        return
-      }
+    let active = true
 
-      setUser(currentUser)
-      setIsAdmin(false)
+    const fetchProfile = async () => {
       const { data: adminAccess, error: adminError } = await supabase.rpc("is_admin")
+      if (!active) return
 
       if (adminError) {
         console.error("Admin jogosultság lekérdezési hiba:", adminError)
-        setIsAdmin(false)
-      } else {
-        setIsAdmin(adminAccess)
       }
+      setAdminState({ userId, isAdmin: !adminError && adminAccess === true })
 
       const { data, error } = await supabase
         .from("users")
         .select("full_name, role, avatar_url")
-        .eq("id", currentUser.id)
+        .eq("id", userId)
         .maybeSingle()
+      if (!active) return
 
       if (error) {
         console.error("Profil lekérdezési hiba:", error)
-        setProfile(null)
+        setProfileState(null)
         return
       }
 
@@ -168,35 +160,23 @@ export function SiteNavbar() {
         return
       }
 
-      setProfile(data)
+      setProfileState({ userId, profile: data })
       if (isCaptainRole(data.role)) {
-        void fetchPendingCount(currentUser.id)
+        void fetchPendingCount(userId)
       }
     }
 
-    fetchUser()
+    void fetchProfile()
     const handleProfileUpdated = () => {
-      void fetchUser()
+      void fetchProfile()
     }
     window.addEventListener("profile-updated", handleProfileUpdated)
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        fetchUser()
-      } else {
-        setUser(null)
-        setIsAdmin(false)
-        setProfile(null)
-      }
-    })
-
     return () => {
+      active = false
       window.removeEventListener("profile-updated", handleProfileUpdated)
-      subscription.unsubscribe()
     }
-  }, [])
+  }, [userId])
 
   return (
     <>

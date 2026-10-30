@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation"
 import { Compass, ArrowRight, Sailboat } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AuthGateModal } from "@/components/auth-gate-modal"
+import { useAuth } from "@/components/auth-provider"
 import { useCaptainBoats } from "@/components/captain-boats-provider"
-import { supabase } from "@/lib/supabase"
 
 const options = [
   {
@@ -31,12 +31,9 @@ export function CoreOptions() {
   const { boats } = useCaptainBoats()
   const ownsBoat = boats.length > 0
   const router = useRouter()
+  const { user } = useAuth()
 
-  const handleSkipperClick = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
+  const handleSkipperClick = () => {
     if (user) {
       router.push("/kapitany-dashboard")
       return

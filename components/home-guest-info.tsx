@@ -1,10 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Check, Compass, Sailboat } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/components/auth-provider"
 
 const steps = {
   sailor: {
@@ -30,23 +29,9 @@ const steps = {
 const perks = ["A regisztráció ingyenes", "Böngészéshez nem kell fiók", "Nincs rejtett költség"]
 
 export function HomeGuestInfo() {
-  const [guest, setGuest] = useState(false)
+  const { status, user } = useAuth()
 
-  useEffect(() => {
-    let active = true
-    supabase.auth.getSession().then(({ data }) => {
-      if (active) setGuest(!data.session)
-    })
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (active) setGuest(!session)
-    })
-    return () => {
-      active = false
-      sub.subscription.unsubscribe()
-    }
-  }, [])
-
-  if (!guest) return null
+  if (status === "loading" || user) return null
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16" id="hogyan-mukodik">

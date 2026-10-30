@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/components/auth-provider"
 
 export type CaptainBoat = {
   id: string
@@ -86,8 +87,12 @@ async function loadBoats(userId: string): Promise<CaptainBoat[]> {
 
 export function CaptainBoatsProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<CaptainBoatsState>({ status: "ready", firstName: null, boats: [] })
+  const { status: authStatus, user } = useAuth()
+  const userId = user?.id ?? null
 
   useEffect(() => {
+    if (authStatus === "loading") return
+
     let active = true
 
     const refresh = async (userId: string | null) => {
@@ -107,18 +112,12 @@ export function CaptainBoatsProvider({ children }: { children: ReactNode }) {
       if (active) setState({ status: "ready", firstName, boats })
     }
 
-    // A getSession helyi, így azonnal tudjuk, kell-e vázat mutatni.
-    void supabase.auth.getSession().then(({ data }) => refresh(data.session?.user?.id ?? null))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") return
-      void refresh(session?.user?.id ?? null)
-    })
+    void refresh(userId)
 
     return () => {
       active = false
-      subscription.unsubscribe()
     }
-  }, [])
+  }, [authStatus, userId])
 
   return <CaptainBoatsContext.Provider value={state}>{children}</CaptainBoatsContext.Provider>
 }

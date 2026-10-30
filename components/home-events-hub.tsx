@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import type { User } from "@supabase/supabase-js"
 import { ArrowRight, CalendarDays, Check, Compass, LoaderCircle, MapPin, ShipWheel, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/components/auth-provider"
 import { EventDetailsModal, type EventDetailsSummary } from "@/components/event-details-modal"
 
 type PersonalEvent = {
@@ -98,8 +98,8 @@ function normalizeBoat(boat: unknown) {
 }
 
 export function HomeEventsHub() {
-  const [user, setUser] = useState<User | null>(null)
-  const [authResolved, setAuthResolved] = useState(false)
+  const { status: authStatus, user, session } = useAuth()
+  const authResolved = authStatus === "ready"
   const [role, setRole] = useState<string | null>(null)
   const [profileMissing, setProfileMissing] = useState(false)
   const [isTeamMember, setIsTeamMember] = useState(false)
@@ -111,25 +111,6 @@ export function HomeEventsHub() {
   const [respondingEventId, setRespondingEventId] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
   const [detailsEvent, setDetailsEvent] = useState<EventDetailsSummary | null>(null)
-
-  useEffect(() => {
-    let active = true
-    const updateUser = (nextUser: User | null) => {
-      if (!active) return
-      setUser(nextUser)
-      setAuthResolved(true)
-    }
-
-    void supabase.auth.getUser().then(({ data }) => updateUser(data.user))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      updateUser(session?.user ?? null)
-    })
-
-    return () => {
-      active = false
-      subscription.unsubscribe()
-    }
-  }, [])
 
   useEffect(() => {
     if (!user) {
@@ -285,7 +266,6 @@ export function HomeEventsHub() {
     setActionError(null)
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) {
         throw new Error("A válasz mentéséhez be kell jelentkezned.")
       }
@@ -340,7 +320,6 @@ export function HomeEventsHub() {
     setActionError(null)
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) {
         throw new Error("A részvétel törléséhez be kell jelentkezned.")
       }

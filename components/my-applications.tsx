@@ -6,9 +6,9 @@ import { CalendarDays, MapPin, Anchor, X, Mail, Phone } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuth } from "@/components/auth-provider"
 import { supabase } from "@/lib/supabase"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
-import type { User } from "@supabase/supabase-js"
 
 type ApplicationRow = {
   id: string
@@ -62,30 +62,11 @@ const statusConfig = {
 const MAX_SHOWN = 3
 
 export function MyApplications() {
-  const [user, setUser] = useState<User | null>(null)
+  const { user } = useAuth()
   const [applications, setApplications] = useState<ApplicationRow[]>([])
   const [loading, setLoading] = useState(true)
   const [cancelingId, setCancelingId] = useState<string | null>(null)
   const [fetchError, setFetchError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const fetchUser = async () => {
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
-      setUser(currentUser)
-    }
-
-    void fetchUser()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
 
   useEffect(() => {
     if (!user) {
