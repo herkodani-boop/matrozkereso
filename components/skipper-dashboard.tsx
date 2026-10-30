@@ -560,35 +560,11 @@ export function SkipperDashboard() {
     const fetchApplicants = async () => {
       setApplicantsLoading(true)
       setApplicantsLoadError(null)
-      let data: any[] | null = null
-      let error: any = null
-
-      const withMessageQuery = await supabase
+      const { data, error } = await supabase
         .from("applications")
         .select("id, user_id, status, message, captain_contact_shared_at")
         .eq("ad_id", activeListingId)
         .order("created_at", { ascending: false })
-
-      if (withMessageQuery.error) {
-        const messageColumnMissing =
-          String(withMessageQuery.error.code ?? "") === "42703" ||
-          /message/i.test(withMessageQuery.error.message ?? "")
-
-        if (!messageColumnMissing) {
-          error = withMessageQuery.error
-        } else {
-          const withoutMessageQuery = await supabase
-            .from("applications")
-            .select("id, user_id, status")
-            .eq("ad_id", activeListingId)
-            .order("created_at", { ascending: false })
-
-          data = withoutMessageQuery.data ?? null
-          error = withoutMessageQuery.error
-        }
-      } else {
-        data = withMessageQuery.data ?? null
-      }
 
       if (error) {
         console.error("Jelentkezők lekérdezési hiba:", error)

@@ -419,8 +419,7 @@ export function BrowseBoats() {
       }
       setLoadError(null)
 
-      const adsBaseSelect = "id, user_id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url)"
-      const adsExtendedBaseSelect = adsBaseSelect.replace("boat:boats(id, name, image_url)", "boat:boats(id, name, image_url, original_image_url)")
+      const adsSelect = "id, user_id, title, date_text, location, positions, commitment, experience_level, start_date, end_date, boat:boats(id, name, image_url, original_image_url)"
       const from = pageIndex * PAGE_SIZE
       const to = from + PAGE_SIZE - 1
 
@@ -467,52 +466,20 @@ export function BrowseBoats() {
         return applySort(next, sort).range(from, to)
       }
 
-      let data: any[] | null = null
-      let count: number | null = null
-
-      const { data: adsWithNote, count: countWithNote, error: adsWithNoteError } = await applyFilters(
-        supabase.from("ads").select(`${adsExtendedBaseSelect}, captain_note, max_applicants, image_focus_x, image_focus_y`, { count: "exact" }),
+      const { data: adsData, count: adsCount, error: adsError } = await applyFilters(
+        supabase.from("ads").select(`${adsSelect}, captain_note, max_applicants, image_focus_x, image_focus_y`, { count: "exact" }),
       )
 
-      if (adsWithNoteError) {
-        const noteColumnMissing = String(adsWithNoteError.code ?? "") === "42703" || /captain_note|max_applicants|image_focus|original_image_url/i.test(adsWithNoteError.message ?? "")
-
-        if (!noteColumnMissing) {
-          console.error("Hirdetések lekérdezési hiba:", adsWithNoteError)
-          setLoadError("A hirdetések betöltése nem sikerült. Próbáld újra később.")
-          setLoadingAds(false)
-          setLoadingMore(false)
-          return
-        }
-
-        // A captain_note oszlop hiányzik (régebbi migráció), a keresésből is kihagyjuk
-        const fallbackOrParts = trimmedSearch
-          ? [`title.ilike.${toIlikeValue(trimmedSearch)}`, `location.ilike.${toIlikeValue(trimmedSearch)}`, ...(matchingBoatIds.length > 0 ? [`boat_id.in.(${matchingBoatIds.join(",")})`] : [])]
-          : null
-
-        let fallbackQuery: any = onlyVisibleByDate(supabase.from("ads").select(adsBaseSelect, { count: "exact" }).eq("is_active", true))
-        if (commitment !== ALL) fallbackQuery = fallbackQuery.eq("commitment", commitment)
-        if (level !== ALL) fallbackQuery = fallbackQuery.eq("experience_level", level)
-        if (posts.length > 0) fallbackQuery = fallbackQuery.overlaps("positions", posts)
-        if (fallbackOrParts) fallbackQuery = fallbackQuery.or(fallbackOrParts.join(","))
-        fallbackQuery = applySort(fallbackQuery, sort).range(from, to)
-
-        const { data: adsWithoutNote, count: countWithoutNote, error: adsWithoutNoteError } = await fallbackQuery
-
-        if (adsWithoutNoteError) {
-          console.error("Hirdetések lekérdezési hiba:", adsWithoutNoteError)
-          setLoadError("A hirdetések betöltése nem sikerült. Próbáld újra később.")
-          setLoadingAds(false)
-          setLoadingMore(false)
-          return
-        }
-
-        data = adsWithoutNote ?? []
-        count = countWithoutNote ?? null
-      } else {
-        data = adsWithNote ?? []
-        count = countWithNote ?? null
+      if (adsError) {
+        console.error("Hirdetések lekérdezési hiba:", adsError)
+        setLoadError("A hirdetések betöltése nem sikerült. Próbáld újra később.")
+        setLoadingAds(false)
+        setLoadingMore(false)
+        return
       }
+
+      const data: any[] = adsData ?? []
+      const count: number | null = adsCount ?? null
 
       const applicationCountsByAdId = new Map<string, { applicationCount: number; activeApplicationCount: number }>()
       const adIds = (data ?? []).map((ad: any) => String(ad.id))

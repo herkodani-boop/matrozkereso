@@ -858,29 +858,8 @@ export function AuthGateModal({
       const { error } = await supabase.from("ads").insert([listingPayload])
 
       if (error) {
-        // Backward compatibility: if captain_note column is not deployed yet, save without it.
-        const isUnknownColumn = String(error.code ?? "") === "42703"
-          || /column/i.test(error.message ?? "")
-
-        if (!isUnknownColumn) {
-          setListingErrors({ submit: error.message })
-          return
-        }
-
-        const { error: fallbackError } = await supabase.from("ads").insert([
-          {
-            ...listingPayload,
-            captain_note: undefined,
-            max_applicants: undefined,
-            image_focus_x: undefined,
-            image_focus_y: undefined,
-          },
-        ])
-
-        if (fallbackError) {
-          setListingErrors({ submit: fallbackError.message })
-          return
-        }
+        setListingErrors({ submit: error.message })
+        return
       }
 
       onListingCreated?.()
