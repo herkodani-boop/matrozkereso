@@ -50,7 +50,7 @@ const statusConfig = {
     className: "bg-secondary text-secondary-foreground",
   },
   accepted: {
-    label: "Kapcsolatfelvétel",
+    label: "Elfogadva",
     className: "bg-emerald-600 text-white",
   },
   rejected: {

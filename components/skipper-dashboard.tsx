@@ -25,6 +25,7 @@ import {
   PencilLine,
   RotateCcw,
   ChevronDown,
+  Trophy,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -62,6 +63,9 @@ import {
   formatListingExpiryDate,
 } from "@/components/skipper-dashboard/format-utils"
 import { BoatRegistrationModal } from "@/components/skipper-dashboard/boat-registration-modal"
+import { RaceCalendarPicker } from "@/components/skipper-dashboard/race-calendar-picker"
+import { EventTypeSelector } from "@/components/skipper-dashboard/event-type-selector"
+import { buildRaceNotes, type RaceCalendarEntry } from "@/lib/race-calendar"
 
 const PAST_EVENTS_PAGE_SIZE = 10
 
@@ -113,6 +117,31 @@ function buildEventRoster(event: EventItem, teamMembers: TeamMember[], captainId
 
 const APPLICANT_PAGE_SIZE = 15
 
+// Upsert helyett: a hitelesített szerepnek csak a status oszlopra van UPDATE joga, az upsert
+// ON CONFLICT DO UPDATE ága viszont az event_id és user_id oszlopot is írná, ezért mindig elutasítás lenne.
+async function saveEventAttendeeStatus(eventId: string, userId: string, status: "confirmed" | "pending" | "declined" | "unset") {
+  const updateStatus = () =>
+    supabase
+      .from("boat_event_attendees")
+      .update({ status })
+      .eq("event_id", eventId)
+      .eq("user_id", userId)
+      .select("id")
+      .maybeSingle()
+
+  const updated = await updateStatus()
+  if (updated.error || updated.data) return updated
+
+  const inserted = await supabase
+    .from("boat_event_attendees")
+    .insert({ event_id: eventId, user_id: userId, status })
+    .select("id")
+    .maybeSingle()
+
+  // Ha közben más létrehozta a sort, a státuszt frissítjük.
+  return inserted.error?.code === "23505" ? updateStatus() : inserted
+}
+
 export function SkipperDashboard() {
   const [activeDashboardTab, setActiveDashboardTab] = useState<"team" | "events" | "listings">("events")
   const [listings, setListings] = useState<Listing[]>([])
@@ -144,6 +173,8 @@ export function SkipperDashboard() {
     location: "",
     notes: "",
   })
+  const [isRaceCalendarOpen, setIsRaceCalendarOpen] = useState(false)
+  const [selectedCalendarRace, setSelectedCalendarRace] = useState<RaceCalendarEntry | null>(null)
   const [editEventForm, setEditEventForm] = useState({
     type: "Verseny" as EventItem["type"],
     title: "",
@@ -198,6 +229,25 @@ export function SkipperDashboard() {
   }>({ loading: false, row: null, applicationId: null, applicationStatus: null })
   const [listingMutatingId, setListingMutatingId] = useState<string | null>(null)
   const [pendingCountsMap, setPendingCountsMap] = useState<Record<string, number>>({})
+  const initialTabResolved = useRef(false)
+  // A dashboard csak kliensen renderelődik (RequireAuth mögött), így a localStorage itt olvasható.
+  const [shareContactOnAccept, setShareContactOnAccept] = useState(() => {
+    try {
+      return window.localStorage.getItem("shareContactOnAccept") !== "false"
+    } catch {
+      // A tárolás nem elérhető (pl. privát mód); marad az alapértelmezés.
+      return true
+    }
+  })
+
+  function updateShareContactOnAccept(next: boolean) {
+    setShareContactOnAccept(next)
+    try {
+      window.localStorage.setItem("shareContactOnAccept", String(next))
+    } catch {
+      // A beállítás ilyenkor csak erre a munkamenetre szól.
+    }
+  }
   const [teamLoading, setTeamLoading] = useState(false)
   const [teamError, setTeamError] = useState<string | null>(null)
   const [teamLoadError, setTeamLoadError] = useState<string | null>(null)
@@ -469,7 +519,8 @@ export function SkipperDashboard() {
         return
       }
 
-      const allAds = adsData ?? []
+      // A törölt hirdetés a dashboardról is eltűnik; a lezárt a korábbiak között marad.
+      const allAds = (adsData ?? []).filter((ad) => ad.is_deleted !== true)
 
       if (allAds.length > 0) {
         const mapped: Listing[] = allAds.map((ad: any) => ({
@@ -517,6 +568,18 @@ export function SkipperDashboard() {
           countsMap[app.ad_id] = (countsMap[app.ad_id] ?? 0) + 1
         })
         setPendingCountsMap(countsMap)
+
+        // Első betöltéskor, ha döntésre váró jelentkező van, oda visszük a kapitányt.
+        if (!initialTabResolved.current) {
+          initialTabResolved.current = true
+          const busiestListing = mapped
+            .filter((listing) => !listing.isHistorical && (countsMap[listing.id] ?? 0) > 0)
+            .sort((first, second) => (countsMap[second.id] ?? 0) - (countsMap[first.id] ?? 0))[0]
+          if (busiestListing) {
+            setActiveDashboardTab("listings")
+            setSelectedId((prev) => prev || busiestListing.id)
+          }
+        }
         }
       } else {
         setListings([])
@@ -683,6 +746,15 @@ export function SkipperDashboard() {
   function pendingCount(listing: Listing) {
     return listing.applicants.filter((a) => (statuses[a.id] ?? "pending") === "pending").length
   }
+
+  // Betöltött jelentkezőknél a helyi döntéseket is figyelembe vesszük, egyébként a betöltéskori szám érvényes.
+  function livePendingCount(listing: Listing) {
+    return listing.applicants.length > 0 ? pendingCount(listing) : (pendingCountsMap[listing.id] ?? 0)
+  }
+
+  const totalPendingCount = listings
+    .filter((listing) => !listing.isHistorical)
+    .reduce((sum, listing) => sum + livePendingCount(listing), 0)
 
   function openModal(
     view: "boat" | "listing",
@@ -995,7 +1067,31 @@ export function SkipperDashboard() {
     return () => window.clearTimeout(timeoutId)
   }, [actionNotice, actionError])
 
+  function applyRaceFromCalendar(race: RaceCalendarEntry) {
+    // Az előzőleg választott verseny blokkját kivesszük, a kapitány saját megjegyzése marad.
+    const previousRaceNotes = selectedCalendarRace ? buildRaceNotes(selectedCalendarRace) : null
+    const raceNotes = buildRaceNotes(race)
+    setNewEventForm((prev) => {
+      const ownNotes = (previousRaceNotes ? prev.notes.replace(previousRaceNotes, "") : prev.notes).trim()
+      return {
+        ...prev,
+        type: "Verseny",
+        title: race.title,
+        startDate: race.startDate,
+        endDate: race.oneDay ? "" : race.endDate,
+        oneDay: race.oneDay,
+        location: race.location,
+        notes: ownNotes ? `${ownNotes}\n\n${raceNotes}` : raceNotes,
+      }
+    })
+    setEventErrors({})
+    setSelectedCalendarRace(race)
+    setIsRaceCalendarOpen(false)
+  }
+
   function resetNewEventForm() {
+    setIsRaceCalendarOpen(false)
+    setSelectedCalendarRace(null)
     setEventErrors({})
     setNewEventForm({
       type: "Verseny",
@@ -1313,16 +1409,7 @@ export function SkipperDashboard() {
             .eq("user_id", userId)
             .select("id")
             .maybeSingle()
-        : await supabase.from("boat_event_attendees").upsert(
-              {
-                event_id: eventId,
-                user_id: userId,
-                status: nextStatus,
-              },
-              { onConflict: "event_id,user_id" },
-            )
-              .select("id")
-              .maybeSingle()
+        : await saveEventAttendeeStatus(eventId, userId, nextStatus)
 
       if (result.error || !result.data) {
         console.error("Esemény résztvevő státusz mentési hiba:", result.error)
@@ -1388,7 +1475,7 @@ export function SkipperDashboard() {
       } = await supabase.auth.getSession()
 
       if (!session?.access_token) {
-        throw new Error("A hirdetés visszavonásához be kell jelentkezned.")
+        throw new Error("A hirdetés törléséhez be kell jelentkezned.")
       }
 
       const response = await fetch("/api/listings/archive", {
@@ -1402,21 +1489,16 @@ export function SkipperDashboard() {
       const result = (await response.json()) as { id?: string; error?: string }
 
       if (!response.ok || !result.id) {
-        throw new Error(result.error || "A hirdetés visszavonása nem sikerült.")
+        throw new Error(result.error || "A hirdetés törlése nem sikerült.")
       }
 
-      setListings((prev) =>
-        prev.map((listing) =>
-          listing.id === id
-            ? { ...listing, isActive: false, isDeleted: true, isHistorical: true }
-            : listing,
-        ),
-      )
-      setActionNotice("A hirdetés visszavonva. A hozzá tartozó jelentkezések megmaradtak.")
+      setListings((prev) => prev.filter((listing) => listing.id !== id))
+      setSelectedId((prev) => (prev === id ? "" : prev))
+      setActionNotice("A hirdetés törölve.")
       setConfirmDeleteId(null)
     } catch (error) {
-      console.error("Hirdetés visszavonási hiba:", error)
-      setActionError(error instanceof Error ? error.message : "A hirdetés visszavonása nem sikerült.")
+      console.error("Hirdetés törlési hiba:", error)
+      setActionError(error instanceof Error ? error.message : "A hirdetés törlése nem sikerült.")
     } finally {
       setDeletingId(null)
       listingMutationRef.current = null
@@ -1505,6 +1587,8 @@ export function SkipperDashboard() {
         : undefined
       let mutationError: string | null = null
       let mutationSucceeded = false
+      let acceptedWithContact = false
+      let acceptanceEmailSent = false
 
       if (status === "accepted") {
         const { data: { session } } = await supabase.auth.getSession()
@@ -1518,13 +1602,15 @@ export function SkipperDashboard() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ applicationId: id }),
+          body: JSON.stringify({ applicationId: id, shareContact: shareContactOnAccept }),
         })
-        const payload = (await response.json()) as { ok?: boolean; error?: string }
+        const payload = (await response.json()) as { ok?: boolean; error?: string; contactShared?: boolean; emailSent?: boolean }
         if (!response.ok || !payload.ok) {
           mutationError = payload.error || "A jelentkezést nem sikerült elfogadni."
         } else {
           mutationSucceeded = true
+          acceptedWithContact = payload.contactShared === true
+          acceptanceEmailSent = payload.emailSent === true
         }
       } else {
         const result = isRevokingAcceptedContact
@@ -1561,6 +1647,20 @@ export function SkipperDashboard() {
         return
       }
 
+      if (acceptedWithContact) {
+        setListings((prev) =>
+          prev.map((listing) => listing.id === selected.id
+            ? {
+                ...listing,
+                applicants: listing.applicants.map((applicant) =>
+                  applicant.id === id ? { ...applicant, contactShared: true } : applicant,
+                ),
+              }
+            : listing,
+          ),
+        )
+      }
+
       if (status === "pending") {
         setListings((prev) =>
           prev.map((listing) => listing.id === selected.id
@@ -1588,11 +1688,14 @@ export function SkipperDashboard() {
       }
 
       setActionNotice(status === "accepted"
-        ? "A kapcsolatfelvétel kezdeményezhető. Ez még nem jelenti azt, hogy a jelentkező biztosan részt vesz az eseményen."
+        ? (acceptedWithContact
+          ? "Jelentkező elfogadva, az elérhetőségeitek kölcsönösen láthatók."
+          : "Jelentkező elfogadva, látod az elérhetőségeit. A sajátjaidat alább oszthatod meg vele.")
+          + (acceptanceEmailSent ? " E-mailben is értesítettük." : "")
         : status === "pending"
           ? isReopeningRejectedApplication
             ? "Az elutasítást visszavontad. A jelentkezés újra elbírálás alatt van."
-            : "A kapcsolatfelvétel visszavonva. A jelentkezés visszakerült elbírálás alá."
+            : "Az elfogadást visszavontad. A jelentkezés újra elbírálás alatt van."
           : "Jelentkezés elutasítva.")
     } catch (error) {
       console.error("Jelentkezés státusz mentési hiba:", error)
@@ -1631,7 +1734,7 @@ export function SkipperDashboard() {
         },
         body: JSON.stringify({ applicationId: applicant.id }),
       })
-      const result = (await response.json()) as { ok?: boolean; error?: string }
+      const result = (await response.json()) as { ok?: boolean; error?: string; emailSent?: boolean }
 
       if (!response.ok || !result.ok) {
         throw new Error(result.error || "Az elérhetőségek megosztása nem sikerült.")
@@ -1649,7 +1752,9 @@ export function SkipperDashboard() {
             : listing,
         ),
       )
-      setActionNotice(`Az elérhetőségeid megjelentek ${applicant.name} jelentkezésénél. Külön értesítő e-mailt nem küldünk.`)
+      setActionNotice(result.emailSent
+        ? `Az elérhetőségeid megjelentek ${applicant.name} jelentkezésénél, és e-mailben is elküldtük neki.`
+        : `Az elérhetőségeid megjelentek ${applicant.name} jelentkezésénél.`)
     } catch (error) {
       console.error("Kapitányi elérhetőségek megosztási hiba:", error)
       setActionError(error instanceof Error ? error.message : "Az elérhetőségek megosztása nem sikerült.")
@@ -1671,16 +1776,7 @@ export function SkipperDashboard() {
       return
     }
 
-    const { error: attendeeError } = await supabase
-      .from("boat_event_attendees")
-      .upsert(
-        {
-          event_id: matchingEvent.id,
-          user_id: applicant.userId,
-          status: "confirmed",
-        },
-        { onConflict: "event_id,user_id" },
-      )
+    const { error: attendeeError } = await saveEventAttendeeStatus(matchingEvent.id, applicant.userId, "confirmed")
 
     if (attendeeError) {
       console.error("Elfogadott jelentkező eseményhez kötése hiba:", attendeeError)
@@ -2085,6 +2181,14 @@ export function SkipperDashboard() {
           >
             <Anchor className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="whitespace-nowrap">Hirdetések</span>
+            {totalPendingCount > 0 ? (
+              <span
+                className="rounded-full bg-brand-orange px-1.5 text-[11px] font-semibold leading-5 text-brand-orange-foreground"
+                aria-label={`${totalPendingCount} új jelentkező`}
+              >
+                {totalPendingCount > 9 ? "9+" : totalPendingCount}
+              </span>
+            ) : null}
           </button>
         </div>
 
@@ -2102,7 +2206,7 @@ export function SkipperDashboard() {
               </h2>
               <Button
                 type="button"
-                className="h-10 bg-brand-orange! font-semibold text-brand! hover:bg-brand-orange/90!"
+                className="h-10 bg-brand! font-semibold text-white! hover:bg-brand/90!"
                 onClick={() => {
                   setTeamError(null)
                   setIsInviteModalOpen(true)
@@ -2321,7 +2425,7 @@ export function SkipperDashboard() {
               </h2>
             <Button
               type="button"
-              className="h-10 bg-brand-orange! font-semibold text-brand! hover:bg-brand-orange/90!"
+              className="h-10 bg-brand! font-semibold text-white! hover:bg-brand/90!"
               onClick={() => {
                 resetNewEventForm()
                 setIsNewEventModalOpen(true)
@@ -2359,7 +2463,7 @@ export function SkipperDashboard() {
                 </div>
                 <Button
                   type="button"
-                  className="h-10 bg-brand-orange! font-semibold text-brand! hover:bg-brand-orange/90!"
+                  className="h-10 bg-brand! font-semibold text-white! hover:bg-brand/90!"
                   onClick={() => {
                     resetNewEventForm()
                     setIsNewEventModalOpen(true)
@@ -2673,7 +2777,7 @@ export function SkipperDashboard() {
               </h2>
               <Button
                 type="button"
-                className="h-10 bg-brand-orange! font-semibold text-brand! hover:bg-brand-orange/90!"
+                className="h-10 bg-brand! font-semibold text-white! hover:bg-brand/90!"
                 onClick={() => openModal("listing")}
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
@@ -2741,7 +2845,7 @@ export function SkipperDashboard() {
               ) : (
                 displayedListings.map((listing) => {
                 const isActive = listing.id === selected.id
-                const count = pendingCountsMap[listing.id] ?? pendingCount(listing)
+                const count = livePendingCount(listing)
                 const expiryDate = formatListingExpiryDate(listing.expiryDate)
                 const expiryLabel = !listing.isActive
                   ? "Eredeti lejárat:"
@@ -2769,10 +2873,8 @@ export function SkipperDashboard() {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="truncate text-base font-semibold text-foreground">{listing.event}</span>
-                          {listing.isDeleted ? (
-                            <Badge className="border-0 bg-muted text-muted-foreground hover:bg-muted">Visszavonva</Badge>
-                          ) : !listing.isActive ? (
-                            <Badge className="border-0 bg-secondary text-secondary-foreground hover:bg-secondary">Archivált</Badge>
+                          {!listing.isActive ? (
+                            <Badge className="border-0 bg-secondary text-secondary-foreground hover:bg-secondary">Lezárt</Badge>
                           ) : listing.isHistorical ? (
                             <Badge className="border-0 bg-amber-100 text-amber-800 hover:bg-amber-100">Lejárt</Badge>
                           ) : null}
@@ -2786,26 +2888,29 @@ export function SkipperDashboard() {
                         </p>
                       </div>
                       {count > 0 && !isActive ? (
-                        <Badge className="hidden shrink-0 border-0 bg-brand-orange text-brand hover:bg-brand-orange sm:inline-flex">
+                        <Badge className="hidden shrink-0 border-0 bg-brand-orange text-brand-orange-foreground hover:bg-brand-orange sm:inline-flex">
                           {count} új jelentkező
                         </Badge>
                       ) : null}
                     </button>
+                    {listing.isActive && !listing.isHistorical ? (
+                      <button
+                        type="button"
+                        aria-label={`Hirdetés lezárása: ${listing.event}`}
+                        title="Lezárás: új jelentkezés nem érkezhet, a hirdetés a korábbiak között marad"
+                        disabled={listingMutatingId !== null || applicantMutationRef.current.size > 0}
+                        onClick={() => setConfirmArchiveId(listing.id)}
+                        className="ml-3 flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-foreground/80 outline-none transition-colors hover:bg-brand-tint hover:text-brand focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Archive className="h-4 w-4" aria-hidden="true" />
+                        <span className="hidden sm:inline">Lezárás</span>
+                      </button>
+                    ) : null}
                     <button
                       type="button"
-                      aria-label={`Hirdetés lezárása: ${listing.event}`}
-                      title="Hirdetés lezárása"
-                      disabled={listingMutatingId !== null || applicantMutationRef.current.size > 0 || !listing.isActive}
-                      onClick={() => setConfirmArchiveId(listing.id)}
-                      className="ml-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-foreground/80 outline-none transition-colors hover:bg-brand-tint hover:text-brand focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Archive className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Hirdetés visszavonása: ${listing.event}`}
-                      title="Hirdetés visszavonása"
-                      disabled={listingMutatingId !== null || applicantMutationRef.current.size > 0 || listing.isDeleted}
+                      aria-label={`Hirdetés törlése: ${listing.event}`}
+                      title="Törlés: a hirdetés a dashboardról is eltűnik"
+                      disabled={listingMutatingId !== null || applicantMutationRef.current.size > 0}
                       onClick={() => setConfirmDeleteId(listing.id)}
                       className="ml-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-foreground/80 outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-40"
                     >
@@ -2844,12 +2949,23 @@ export function SkipperDashboard() {
                                 }`}
                               >
                                 {label} ·{" "}
-                                <span className={key === "pending" && applicantCounts.pending > 0 && activeApplicantFilter !== key ? "font-bold text-brand-orange" : ""}>
+                                <span className={key === "pending" && applicantCounts.pending > 0 && activeApplicantFilter !== key ? "rounded-full bg-brand-orange px-1.5 font-bold text-brand-orange-foreground" : ""}>
                                   {applicantCounts[key]}
                                 </span>
                               </button>
                             ))}
                           </div>
+                          {!selected.isHistorical ? (
+                            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground/80">
+                              <input
+                                type="checkbox"
+                                checked={shareContactOnAccept}
+                                onChange={(event) => updateShareContactOnAccept(event.target.checked)}
+                                className="h-4 w-4 accent-[var(--color-brand)]"
+                              />
+                              Elfogadáskor az elérhetőségeimet is megosztom
+                            </label>
+                          ) : null}
                           {selected.applicants.length > 10 ? (
                             <input
                               type="search"
@@ -2935,12 +3051,14 @@ export function SkipperDashboard() {
                             size="sm"
                             onClick={() => void decide(applicant.id, "accepted")}
                             disabled={isSaving || listingMutatingId === selected.id}
-                            aria-label={`Kapcsolatfelvétel indítása: ${applicant.name}`}
-                            title="Kapcsolatfelvétel indítása"
+                            aria-label={`Jelentkező elfogadása: ${applicant.name}`}
+                            title={shareContactOnAccept
+                              ? "Elfogadás: látni fogjátok egymás elérhetőségét"
+                              : "Elfogadás: látni fogod az elérhetőségét"}
                             className="bg-emerald-600! text-white! hover:bg-emerald-700!"
                           >
                             <Check className="h-4 w-4" aria-hidden="true" />
-                            Kapcsolatfelvétel
+                            Elfogadás
                           </Button>
                           <Button
                             type="button"
@@ -2970,7 +3088,7 @@ export function SkipperDashboard() {
                             {status === "pending" ? (
                               "Függőben"
                             ) : status === "accepted" ? (
-                              "Kapcsolatfelvétel"
+                              "Elfogadva"
                             ) : (
                               <>
                                 <X className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
@@ -2985,8 +3103,8 @@ export function SkipperDashboard() {
                               variant="ghost"
                               disabled={isSaving}
                               onClick={() => setConfirmRevokeApplicantId(applicant.id)}
-                              aria-label={`Kapcsolatfelvétel visszavonása: ${applicant.name}`}
-                              title="Kapcsolatfelvétel visszavonása"
+                              aria-label={`Elfogadás visszavonása: ${applicant.name}`}
+                              title="Elfogadás visszavonása"
                               className="text-muted-foreground hover:text-foreground"
                             >
                               <RotateCcw className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
@@ -3543,14 +3661,14 @@ export function SkipperDashboard() {
           <div className="flex flex-col gap-4 p-6">
             <DialogHeader className="gap-2">
               <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
-                Kapcsolatfelvétel visszavonása
+                Elfogadás visszavonása
               </DialogTitle>
               <DialogDescription className="text-pretty leading-relaxed">
                 {(() => {
                   const applicant = selected.applicants.find((item) => item.id === confirmRevokeApplicantId)
                   return applicant
-                    ? `Visszavonod a kapcsolatfelvétel kezdeményezését ${applicant.name} jelentkezőnél? A jelentkezés visszakerül elbírálás alá. Ez nem vonja vissza a már megosztott elérhetőségeket, és az eseményrésztvevők közül sem távolítja el.`
-                    : "A jelentkezés visszakerül elbírálás alá. A már megosztott elérhetőségek és az eseményrészvétel nem változik."
+                    ? `Visszavonod ${applicant.name} elfogadását? A jelentkezés újra elbírálás alá kerül, a megosztott elérhetőségeid eltűnnek nála, és ha az eseményhez is hozzáadtad, onnan is lekerül.`
+                    : "A jelentkezés újra elbírálás alá kerül, a megosztott elérhetőségeid eltűnnek, és az eseményről is lekerül."
                 })()}
               </DialogDescription>
             </DialogHeader>
@@ -3590,7 +3708,7 @@ export function SkipperDashboard() {
                 Hirdetés lezárása
               </DialogTitle>
               <DialogDescription className="text-pretty leading-relaxed">
-                A hirdetés azonnal eltűnik a böngészésből. A hirdetés és a meglévő jelentkezések megmaradnak a dashboardon, de a jelentkezésekről ezután már nem lehet dönteni. A lejárat ezzel szemben automatikusan történik a megadott dátum után.
+                A hirdetés lekerül a böngészésből, és új jelentkezés nem érkezhet rá. A jelentkezőkkel együtt a korábbi hirdetéseid között marad, de döntést már nem rögzíthetsz rajtuk. A dátum lejártakor a hirdetés magától is lezárul.
               </DialogDescription>
             </DialogHeader>
             {actionError ? (
@@ -3611,7 +3729,7 @@ export function SkipperDashboard() {
                 disabled={!!archivingId}
                 onClick={() => confirmArchiveId && void archiveListing(confirmArchiveId)}
               >
-                {archivingId ? "Lezárás..." : "Igen, lezárom"}
+                {archivingId ? "Lezárás..." : "Lezárom"}
               </Button>
             </div>
           </div>
@@ -3623,10 +3741,13 @@ export function SkipperDashboard() {
           <div className="flex flex-col gap-4 p-6">
             <DialogHeader className="gap-2">
               <DialogTitle className="text-lg font-bold tracking-tight text-foreground">
-                Hirdetés visszavonása
+                Hirdetés törlése
               </DialogTitle>
               <DialogDescription className="text-pretty leading-relaxed">
-                A hirdetés azonnal eltűnik a böngészésből. A hirdetés és a meglévő jelentkezések megmaradnak a dashboardon megtekintésre, de a jelentkezésekről ezután már nem lehet dönteni.
+                A hirdetés lekerül a böngészésből, és a dashboardodról is eltűnik a jelentkezőivel együtt. Ezt nem lehet visszavonni.
+                {confirmDeleteId && listings.find((listing) => listing.id === confirmDeleteId)?.isActive
+                  ? " Ha csak a jelentkezést szeretnéd leállítani, válaszd inkább a lezárást."
+                  : null}
               </DialogDescription>
             </DialogHeader>
             <div className="flex gap-3 pt-2">
@@ -3643,7 +3764,7 @@ export function SkipperDashboard() {
                 disabled={!!deletingId}
                 onClick={() => confirmDeleteId && void deleteListing(confirmDeleteId)}
               >
-                {deletingId ? "Törlés..." : "Igen, visszavonom"}
+                {deletingId ? "Törlés..." : "Törlöm"}
               </Button>
             </div>
           </div>
@@ -3693,33 +3814,54 @@ export function SkipperDashboard() {
           resetNewEventForm()
         }
       }}>
-        <DialogContent className="max-w-2xl rounded-2xl p-0">
-          <form noValidate onSubmit={handleCreateEvent} className="flex flex-col gap-0">
-            <div className="border-b border-border px-6 py-5">
-              <DialogHeader className="gap-2">
-                <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
-                  Új esemény hozzáadása
+        {/* Fix fejléc és gombsor, köztük görgethető tartalom: így kis kijelzőn sem lóg ki a mentés gomb. */}
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-h-[calc(100dvh-3rem)] sm:max-w-2xl">
+          <form noValidate onSubmit={handleCreateEvent} className="flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 border-b border-border px-5 py-4 pr-12 sm:px-6 sm:py-5">
+              <DialogHeader className="gap-1.5">
+                <DialogTitle className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
+                  {isRaceCalendarOpen ? "Verseny kiválasztása" : "Új esemény hozzáadása"}
                 </DialogTitle>
                 <DialogDescription className="text-pretty leading-relaxed">
-                  Add meg az esemény alapadatait, hogy később csapattagokat és hirdetéseket tudj kapcsolni hozzá.
+                  {isRaceCalendarOpen
+                    ? "Válassz a szövetségi versenynaptárból, az esemény adatai automatikusan kitöltődnek."
+                    : "Add meg az esemény alapadatait, hogy később csapattagokat és hirdetéseket tudj kapcsolni hozzá."}
                 </DialogDescription>
               </DialogHeader>
             </div>
 
-            <div className="grid gap-5 px-6 py-6 md:grid-cols-2">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {isRaceCalendarOpen ? (
+              <RaceCalendarPicker onSelect={applyRaceFromCalendar} onClose={() => setIsRaceCalendarOpen(false)} />
+            ) : (
+            <div className="grid gap-5 px-5 py-5 sm:px-6 md:grid-cols-2">
               <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="event-type">Esemény típusa</Label>
-                <select
-                  id="event-type"
+                <Label id="event-type-label">Esemény típusa</Label>
+                <EventTypeSelector
+                  labelId="event-type-label"
                   value={newEventForm.type}
-                  onChange={(event) => setNewEventForm((prev) => ({ ...prev, type: event.target.value as EventItem["type"] }))}
-                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-brand"
-                >
-                  <option value="Verseny">Verseny</option>
-                  <option value="Edzés">Edzés</option>
-                  <option value="Egyéb">Egyéb</option>
-                </select>
+                  onChange={(type) => setNewEventForm((prev) => ({ ...prev, type }))}
+                />
               </div>
+
+              {newEventForm.type === "Verseny" ? (
+                <div className="space-y-2 md:col-span-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 w-full justify-start gap-2"
+                    onClick={() => setIsRaceCalendarOpen(true)}
+                  >
+                    <Trophy className="h-4 w-4 shrink-0 text-brand" aria-hidden="true" />
+                    {selectedCalendarRace ? "Másik verseny választása a versenynaptárból" : "Kiválasztás a szövetségi versenynaptárból"}
+                  </Button>
+                  {selectedCalendarRace ? (
+                    <p role="status" className="text-xs text-muted-foreground">
+                      Kitöltve a versenynaptárból: {selectedCalendarRace.title}. Az adatokat szabadon módosíthatod.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div className="space-y-1.5 md:col-span-2">
                 <Label htmlFor="event-title">Esemény megnevezése</Label>
@@ -3811,21 +3953,27 @@ export function SkipperDashboard() {
                   value={newEventForm.notes}
                   onChange={(event) => setNewEventForm((prev) => ({ ...prev, notes: event.target.value }))}
                   placeholder="Írj ide további részleteket, utasításokat vagy információkat..."
-                  rows={6}
+                  rows={4}
                   className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-brand"
                 />
               </div>
             </div>
-
-            <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
-              <Button type="button" variant="outline" disabled={eventSaveMode !== null} onClick={() => setIsNewEventModalOpen(false)}>
-                Mégse
-              </Button>
-              <Button type="submit" disabled={eventSaveMode !== null} className="bg-brand! font-semibold text-white! hover:bg-brand/90!">
-                {eventSaveMode === "create" ? "Mentés..." : "Esemény mentése"}
-              </Button>
+            )}
             </div>
-            {eventErrors.submit ? <p className="px-6 pb-4 text-sm text-destructive" role="alert">{eventErrors.submit}</p> : null}
+
+            {!isRaceCalendarOpen ? (
+              <div className="shrink-0 border-t border-border px-5 py-3 sm:px-6 sm:py-4">
+                {eventErrors.submit ? <p className="mb-3 text-sm text-destructive" role="alert">{eventErrors.submit}</p> : null}
+                <div className="flex items-center justify-end gap-3">
+                  <Button type="button" variant="outline" disabled={eventSaveMode !== null} onClick={() => setIsNewEventModalOpen(false)}>
+                    Mégse
+                  </Button>
+                  <Button type="submit" disabled={eventSaveMode !== null} className="bg-brand! font-semibold text-white! hover:bg-brand/90!">
+                    {eventSaveMode === "create" ? "Mentés..." : "Esemény mentése"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </form>
         </DialogContent>
       </Dialog>
@@ -3861,17 +4009,12 @@ export function SkipperDashboard() {
 
             <div className="grid gap-5 px-6 py-6 md:grid-cols-2">
               <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="edit-event-type">Esemény típusa</Label>
-                <select
-                  id="edit-event-type"
+                <Label id="edit-event-type-label">Esemény típusa</Label>
+                <EventTypeSelector
+                  labelId="edit-event-type-label"
                   value={editEventForm.type}
-                  onChange={(event) => setEditEventForm((prev) => ({ ...prev, type: event.target.value as EventItem["type"] }))}
-                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-brand"
-                >
-                  <option value="Verseny">Verseny</option>
-                  <option value="Edzés">Edzés</option>
-                  <option value="Egyéb">Egyéb</option>
-                </select>
+                  onChange={(type) => setEditEventForm((prev) => ({ ...prev, type }))}
+                />
               </div>
 
               <div className="space-y-1.5 md:col-span-2">

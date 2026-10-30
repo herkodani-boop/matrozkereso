@@ -345,6 +345,30 @@ export function BrowseBoats() {
     }
   }
 
+  // A jelentkezés már mentve van; az értesítő hibája a jelentkezőt nem érinti.
+  async function notifyCaptainAboutApplication(applicationId: string) {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+
+      const response = await fetch("/api/applications/notify-captain", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ applicationId }),
+      })
+      if (!response.ok) {
+        console.error("Kapitányi értesítő küldése nem sikerült:", await response.text())
+      }
+    } catch (error) {
+      console.error("Kapitányi értesítő küldése nem sikerült:", error)
+    }
+  }
+
   async function submitApplication(adId: string, applicationMessage?: string) {
     setApplyError(null)
     setActionNotice(null)
@@ -369,6 +393,10 @@ export function BrowseBoats() {
         console.error("Jelentkezési hiba:", error)
         setApplyError(error.message)
         return
+      }
+
+      if (insertedApplication?.id) {
+        void notifyCaptainAboutApplication(insertedApplication.id)
       }
 
       setListingsData((prev) =>

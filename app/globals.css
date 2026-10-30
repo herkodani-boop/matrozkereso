@@ -26,6 +26,8 @@
   --color-brand-tint: #e7edf0;
   --color-brand-tint-strong: #d3dde3;
   --color-brand-orange: #e8833a;
+  /* Szöveg a narancs jelzéseken: a brand kék itt csak 4.1:1, ez 5.2:1 (WCAG AA). */
+  --color-brand-orange-foreground: #0a2f42;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);

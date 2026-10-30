@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { loadApplicationEmailContext, sendApplicationUpdateEmail } from "@/lib/application-emails"
 
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (application.status !== "accepted") {
-    return NextResponse.json({ error: "Előbb kezdeményezd a kapcsolatfelvételt a jelentkezővel." }, { status: 409 })
+    return NextResponse.json({ error: "Előbb fogadd el a jelentkezést." }, { status: 409 })
   }
 
   const { data: profile, error: profileError } = await adminClient
@@ -138,5 +139,21 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  return NextResponse.json({ ok: true })
+  const context = await loadApplicationEmailContext(adminClient, applicationId)
+  const emailSent = context?.applicant.email
+    ? await sendApplicationUpdateEmail({
+        kind: "contact-shared",
+        email: context.applicant.email,
+        applicantName: context.applicant.name,
+        listingTitle: context.listingTitle,
+        boatName: context.boatName,
+        captainContact: {
+          name: profile?.full_name || user.user_metadata?.full_name || context.captain.name,
+          email: user.email ?? null,
+          phone: profile?.phone ?? null,
+        },
+      })
+    : false
+
+  return NextResponse.json({ ok: true, emailSent })
 }
