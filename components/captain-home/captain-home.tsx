@@ -232,8 +232,10 @@ function Greeting({ firstName, data, otherBoats }: { firstName: string | null; d
   )
 }
 
+// A hirdetés nem kötelező lépés: akinek megvan a csapata, annak nem kell, és az esemény kártyájáról
+// bármikor feladható, amikor hiányzik valaki.
 function isOnboardingDone(onboarding: CaptainHomeData["onboarding"]) {
-  return onboarding.invitedCrew && onboarding.createdEvent && onboarding.createdListing
+  return onboarding.invitedCrew && onboarding.createdEvent
 }
 
 // Új hajónál a három üres állapot helyett egy rövid, sorrendbe tett útmutató; ha minden lépés kész, eltűnik.
@@ -242,7 +244,6 @@ function GettingStarted({ onboarding }: { onboarding: CaptainHomeData["onboardin
     { done: true, title: "Hajó felvéve", text: "A hajód adatai rendben vannak.", href: null, action: null },
     { done: onboarding.invitedCrew, title: "Hívd meg a csapatodat", text: "E-mailben küldhetsz meghívót a meglévő legénységednek.", href: "/kapitany-dashboard?meghivas=uj", action: "Meghívás" },
     { done: onboarding.createdEvent, title: "Vedd fel az első eseményt", text: "Versenyt, edzést vagy bármilyen hajós programot, és lásd, ki jön.", href: "/kapitany-dashboard?esemeny=uj", action: "Új esemény" },
-    { done: onboarding.createdListing, title: "Adj fel egy hirdetést", text: "Ha hiányzik valaki, itt találhatsz új csapattagot.", href: "/kapitany-dashboard?hirdetes=uj", action: "Hirdetés feladása" },
   ]
   const doneCount = steps.filter((step) => step.done).length
   const nextIndex = steps.findIndex((step) => !step.done)
@@ -276,6 +277,12 @@ function GettingStarted({ onboarding }: { onboarding: CaptainHomeData["onboardin
           </li>
         ))}
       </ol>
+      {!onboarding.createdListing ? (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border/70 bg-secondary/40 px-5 py-3.5">
+          <p className="text-sm text-muted-foreground">Hiányzik valaki a csapatból? Hirdetéssel új csapattagot találhatsz.</p>
+          <Link href="/kapitany-dashboard?hirdetes=uj" className={secondaryButton}>Hirdetés feladása</Link>
+        </div>
+      ) : null}
     </section>
   )
 }

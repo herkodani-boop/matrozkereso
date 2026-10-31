@@ -207,9 +207,15 @@ describe("CaptainHome", () => {
     render(<CaptainHome />)
 
     expect(screen.getByRole("heading", { name: "Kezdő lépések" })).toBeInTheDocument()
-    expect(screen.getByText("1 / 4 kész")).toBeInTheDocument()
+    expect(screen.getByText("1 / 3 kész")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Meghívás" })).toHaveAttribute("href", "/kapitany-dashboard?meghivas=uj")
     expect(screen.queryByRole("heading", { name: /Teendők/ })).not.toBeInTheDocument()
+  })
+
+  it("treats the listing as optional: crew and a first event finish the getting-started steps", () => {
+    mockState.data = { ...busyBoat(), onboarding: { invitedCrew: true, createdEvent: true, createdListing: false } }
+    render(<CaptainHome />)
+    expect(screen.queryByRole("heading", { name: "Kezdő lépések" })).not.toBeInTheDocument()
   })
 
   it("offers each action once while the getting-started steps are open", () => {

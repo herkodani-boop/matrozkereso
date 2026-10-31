@@ -30,6 +30,7 @@ A kezdőlap három változatban jelenik meg:
   - Az elfogadott jelentkezés nem jelenik meg kétszer: ha az alkalma már a csapat eseményei között van, csak az esemény látszik.
   - Ha a csapatnak nincs közelgő eseménye, a lista ezt írja ki; betöltési hibánál hibaüzenet jelenik meg, nem a kezdő lépések.
 - **Kapitánynak** (akinek hajója van): a saját hajó zónája, és ha máshol is legénység, a „Más hajókon” kivonat.
+  - Új hajónál kezdő lépések: csapat meghívása és az első esemény. A hirdetés nem kötelező lépés, csak ajánlásként jelenik meg.
 - **Hiányos profil:** ha hiányzik a név, a telefonszám vagy a tapasztalat, egy figyelmeztető sáv jelenik meg a kezdőlap tetején.
 
 ## Vitorlázásaim
