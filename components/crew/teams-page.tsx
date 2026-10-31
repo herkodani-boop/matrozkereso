@@ -41,6 +41,8 @@ import {
 } from "./teams-data"
 
 const UPCOMING_SHOWN = 6
+// Sok eseménynél (pl. egy egész versenynaptár) a lista ennyivel bővül kattintásonként.
+const UPCOMING_STEP = 10
 // Nagy (akár 30 fős) csapatnál ennyi tag látszik alapból; felette névre szűrő is jár a listához.
 const MEMBERS_SHOWN = 8
 const MEMBER_FILTER_FROM = 12
@@ -166,9 +168,7 @@ export function TeamsPage() {
             <p className="mt-1 text-muted-foreground">
               {!current && teams.length > 1
                 ? "Az összesített naptárban látszik, ha ütközik valami."
-                : current?.own
-                  ? "Így látják a csapattagjaid a csapatodat."
-                  : "A csapatod naptára, eseményei és tagjai, egy helyen."}
+                : "A csapatod naptára, eseményei és tagjai, egy helyen."}
             </p>
           </div>
           {teams.length > 1 ? <TeamTabs teams={teams} selected={current?.boatId ?? null} onSelect={select} /> : null}
@@ -371,7 +371,16 @@ function OwnStats({ team, upcoming }: { team: TeamView; upcoming: TeamEvent[] })
 }
 
 // Az elmúlt esemény halvány: arra már nem lehet válaszolni.
-type CalendarItem = { team: TeamView; event: TeamEvent; answer: MyAnswer; past: boolean }
+type CalendarItem = {
+  team: TeamView
+  event: TeamEvent
+  answer: MyAnswer
+  past: boolean
+  // Többnapos eseménynél: az első és az utolsó nap a sáv két vége; a cím az első napon és új hét elején látszik.
+  first: boolean
+  last: boolean
+  showTitle: boolean
+}
 
 const statusText: Record<MyAnswer, string> = { confirmed: "mész", declined: "nem mész", open: "válaszra vár" }
 const DOT_COLORS: Record<MyAnswer, string> = { confirmed: "#0e3f57", declined: "#b8c3cf", open: "#e8833a" }
@@ -394,9 +403,22 @@ function TeamCalendar({ teams, userId, onOpen }: { teams: TeamView[]; userId: st
   const byDay = new Map<string, CalendarItem[]>()
   for (const team of teams) {
     for (const event of team.events) {
-      for (const day of eventDays(event.startDate, event.endDate)) {
-        byDay.set(day, [...(byDay.get(day) ?? []), { team, event, answer: myAnswer(event, userId), past: !isUpcoming(event, todayKey) }])
-      }
+      const days = eventDays(event.startDate, event.endDate)
+      days.forEach((day, index) => {
+        const monday = new Date(`${day}T12:00:00`).getDay() === 1
+        byDay.set(day, [
+          ...(byDay.get(day) ?? []),
+          {
+            team,
+            event,
+            answer: myAnswer(event, userId),
+            past: !isUpcoming(event, todayKey),
+            first: index === 0,
+            last: index === days.length - 1,
+            showTitle: index === 0 || monday,
+          },
+        ])
+      })
     }
   }
   const clashDays = new Set(findClashes(teams, userId, todayKey).map((clash) => clash.day))
@@ -474,23 +496,32 @@ function TeamCalendar({ teams, userId, onOpen }: { teams: TeamView[]; userId: st
                 </span>
                 {clash ? <span className="text-[11px] font-bold text-foreground">{items.length} esemény</span> : null}
               </div>
-              {items.slice(0, 3).map((item) => (
-                <button
-                  key={`${item.team.boatId}-${item.event.id}`}
-                  type="button"
-                  onClick={() => onOpen(item.event, item.team)}
-                  aria-label={chipLabel(item)}
-                  title={chipLabel(item)}
-                  className={`flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[12.5px] font-semibold leading-tight ${chipClass(item)}`}
-                >
-                  {multi ? <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: item.team.color }} aria-hidden="true" /> : null}
-                  {!multi && !item.past && item.answer === "open" && !item.team.own ? <span className="h-2 w-2 shrink-0 rounded-full bg-brand-orange" aria-hidden="true" /> : null}
-                  {!multi && !item.past && item.answer === "confirmed" && !item.team.own ? <Check className="h-3 w-3 shrink-0" aria-hidden="true" /> : null}
-                  <span className="min-w-0 truncate">{item.event.title}</span>
-                  {multi && !item.past && item.answer === "confirmed" && !item.team.own ? <Check className="ml-auto h-3 w-3 shrink-0 text-brand-ink" aria-hidden="true" /> : null}
-                  {item.team.own && !item.past ? <span className="ml-auto shrink-0 font-bold">{ownCount(item)}</span> : null}
-                </button>
-              ))}
+              {items.slice(0, 3).map((item) => {
+                // A sáv a cella szélén túlnyúlik (6 px kitöltés + 1 px vonal), így a napok között összefüggő.
+                const shape = item.first && item.last ? "rounded-md" : item.first ? "-mr-[7px] rounded-l-md" : item.last ? "-ml-[7px] rounded-r-md" : "-mx-[7px]"
+                const detail = item.team.own ? (item.past ? null : `${ownCount(item)} jön`) : multi ? item.team.name : null
+                return (
+                  <button
+                    key={`${item.team.boatId}-${item.event.id}`}
+                    type="button"
+                    onClick={() => onOpen(item.event, item.team)}
+                    aria-label={chipLabel(item)}
+                    title={chipLabel(item)}
+                    className={`flex min-w-0 items-start gap-1.5 px-1.5 py-1 text-left text-[12.5px] font-semibold leading-tight ${shape} ${chipClass(item)}`}
+                  >
+                    <span className={`flex min-w-0 flex-1 items-start gap-1.5 ${item.showTitle ? "" : "invisible"}`} aria-hidden={!item.showTitle}>
+                      {multi ? <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: item.team.color }} aria-hidden="true" /> : null}
+                      {!multi && !item.past && item.answer === "open" && !item.team.own ? <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-orange" aria-hidden="true" /> : null}
+                      {!multi && !item.past && item.answer === "confirmed" && !item.team.own ? <Check className="mt-px h-3 w-3 shrink-0" aria-hidden="true" /> : null}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{item.event.title}</span>
+                        {detail ? <span className="block truncate text-[11px] font-medium opacity-80">{detail}</span> : null}
+                      </span>
+                      {multi && !item.past && item.answer === "confirmed" && !item.team.own ? <Check className="mt-px h-3 w-3 shrink-0 text-brand-ink" aria-hidden="true" /> : null}
+                    </span>
+                  </button>
+                )
+              })}
               {items.length > 3 ? <span className="px-1 text-xs text-muted-foreground">+{items.length - 3} további</span> : null}
             </div>
           )
@@ -557,15 +588,49 @@ function UpcomingList({
   onRespond,
   onOpen,
 }: SharedProps & { items: { event: TeamEvent; team: TeamView }[]; emptyText: string; showBoat?: boolean }) {
-  const [showAll, setShowAll] = useState(false)
-  const visible = showAll ? items : items.slice(0, UPCOMING_SHOWN)
+  const [filter, setFilter] = useState<"all" | "awaiting" | "going">("all")
+  const [shown, setShown] = useState(UPCOMING_SHOWN)
   const awaitingCount = items.filter((item) => !item.team.own && myAnswer(item.event, userId) === "open").length
+  // A szűrő csak ott kell, ahol válaszolni is lehet, és van mit szűrni.
+  const canFilter = items.length > UPCOMING_SHOWN && items.some((item) => !item.team.own)
+  const filtered = items.filter((item) =>
+    filter === "all" ? true : filter === "awaiting" ? !item.team.own && myAnswer(item.event, userId) === "open" : myAnswer(item.event, userId) === "confirmed",
+  )
+  const visible = filtered.slice(0, shown)
+  const hidden = filtered.length - visible.length
+  const filters = [
+    { value: "all" as const, label: "Mind" },
+    { value: "awaiting" as const, label: "Válaszra vár", count: awaitingCount },
+    { value: "going" as const, label: "Megyek" },
+  ]
 
   return (
     <section aria-labelledby="team-upcoming" className={card}>
       <div className={cardHeader}>
-        <h2 id="team-upcoming" className="text-base font-semibold">Közelgő események</h2>
-        {awaitingCount > 0 ? (
+        <h2 id="team-upcoming" className="text-base font-semibold">
+          Közelgő események {items.length > UPCOMING_SHOWN ? <span className="font-normal text-muted-foreground">· {items.length}</span> : null}
+        </h2>
+        {canFilter ? (
+          <div role="group" aria-label="Szűrés" className="flex gap-1.5 overflow-x-auto">
+            {filters.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={filter === item.value}
+                onClick={() => {
+                  setFilter(item.value)
+                  setShown(UPCOMING_SHOWN)
+                }}
+                className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-colors ${
+                  filter === item.value ? "border-brand bg-brand text-white" : "border-border bg-card text-foreground hover:border-brand/40"
+                }`}
+              >
+                {item.label}
+                {item.count ? <span className="min-w-5 rounded-full bg-brand-orange px-1.5 text-center text-xs font-bold leading-5 text-brand-orange-foreground">{item.count}</span> : null}
+              </button>
+            ))}
+          </div>
+        ) : awaitingCount > 0 ? (
           <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground/80">
             <span className="h-2 w-2 rounded-full bg-brand-orange" aria-hidden="true" />
             {awaitingCount} vár a válaszodra
@@ -574,6 +639,8 @@ function UpcomingList({
       </div>
       {items.length === 0 ? (
         <p className="px-5 py-5 text-sm text-muted-foreground">{emptyText}</p>
+      ) : filtered.length === 0 ? (
+        <p className="px-5 py-5 text-sm text-muted-foreground">{filter === "awaiting" ? "Nincs válaszra váró esemény." : "Még nem jelezted, hogy mész valahova."}</p>
       ) : (
         <ul>
           {visible.map(({ event, team }, index) => {
@@ -637,9 +704,9 @@ function UpcomingList({
           })}
         </ul>
       )}
-      {items.length > visible.length ? (
-        <button type="button" onClick={() => setShowAll(true)} className="flex w-full items-center justify-center border-t border-border/70 bg-secondary/40 px-5 py-3 text-sm font-semibold text-brand-ink transition-colors hover:bg-secondary">
-          További {items.length - visible.length} esemény
+      {hidden > 0 ? (
+        <button type="button" onClick={() => setShown((value) => value + UPCOMING_STEP)} className="flex w-full items-center justify-center border-t border-border/70 bg-secondary/40 px-5 py-3 text-sm font-semibold text-brand-ink transition-colors hover:bg-secondary">
+          További {Math.min(UPCOMING_STEP, hidden)} esemény{hidden > UPCOMING_STEP ? ` (még ${hidden})` : ""}
         </button>
       ) : null}
     </section>
