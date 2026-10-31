@@ -45,6 +45,8 @@ export type HomeTodo = {
 export type CaptainHomeData = {
   boat: { id: string; name: string; imageUrl: string | null; type: string; harbor: string; maxCrew: number | null }
   crewCount: number
+  // Az aktív csapattagok a hajókártya avatarjaihoz (a kapitány nélkül).
+  crew: HomePerson[]
   upcomingCount: number
   events: HomeEvent[]
   listings: HomeListing[]
@@ -426,6 +428,12 @@ export function buildCaptainHome(raw: RawCaptainHome, captainId: string, now = D
       maxCrew: typeof boat.max_crew_size === "number" && boat.max_crew_size > 0 ? boat.max_crew_size : null,
     },
     crewCount: activeCrewCount,
+    crew: raw.team
+      .filter((member) => member.status === "active" && member.user_id && member.user_id !== captainId)
+      .map((member) => {
+        const person = personFor(String(member.user_id))
+        return person.name === "Csapattag" && member.display_name?.trim() ? { ...person, name: member.display_name.trim() } : person
+      }),
     upcomingCount: raw.upcomingCount ?? events.length,
     events,
     listings,

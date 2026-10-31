@@ -11,11 +11,13 @@ import {
   useMyApplications,
   type MyApplication,
 } from "@/components/my-applications"
+import { daysUntil } from "@/components/captain-home/use-captain-home-data"
 import { respondToEvent, useCrewData, type CrewTeam, type OtherBoatEvent } from "./crew-data"
 import {
   BoatTag,
   DateBlock,
   GoingChip,
+  NEAR_DAYS,
   NextSailingCard,
   TeamsCard,
   capitalize,
@@ -38,22 +40,39 @@ export function useCrewOverviewData(userId: string | null, refreshKey: unknown =
   const going = crew.events.filter((event) => event.answer === "confirmed")
   const awaiting = crew.events.filter((event) => event.answer === "open")
   const declined = crew.events.filter((event) => event.answer === "declined")
-  const accepted = applications.applications.filter((row) => row.status === "accepted")
+  const accepted = withoutDuplicates(applications.applications.filter((row) => row.status === "accepted"), crew.events)
   const otherApplications = applications.applications.filter((row) => row.status !== "accepted")
   const loading = crew.status === "loading" || applications.status === "loading"
-  const empty = crew.teams.length === 0 && crew.events.length === 0 && applications.applications.length === 0
-  return { crew, applications, going, awaiting, declined, accepted, otherApplications, loading, empty }
+  // Betöltési hibánál nem tudjuk, üres-e: ilyenkor ne a kezdő lépések jöjjenek, hanem a szokásos nézet a hibával.
+  const failed = crew.status === "error" || applications.status === "error"
+  const empty = !failed && crew.teams.length === 0 && crew.events.length === 0 && applications.applications.length === 0
+  return { crew, applications, going, awaiting, declined, accepted, otherApplications, loading, failed, empty }
+}
+
+// Az elfogadott jelentkezés kimarad, ha az alkalma már a saját eseményeim között van: a kapitány az
+// eseményre is felvett (ugyanaz az esemény), vagy csapattag lettem, és a hajó aznapi eseménye látszik.
+export function withoutDuplicates(accepted: MyApplication[], events: OtherBoatEvent[]): MyApplication[] {
+  const eventIds = new Set(events.map((event) => event.id))
+  const boatDays = new Set(events.map((event) => `${event.boatId}|${event.startDate}`))
+  return accepted.filter((application) =>
+    !(application.eventId && eventIds.has(application.eventId)) &&
+    !(application.boatId && application.startDate && boatDays.has(`${application.boatId}|${application.startDate}`)),
+  )
 }
 
 const AWAITING_SHOWN = 3
-const GOING_SHOWN = 5
 const SUMMARY_SHOWN = 2
+// A matróz időrendi listájában ennyi sor látszik, a többi a "További N esemény" mögött.
+const TIMELINE_SHOWN = 8
+
+type TimelineFilter = "all" | "awaiting" | "going"
 
 type GoingItem =
   | { kind: "event"; date: string | null; event: OtherBoatEvent }
   | { kind: "application"; date: string | null; application: MyApplication }
 
-function goingItems(events: OtherBoatEvent[], applications: MyApplication[]): GoingItem[] {
+// Események és elfogadott jelentkezések egy időrendben (a dátum nélküliek a végén).
+export function goingItems(events: OtherBoatEvent[], applications: MyApplication[]): GoingItem[] {
   return [
     ...events.map((event) => ({ kind: "event" as const, date: event.startDate, event })),
     ...applications.map((application) => ({ kind: "application" as const, date: application.startDate, application })),
@@ -62,12 +81,12 @@ function goingItems(events: OtherBoatEvent[], applications: MyApplication[]): Go
 
 // "full": matróz kezdőlap és a Vitorlázásaim oldal; "summary": a kapitányi kezdőlap kivonata.
 export function CrewOverview({ data, userId, mode }: { data: CrewOverviewData; userId: string | null; mode: "full" | "summary" }) {
-  const { crew, applications, going, awaiting, declined, accepted, otherApplications } = data
+  const { crew, applications, going, awaiting, accepted, otherApplications } = data
   const [respondingId, setRespondingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [details, setDetails] = useState<EventDetailsSummary | null>(null)
-  const [showAllAwaiting, setShowAllAwaiting] = useState(false)
-  const [showAllGoing, setShowAllGoing] = useState(false)
+  const [filter, setFilter] = useState<TimelineFilter>("all")
+  const [showAll, setShowAll] = useState(false)
 
   const teamFor = (boatId: string): CrewTeam | null => crew.teams.find((team) => team.boatId === boatId) ?? null
   const colorFor = (boatId: string) => (crew.teams.length > 1 ? teamFor(boatId)?.color : undefined)
@@ -92,24 +111,37 @@ export function CrewOverview({ data, userId, mode }: { data: CrewOverviewData; u
     setDetails({ id: event.id, title: event.title, date: formatDateRange(event.startDate, event.endDate), location: event.location, boatName: event.boatName })
   const detailsEvent = details ? crew.events.find((event) => event.id === details.id) ?? null : null
 
+  // Válaszra váró sor halvány narancs háttérrel és pöttyel; a lemondott halványítva, szerény "Mégis jövök"-kel.
   const awaitingRow = (event: OtherBoatEvent) => {
     const busy = respondingId === event.id
+    const declinedRow = event.answer === "declined"
     return (
-      <li key={event.id} className={rowClass}>
-        <DateBlock startDate={event.startDate} endDate={event.endDate} muted={event.answer === "declined"} />
+      <li key={event.id} className={`${rowClass} ${declinedRow ? "" : "bg-brand-orange/[0.06]"}`}>
+        <DateBlock startDate={event.startDate} endDate={event.endDate} muted={declinedRow} />
         <div className="min-w-0 flex-[999_1_220px]">
-          <button type="button" onClick={() => openDetails(event)} className="text-left font-semibold hover:text-brand-ink hover:underline">
+          <button
+            type="button"
+            onClick={() => openDetails(event)}
+            className={`flex items-center gap-2 text-left font-semibold hover:text-brand-ink hover:underline ${declinedRow ? "text-muted-foreground" : ""}`}
+          >
+            {declinedRow ? null : <span className="h-2 w-2 shrink-0 rounded-full bg-brand-orange" aria-hidden="true" />}
             {event.title}
+            {declinedRow ? null : <span className="sr-only">(válaszra vár)</span>}
           </button>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
             {crew.teams.length > 1 ? <BoatTag name={event.boatName} color={colorFor(event.boatId)} /> : null}
             {[event.type, crew.teams.length > 1 ? null : event.boatName, event.location].filter(Boolean).join(" · ")}
           </p>
         </div>
-        {event.answer === "declined" ? (
-          <div className="flex shrink-0 items-center gap-3">
+        {declinedRow ? (
+          <div className="flex shrink-0 items-center gap-1">
             <span className="text-sm text-muted-foreground">Nem mész</span>
-            <button type="button" disabled={respondingId !== null} onClick={() => void respond(event, "confirmed")} className={compactSecondary}>
+            <button
+              type="button"
+              disabled={respondingId !== null}
+              onClick={() => void respond(event, "confirmed")}
+              className={`${compactSecondary} border-transparent bg-transparent font-medium text-muted-foreground hover:text-foreground`}
+            >
               {busy ? "Mentés..." : "Mégis jövök"}
             </button>
           </div>
@@ -150,6 +182,9 @@ export function CrewOverview({ data, userId, mode }: { data: CrewOverviewData; u
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-semibold">{item.application.title}</p>
             <ApplicationStatusChip status="accepted" />
+            {item.application.adClosed === "deleted" ? (
+              <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">A hirdetést visszavonták</span>
+            ) : null}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">{applicationMeta(item.application)}</p>
           <AcceptedApplicationDetails application={item.application} />
@@ -160,6 +195,7 @@ export function CrewOverview({ data, userId, mode }: { data: CrewOverviewData; u
   const errors = (
     <>
       {crew.status === "error" ? <p role="alert" className="border-b border-border/70 px-5 py-3 text-sm text-destructive">A más hajók eseményeit most nem sikerült betölteni.</p> : null}
+      {applications.status === "error" ? <p role="alert" className="border-b border-border/70 px-5 py-3 text-sm text-destructive">A jelentkezéseidet most nem sikerült betölteni.</p> : null}
       {actionError ? <p role="alert" className="border-b border-border/70 px-5 py-3 text-sm text-destructive">{actionError}</p> : null}
     </>
   )
@@ -177,8 +213,6 @@ export function CrewOverview({ data, userId, mode }: { data: CrewOverviewData; u
       actionError={actionError}
     />
   )
-
-  const answerGroups = [...awaiting, ...declined]
 
   if (mode === "summary") {
     const items = goingItems(going, accepted)
@@ -216,8 +250,6 @@ export function CrewOverview({ data, userId, mode }: { data: CrewOverviewData; u
   }
 
   const next = going[0] ?? null
-  const laterGoing = goingItems(going.slice(1), accepted)
-  const busy = crew.teams.length > 1 || answerGroups.length + laterGoing.length > 5
 
   const nextCard = next ? (
     <NextSailingCard
@@ -237,94 +269,107 @@ export function CrewOverview({ data, userId, mode }: { data: CrewOverviewData; u
     </ul>
   ) : null
 
-  if (busy) {
-    const visibleAwaiting = showAllAwaiting ? answerGroups : answerGroups.slice(0, AWAITING_SHOWN)
-    const visibleGoing = showAllGoing ? laterGoing : laterGoing.slice(0, GOING_SHOWN)
-    const monthOf = (item: GoingItem) => (item.date ? monthGroupLabel(item.date) : "Időpont nélkül")
+  // EGY időrendi lista: a következő vitorlázás utáni minden esemény a saját állapotával
+  // (válaszra vár / megyek / nem mész), plusz az elfogadott jelentkezések. Igen után a sor helyben marad.
+  const timeline: GoingItem[] = goingItems(crew.events.filter((event) => event.id !== next?.id), accepted)
+  const filtered = timeline.filter((item) =>
+    filter === "all"
+      ? true
+      : filter === "awaiting"
+        ? item.kind === "event" && item.event.answer === "open"
+        : item.kind === "application" || item.event.answer === "confirmed",
+  )
+  const visible = showAll ? filtered : filtered.slice(0, TIMELINE_SHOWN)
+  const monthOf = (item: GoingItem) => (item.date ? monthGroupLabel(item.date) : "Időpont nélkül")
+  const timelineRow = (item: GoingItem) =>
+    item.kind === "event" && item.event.answer !== "confirmed" ? awaitingRow(item.event) : goingRow(item)
+  const filters: { value: TimelineFilter; label: string; count?: number }[] = [
+    { value: "all", label: "Mind" },
+    { value: "awaiting", label: "Válaszra vár", count: awaiting.length },
+    { value: "going", label: "Megyek" },
+  ]
 
-    return (
-      <div className="flex flex-col gap-6">
-        {nextCard}
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="flex min-w-0 flex-col gap-6">
-            {errors}
-            {answerGroups.length > 0 ? (
-              <section aria-labelledby="crew-awaiting" className="overflow-hidden rounded-2xl border border-border bg-card">
-                <div className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
-                  <h2 id="crew-awaiting" className="flex items-center gap-2 text-base font-semibold">Válaszra vár <CountBadge count={awaiting.length} /></h2>
-                  <span className="text-sm text-muted-foreground">Időrendben</span>
-                </div>
-                <ul>{visibleAwaiting.map(awaitingRow)}</ul>
-                <ShowMore hidden={answerGroups.length - visibleAwaiting.length} label="esemény" onClick={() => setShowAllAwaiting(true)} />
-              </section>
-            ) : null}
-            {laterGoing.length > 0 ? (
-              <section aria-labelledby="crew-going" className="overflow-hidden rounded-2xl border border-border bg-card">
-                <h2 id="crew-going" className="border-b border-border/70 px-5 py-4 text-base font-semibold">Megyek</h2>
-                <ul>
-                  {visibleGoing.map((item, index) => {
-                    const month = monthOf(item)
-                    // Hónap-fejléc ott, ahol az előző tételhez képest új hónap kezdődik.
-                    const heading = index === 0 || monthOf(visibleGoing[index - 1]) !== month
-                      ? <li key={`m-${month}`} className="border-b border-border/70 bg-secondary/50 px-5 py-2 text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">{month}</li>
-                      : null
-                    return [heading, goingRow(item)]
-                  })}
-                </ul>
-                <ShowMore hidden={laterGoing.length - visibleGoing.length} label="esemény" onClick={() => setShowAllGoing(true)} />
-              </section>
-            ) : null}
+  // Csapattagnak akkor is ott a kártya, ha épp nincs eseménye; különben üres maradna a bal oszlop.
+  const timelineCard = timeline.length > 0 || crew.teams.length > 0 || data.failed || actionError ? (
+    <section aria-labelledby="crew-timeline" className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-5 py-3.5">
+        <h2 id="crew-timeline" className="text-base font-semibold">{next ? "Később" : "Vitorlázásaim"}</h2>
+        {timeline.length > 3 ? (
+          <div role="group" aria-label="Szűrés" className="flex gap-1.5 overflow-x-auto">
+            {filters.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={filter === item.value}
+                onClick={() => {
+                  setFilter(item.value)
+                  setShowAll(false)
+                }}
+                className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-colors ${
+                  filter === item.value ? "border-brand bg-brand text-white" : "border-border bg-card text-foreground hover:border-brand/40"
+                }`}
+              >
+                {item.label}
+                {item.count ? <CountBadge count={item.count} /> : null}
+              </button>
+            ))}
           </div>
-          <div className="flex min-w-0 flex-col gap-6">
-            <TeamsCard teams={crew.teams} events={crew.events} />
-            {applicationsList ? (
-              <section aria-labelledby="crew-applications" className="overflow-hidden rounded-2xl border border-border bg-card">
-                <h2 id="crew-applications" className="border-b border-border/70 px-5 py-4 text-base font-semibold">Jelentkezéseid</h2>
-                {applicationsList}
-              </section>
-            ) : null}
-          </div>
-        </div>
-        {modal}
+        ) : null}
       </div>
-    )
-  }
-
-  const listCard = answerGroups.length > 0 || laterGoing.length > 0 || applicationsList || crew.status === "error" || actionError ? (
-    <section aria-labelledby="crew-list" className="overflow-hidden rounded-2xl border border-border bg-card">
-      <h2 id="crew-list" className="sr-only">Vitorlázásaim</h2>
       {errors}
-      {answerGroups.length > 0 ? (
-        <>
-          <h3 className={groupHeading}>Válaszra vár <CountBadge count={awaiting.length} /></h3>
-          <ul>{answerGroups.map(awaitingRow)}</ul>
-        </>
-      ) : null}
-      {laterGoing.length > 0 ? (
-        <>
-          <h3 className={groupHeading}>{next ? "Később megyek" : "Megyek"}</h3>
-          <ul>{laterGoing.map(goingRow)}</ul>
-        </>
-      ) : null}
-      {applicationsList ? (
-        <>
-          <h3 className={groupHeading}>Jelentkezéseid</h3>
-          {applicationsList}
-        </>
-      ) : null}
+      {timeline.length === 0 ? (
+        data.failed ? null : (
+          <p className="px-5 py-4 text-sm text-muted-foreground">
+            {next
+              ? "Ezután nincs több közelgő esemény."
+              : "A csapataidnak most nincs közelgő eseménye. Ha a kapitány felvesz egyet, itt jelenik meg, és a csengőben is szólunk."}
+          </p>
+        )
+      ) : visible.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-muted-foreground">
+          {filter === "awaiting" ? "Nincs válaszra váró esemény." : "Ebben a nézetben nincs esemény."}
+        </p>
+      ) : (
+        <ul>
+          {visible.map((item, index) => {
+            const month = monthOf(item)
+            // Hónap-fejléc ott, ahol az előző tételhez képest új hónap kezdődik.
+            const heading = index === 0 || monthOf(visible[index - 1]) !== month
+              ? <li key={`m-${month}`} className="border-b border-border/70 bg-secondary/50 px-5 py-2 text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">{month}</li>
+              : null
+            return [heading, timelineRow(item)]
+          })}
+        </ul>
+      )}
+      <ShowMore hidden={filtered.length - visible.length} label="esemény" onClick={() => setShowAll(true)} />
     </section>
   ) : null
+
+  const applicationsCard = applicationsList ? (
+    <section aria-labelledby="crew-applications" className="overflow-hidden rounded-2xl border border-border bg-card">
+      <h2 id="crew-applications" className="border-b border-border/70 px-5 py-4 text-base font-semibold">Jelentkezéseid</h2>
+      {applicationsList}
+    </section>
+  ) : null
+
+  const side = crew.teams.length > 0 || (timelineCard && applicationsCard)
 
   return (
     <div className="flex flex-col gap-6">
       {nextCard}
-      {crew.teams.length > 0 ? (
+      {side ? (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="min-w-0">{listCard}</div>
-          <TeamsCard teams={crew.teams} events={crew.events} large />
+          <div className="min-w-0">{timelineCard}</div>
+          <div className="flex min-w-0 flex-col gap-6">
+            <TeamsCard teams={crew.teams} events={crew.events} large={crew.teams.length === 1} />
+            {applicationsCard}
+          </div>
         </div>
       ) : (
-        listCard
+        <>
+          {timelineCard}
+          {applicationsCard}
+        </>
       )}
       {modal}
     </div>
@@ -359,9 +404,14 @@ export function crewSummary(data: CrewOverviewData) {
   const parts: string[] = []
   if (data.accepted.length > 0 && !next) {
     const first = data.accepted[0]
-    parts.push(`Elfogadták a jelentkezésedet: ${first.startDate ? `${relativeDay(first.startDate)} ` : ""}${first.title} (${first.boatName}).`)
+    parts.push(`Elfogadták a jelentkezésedet: ${first.title} (${first.boatName})${first.startDate ? `, ${relativeDay(first.startDate)}` : ""}.`)
   }
-  if (next) parts.push(`${capitalize(relativeDay(next.startDate))}: ${next.title} (${next.boatName}).`)
+  if (next) {
+    // Közel: "Holnap: Hajószerelés (Nemere)."; távol: "Következő vitorlázásod: május 8., Balatoni Évadnyitó (Sirocco)."
+    parts.push(daysUntil(next.startDate) < NEAR_DAYS
+      ? `${capitalize(relativeDay(next.startDate))}: ${next.title} (${next.boatName}).`
+      : `Következő vitorlázásod: ${relativeDay(next.startDate)}, ${next.title} (${next.boatName}).`)
+  }
   if (data.awaiting.length > 0) parts.push(`${data.awaiting.length} esemény vár a válaszodra.`)
   const pending = data.otherApplications.filter((row) => row.status === "pending").length
   if (pending > 0) parts.push(`${pending} jelentkezésed elbírálás alatt van.`)

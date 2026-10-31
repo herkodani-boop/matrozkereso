@@ -20,13 +20,15 @@ A kezdőlap három változatban jelenik meg:
   - regisztrációs felhívás.
 - **Matróznak** (bejelentkezett, saját hajó nélkül): ez egyben a „Vitorlázásaim” nézet.
   - Új felhasználónál: kezdő lépések, az „Így jutsz fel egy hajóra” magyarázat, kezdőbarát szabad helyek szerepszűrővel.
-  - Függő csapatmeghívónál: a meghívó a köszöntés helyére kerül „Elfogadom” és „Most nem” gombbal.
+  - Függő csapatmeghívónál: a meghívó a köszöntés helyére kerül „Elfogadom” és „Most nem” gombbal. Ha több meghívó vár, egyszerre egy látszik, mellette „és még N meghívód van”.
   - A következő vitorlázás kártyája:
     - időjárás és a kapitány megjegyzése;
     - kik jönnek;
     - „Mégsem tudok menni” gomb.
-  - „Válaszra vár”, amire mész, a csapataid és a jelentkezéseid.
-  - Több csapatnál hónapokra bontott lista, hajónkénti színjelöléssel.
+  - Egyetlen időrendi, hónapokra bontott lista: minden esemény a saját állapotával (válaszra vár, megyek, nem mész), „Mind / Válaszra vár / Megyek” szűrővel.
+  - Mellette a csapataid és a jelentkezéseid; több csapatnál hajónkénti színjelölés.
+  - Az elfogadott jelentkezés nem jelenik meg kétszer: ha az alkalma már a csapat eseményei között van, csak az esemény látszik.
+  - Ha a csapatnak nincs közelgő eseménye, a lista ezt írja ki; betöltési hibánál hibaüzenet jelenik meg, nem a kezdő lépések.
 - **Kapitánynak** (akinek hajója van): a saját hajó zónája, és ha máshol is legénység, a „Más hajókon” kivonat.
 - **Hiányos profil:** ha hiányzik a név, a telefonszám vagy a tapasztalat, egy figyelmeztető sáv jelenik meg a kezdőlap tetején.
 
@@ -138,6 +140,12 @@ A kezdőlap három változatban jelenik meg:
 
 ## Értesítések és állapotok
 
+- Csengő a fejlécben minden bejelentkezett felhasználónak (az elmúlt két hét eseményei, olvasatlan-számlálóval):
+  - kapitánynak: ki jön / nem jön, új jelentkező, új csapattag;
+  - legénységnek: új esemény a csapata hajóján, módosult egy esemény, amire megy, a kapitány lemondott (törölt) egy közelgő eseményt, döntés a jelentkezéséről, csapatmeghívó, kikerült egy csapatból.
+- A jelentkezési döntés idejéhez az `application-decided-at-migration.sql` futtatása kell.
+- A lemondott eseményekről és a csapatból eltávolításról a `crew_notices` tábla őrzi a nyomot; ehhez a `crew-notices-migration.sql` futtatása kell.
+- Ha a kapitány eltávolít valakit a csapatból, a tag közelgő eseményekre adott válaszai törlődnek, és a matróz-nézetben csak az aktív csapatok eseményei látszanak.
 - A kapitányi nézetben jelzés jelenik meg az új, függőben lévő jelentkezésekről.
 - Műveletekhez visszajelző üzenetek tartoznak, például sikeres jelentkezés vagy hirdetés lezárása.
 

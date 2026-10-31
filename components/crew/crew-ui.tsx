@@ -7,7 +7,8 @@ import { CalendarDays, Check, UserRound } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { daysUntil } from "@/components/captain-home/use-captain-home-data"
 import { EventWeatherPanel } from "@/components/captain-home/event-extras"
-import { authorizedFetch, type CrewTeam, type OtherBoatEvent, type ProfileGaps, type TeamInvitation } from "./crew-data"
+import { hungarianArticle } from "@/lib/notifications"
+import { authorizedFetch, loadCrewPeople, type CrewTeam, type OtherBoatEvent, type ProfileGaps, type TeamInvitation } from "./crew-data"
 
 export const primaryButton =
   "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white transition-colors hover:bg-brand/90 focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-60"
@@ -21,7 +22,6 @@ export const rowClass = "flex flex-wrap items-center gap-x-4 gap-y-3 border-b bo
 const shortMonthFormat = new Intl.DateTimeFormat("hu-HU", { month: "short" })
 const weekdayFormat = new Intl.DateTimeFormat("hu-HU", { weekday: "long" })
 const longDateFormat = new Intl.DateTimeFormat("hu-HU", { year: "numeric", month: "long", day: "numeric" })
-const monthYearFormat = new Intl.DateTimeFormat("hu-HU", { year: "numeric", month: "long" })
 const monthFormat = new Intl.DateTimeFormat("hu-HU", { month: "long" })
 
 export function toDate(dateKey: string) {
@@ -45,19 +45,45 @@ function shortMonth(date: Date) {
   return shortMonthFormat.format(date).replace(/\.$/, "")
 }
 
-// "Holnap", "Szombaton"-szerű relatív nap a köszöntésbe és a kártyákra.
+// Ennyi napon túl a "N nap múlva" már nem mond semmit, ott a dátumot írjuk ki.
+export const NEAR_DAYS = 14
+
+// "ma", "holnap", "szombat", "9 nap múlva", távolabb a dátum ("május 8.").
 export function relativeDay(dateKey: string) {
   const days = daysUntil(dateKey)
   if (days <= 0) return "ma"
   if (days === 1) return "holnap"
   if (days < 7) return weekday(dateKey)
-  return `${days} nap múlva`
+  if (days < NEAR_DAYS) return `${days} nap múlva`
+  return dayMonthFormat.format(toDate(dateKey))
 }
 
-// Hónap-csoport címe: az idei hónapok névvel, a jövő éviek évszámmal.
-export function monthGroupLabel(dateKey: string) {
+const dayMonthFormat = new Intl.DateTimeFormat("hu-HU", { month: "long", day: "numeric" })
+
+// A megjegyzés sortöréseit megtartjuk, a benne lévő linkeket kattinthatóvá tesszük
+// (a versenynaptárból jövő eseményeknél ott a versenykiírás címe).
+export function NoteText({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/[^\s]+)/g)
+  return (
+    <>
+      {parts.map((part, index) =>
+        /^https?:\/\//.test(part) ? (
+          <a key={index} href={part} target="_blank" rel="noopener noreferrer" className="break-all font-medium text-brand-ink underline underline-offset-2">
+            {part.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+          </a>
+        ) : (
+          <span key={index}>{part}</span>
+        ),
+      )}
+    </>
+  )
+}
+
+// Csoport címe az időrendi listában: az idei hónapok külön ("December"), a későbbi évek eseményei
+// egy évszám alatt ("2027"), hogy a ritka távoli eseményeknél ne legyen minden sornak saját fejléce.
+export function monthGroupLabel(dateKey: string, now = new Date()) {
   const date = toDate(dateKey)
-  return capitalize(date.getFullYear() === new Date().getFullYear() ? monthFormat.format(date) : monthYearFormat.format(date))
+  return date.getFullYear() === now.getFullYear() ? capitalize(monthFormat.format(date)) : String(date.getFullYear())
 }
 
 export function DateBlock({ startDate, endDate, strong = false, muted = false }: { startDate: string | null; endDate?: string | null; strong?: boolean; muted?: boolean }) {
@@ -122,7 +148,8 @@ export function ProfileBanner({ gaps }: { gaps: ProfileGaps | null }) {
 }
 
 // Csapatmeghívó: ez az első és legfontosabb teendő, ezért a köszöntés helyére kerül.
-export function InvitationCard({ invitation, onDone }: { invitation: TeamInvitation; onDone: (accepted: boolean) => void }) {
+// Egyszerre egy meghívó látszik; a moreCount jelzi, hány vár még utána.
+export function InvitationCard({ invitation, moreCount = 0, onDone }: { invitation: TeamInvitation; moreCount?: number; onDone: (accepted: boolean) => void }) {
   const [busy, setBusy] = useState<"accept" | "decline" | null>(null)
   const [error, setError] = useState<string | null>(null)
   const days = Math.max(0, -daysUntil(invitation.createdAt.slice(0, 10)))
@@ -154,9 +181,10 @@ export function InvitationCard({ invitation, onDone }: { invitation: TeamInvitat
         <div>
           <p className="text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">
             Meghívó · {days === 0 ? "ma" : `${days} napja`}
+            {moreCount > 0 ? <span className="normal-case tracking-normal"> · és még {moreCount} meghívód van</span> : null}
           </p>
           <h1 id={`invite-${invitation.token}`} className="mt-1.5 text-2xl font-bold leading-tight tracking-tight sm:text-[30px]">
-            {invitation.inviterName} meghívott a {boat.name} csapatába
+            {invitation.inviterName} meghívott {hungarianArticle(boat.name)} {boat.name} csapatába
           </h1>
           <p className="mt-1.5 text-muted-foreground">
             {[boat.type, boat.harbor, boat.crewCount > 0 ? `${boat.crewCount} csapattag` : null].filter(Boolean).join(" · ")}
@@ -206,13 +234,11 @@ function useConfirmedPeople(eventId: string) {
       if (error) throw error
       const ids = (rows ?? []).map((row) => String(row.user_id))
       if (ids.length === 0) return []
-      const { data: profiles, error: profileError } = await supabase.from("users").select("id, full_name, avatar_url").in("id", ids)
-      if (profileError) throw profileError
-      const byId = new Map((profiles ?? []).map((row) => [String(row.id), row]))
+      const byId = await loadCrewPeople(ids)
       return ids.map((id) => ({
         id,
-        name: String(byId.get(id)?.full_name ?? "").trim() || "Csapattag",
-        avatarUrl: (byId.get(id)?.avatar_url as string | null | undefined) ?? null,
+        name: byId.get(id)?.name || "Csapattag",
+        avatarUrl: byId.get(id)?.avatarUrl ?? null,
       }))
     }
     load()
@@ -254,14 +280,19 @@ export function NextSailingCard({
   return (
     <section aria-labelledby="next-sailing" className="rounded-2xl border border-border bg-card p-5 sm:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 id="next-sailing" className="text-base font-semibold">Következő vitorlázásod</h2>
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <h2 id="next-sailing" className="text-base font-semibold">Következő vitorlázásod</h2>
+          {/* Közeli eseménynél visszaszámlálás; távolinál a dátumblokk úgyis mutatja, mikor. */}
+          {days < NEAR_DAYS ? (
+            <span className="text-sm font-medium text-brand-ink">· {days <= 0 ? "ma" : days === 1 ? "holnap" : `${days} nap múlva`}</span>
+          ) : null}
+        </div>
         <GoingChip />
       </div>
       <div className="flex flex-wrap items-start gap-5">
         <div className="w-[72px] shrink-0 rounded-xl bg-brand py-2.5 text-center text-white" aria-hidden="true">
           <div className="text-[13px] font-semibold uppercase tracking-widest text-white/85">{shortMonth(start)}</div>
           <div className="text-[30px] font-bold leading-tight">{start.getDate()}</div>
-          <div className="text-[13px] text-white/85">{days <= 0 ? "ma" : days === 1 ? "holnap" : `${days} nap`}</div>
         </div>
         <div className="min-w-0 flex-[999_1_240px]">
           <h3 className="text-[22px] font-bold tracking-tight">{event.title}</h3>
@@ -269,9 +300,10 @@ export function NextSailingCard({
             {[event.boatName, event.location, weekday(event.startDate)].filter(Boolean).join(" · ")}
           </p>
           {event.note ? (
-            <p className="mt-3 rounded-lg border border-border/70 bg-secondary/50 px-3.5 py-2.5 text-sm text-foreground/90">
-              <span className="font-semibold">{team?.captainName ? `${team.captainName}, a kapitány:` : "A kapitány:"}</span> {event.note}
-            </p>
+            <div className="mt-3 rounded-lg border border-border/70 bg-secondary/50 px-3.5 py-2.5 text-sm text-foreground/90">
+              <p className="font-semibold">{team?.captainName ? `${team.captainName}, a kapitány megjegyzése` : "A kapitány megjegyzése"}</p>
+              <p className="mt-1 whitespace-pre-line break-words"><NoteText text={event.note} /></p>
+            </div>
           ) : null}
         </div>
       </div>
@@ -315,8 +347,8 @@ export function TeamsCard({ teams, events, large = false }: { teams: CrewTeam[];
     const awaiting = own.filter((event) => event.answer === "open").length
     const next = own.find((event) => event.answer === "confirmed")
     if (awaiting > 0) return `${awaiting} vár válaszra`
-    if (next) return `${capitalize(relativeDay(next.startDate))} mész`
-    return null
+    if (next) return daysUntil(next.startDate) < NEAR_DAYS ? `${capitalize(relativeDay(next.startDate))} mész` : `Következő: ${relativeDay(next.startDate)}`
+    return "Nincs közelgő esemény"
   }
 
   if (large && teams.length === 1) {

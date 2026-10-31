@@ -298,7 +298,10 @@ export function SiteNavbar() {
 
             {user && profile ? (
               <>
-                {isCaptain && boat?.id && userId ? <NotificationsMenu userId={userId} boatId={boat.id} /> : null}
+                {/* Mindenkinek van csengő: a kapitány a saját hajója körüli, a legénység a csapatai és jelentkezései körüli híreket kapja. */}
+                {userId ? (
+                  <NotificationsMenu userId={userId} boatId={isCaptain && boat?.id ? boat.id : null} crewHref={isCaptain ? "/vitorlazasaim" : "/"} />
+                ) : null}
 
                 <div className="relative" ref={menuRef}>
                   <button

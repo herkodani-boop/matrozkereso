@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { Sailboat } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { supabase } from "@/lib/supabase"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
@@ -182,7 +183,13 @@ export function OpenListings({
                       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                       className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                     />
-                  ) : null}
+                  ) : (
+                    // Fotó nélküli hajónál márkaszínű helykitöltő, hogy ne hasson hibának.
+                    <span className="flex h-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-brand to-[#1d5f7e] text-white">
+                      <Sailboat className="h-9 w-9 text-white/85" aria-hidden="true" />
+                      <span className="max-w-[80%] truncate text-sm font-semibold text-white/90">{listing.boatName}</span>
+                    </span>
+                  )}
                 </span>
                 <span className="block px-4 pb-4 pt-3.5">
                   <span className="block text-[13px] text-muted-foreground">{[listing.boatName, listing.boatType].filter(Boolean).join(" · ")}</span>

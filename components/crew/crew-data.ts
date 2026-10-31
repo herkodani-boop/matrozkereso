@@ -75,7 +75,8 @@ export function toOtherBoatEvents(rows: EventRow[], answers: Map<string, string>
 
 type CrewDataState = { status: "loading" | "ready" | "error"; events: OtherBoatEvent[]; teams: CrewTeam[] }
 
-// Csapattagként elérhető és a saját válaszú események a nem saját hajókon, a csapatokkal együtt.
+// Az aktív csapataim eseményei a nem saját hajókon, a saját válaszommal. Csak csapattag válaszolhat,
+// ezért egy korábbi csapat eseményei (ahol még megvan a régi válaszom) nem jelennek meg.
 // A refreshKey változásakor újratölt (pl. a fejléc oldalváltáskor).
 export function useCrewData(userId: string | null, refreshKey: unknown = null) {
   const [state, setState] = useState<CrewDataState>({ status: "loading", events: [], teams: [] })
@@ -97,36 +98,28 @@ export function useCrewData(userId: string | null, refreshKey: unknown = null) {
       const ownBoatIds = new Set((boatsResult.data ?? []).map((row) => String(row.id)))
       const teamBoatIds = (membershipsResult.data ?? []).map((row) => String(row.boat_id)).filter((id) => !ownBoatIds.has(id))
       const answers = new Map((answersResult.data ?? []).map((row) => [String(row.event_id), String(row.status)]))
-      const answeredIds = Array.from(answers.keys())
       const columns = "id, title, type, start_date, end_date, location, notes, boat_id, boat:boats(name)"
       const upcoming = `end_date.gte.${today},and(end_date.is.null,start_date.gte.${today})`
 
-      const [teamEventsResult, answeredEventsResult, teamBoatsResult] = await Promise.all([
+      const [teamEventsResult, teamBoatsResult] = await Promise.all([
         teamBoatIds.length > 0
           ? supabase.from("boat_events").select(columns).in("boat_id", teamBoatIds).or(upcoming).order("start_date").limit(EVENTS_LIMIT)
-          : Promise.resolve({ data: [] as EventRow[], error: null }),
-        // Csapaton kívül is lehet résztvevő (pl. egy hirdetésen keresztül hozzáadva).
-        answeredIds.length > 0
-          ? supabase.from("boat_events").select(columns).in("id", answeredIds).or(upcoming).order("start_date").limit(EVENTS_LIMIT)
           : Promise.resolve({ data: [] as EventRow[], error: null }),
         teamBoatIds.length > 0
           ? supabase.from("boats").select("id, name, type, harbor, image_url, original_image_url, user_id").in("id", teamBoatIds)
           : Promise.resolve({ data: [] as { id: string; name: string | null; type: string | null; harbor: string | null; image_url: string | null; original_image_url: string | null; user_id: string }[], error: null }),
       ])
-      const secondError = teamEventsResult.error ?? answeredEventsResult.error ?? teamBoatsResult.error
+      const secondError = teamEventsResult.error ?? teamBoatsResult.error
       if (secondError) throw secondError
 
       const captainIds = Array.from(new Set((teamBoatsResult.data ?? []).map((boat) => String(boat.user_id))))
-      const captainsResult = captainIds.length > 0
-        ? await supabase.from("users").select("id, full_name").in("id", captainIds)
-        : { data: [] as { id: string; full_name: string | null }[], error: null }
-      if (captainsResult.error) console.error("Kapitányok nevének lekérdezési hiba:", captainsResult.error)
-      const captainName = new Map((captainsResult.data ?? []).map((row) => [String(row.id), String(row.full_name ?? "").trim()]))
+      // A kapitányok neve kiegészítő adat: ha nem jön meg, a csapatlista név nélkül is működik.
+      const captains = await loadCrewPeople(captainIds).catch((error) => {
+        console.error("Kapitányok nevének lekérdezési hiba:", error)
+        return new Map<string, CrewPerson>()
+      })
+      const captainName = new Map(Array.from(captains.values()).map((person) => [person.id, person.name]))
 
-      const rows = new Map<string, EventRow>()
-      for (const row of [...(teamEventsResult.data ?? []), ...(answeredEventsResult.data ?? [])] as EventRow[]) {
-        if (!ownBoatIds.has(String(row.boat_id))) rows.set(String(row.id), row)
-      }
       const teams: CrewTeam[] = (teamBoatsResult.data ?? [])
         .map((boat) => ({
           boatId: String(boat.id),
@@ -140,7 +133,7 @@ export function useCrewData(userId: string | null, refreshKey: unknown = null) {
         .sort((first, second) => first.name.localeCompare(second.name, "hu"))
         .map((team, index) => ({ ...team, color: boatColor(index) }))
 
-      return { events: toOtherBoatEvents(Array.from(rows.values()), answers), teams }
+      return { events: toOtherBoatEvents((teamEventsResult.data ?? []) as EventRow[], answers), teams }
     }
 
     load()
@@ -164,6 +157,19 @@ export function useCrewData(userId: string | null, refreshKey: unknown = null) {
     })), [])
 
   return { ...state, setAnswer }
+}
+
+export type CrewPerson = { id: string; name: string; avatarUrl: string | null }
+
+// Nevek és profilképek a szerveren át: a users tábla RLS-e miatt a matróz közvetlenül nem látja
+// a kapitány és a csapattársak profilját.
+export async function loadCrewPeople(userIds: string[]): Promise<Map<string, CrewPerson>> {
+  const unique = Array.from(new Set(userIds.filter(Boolean)))
+  if (unique.length === 0) return new Map()
+  const response = await authorizedFetch("/api/crew/people", { method: "POST", body: JSON.stringify({ userIds: unique }) })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const data = (await response.json()) as { people?: CrewPerson[] }
+  return new Map((data.people ?? []).map((person) => [person.id, person]))
 }
 
 export async function authorizedFetch(url: string, init: RequestInit = {}) {

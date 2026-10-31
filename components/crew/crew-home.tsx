@@ -36,6 +36,7 @@ export function CrewHome() {
           <InvitationCard
             key={invitation.token}
             invitation={invitation}
+            moreCount={invitations.invitations.length - 1}
             onDone={(accepted) => {
               invitations.remove(invitation.token)
               if (accepted) setRefreshKey((key) => key + 1)
@@ -44,7 +45,7 @@ export function CrewHome() {
         ) : (
           <CrewGreeting
             firstName={firstName}
-            summary={!ready ? null : isNew ? "Még nem vagy egy hajón sem. Nézz körül a szabad helyek között, sok kapitány kezdőket is szívesen visz." : crewSummary(data) || "Most nincs teendőd."}
+            summary={!ready ? null : isNew ? "Még nem vagy egy hajón sem. Nézz körül a szabad helyek között, sok kapitány kezdőket is szívesen visz." : crewSummary(data) || (data.failed ? "Most nem sikerült mindent betölteni, próbáld újra egy kicsit később." : "Most nincs teendőd.")}
           />
         )}
 
@@ -82,7 +83,7 @@ function CrewGreeting({ firstName, summary }: { firstName: string | null; summar
   return (
     <section aria-labelledby="crew-greeting" className="relative overflow-hidden rounded-2xl text-white">
       <Image src="/hero-balaton.jpg" alt="" fill priority sizes="(max-width: 1200px) 100vw, 1152px" className="object-cover object-[28%_82%] sm:object-[center_80%]" />
-      <div className="relative flex min-h-[160px] flex-col justify-end bg-[rgba(10,47,66,0.76)] p-6 sm:p-8">
+      <div className="relative flex min-h-[160px] flex-col justify-end bg-gradient-to-t from-[rgba(10,47,66,0.9)] to-[rgba(10,47,66,0.72)] p-6 sm:p-8">
         <p className="text-sm font-medium text-white/80">{`${capitalize(weekday(todayKey))}, ${formatLongDate(todayKey)}`}</p>
         <h1 id="crew-greeting" className="mt-1 text-3xl font-bold leading-tight tracking-tight sm:text-[34px]">
           {firstName ? `Szia, ${firstName}!` : "Üdv a fedélzeten!"}

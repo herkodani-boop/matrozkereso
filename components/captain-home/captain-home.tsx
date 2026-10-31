@@ -195,8 +195,8 @@ function Greeting({ firstName, data, otherBoats }: { firstName: string | null; d
         sizes="(max-width: 1200px) 100vw, 1152px"
         className="object-cover object-[28%_82%] sm:object-[center_80%]"
       />
-      {/* Sötét réteg a fotón, hogy a fehér szöveg olvasható maradjon. */}
-      <div className="relative flex min-h-[200px] flex-wrap items-end justify-between gap-5 bg-[rgba(10,47,66,0.76)] p-6 sm:p-8">
+      {/* Sötét réteg a fotón; alul erősebb, hogy a gombok ne vesszenek el a vitorlák és a legénység előtt. */}
+      <div className="relative flex min-h-[200px] flex-wrap items-end justify-between gap-5 bg-gradient-to-t from-[rgba(10,47,66,0.9)] to-[rgba(10,47,66,0.72)] p-6 sm:p-8">
         <div>
           <p className="text-sm font-medium text-white/80">{dateLine}</p>
           <h1 id="captain-greeting" className="mt-1 text-3xl font-bold leading-tight tracking-tight sm:text-[34px]">
@@ -213,7 +213,7 @@ function Greeting({ firstName, data, otherBoats }: { firstName: string | null; d
         <div className="flex flex-wrap gap-2.5">
           <Link
             href="/kapitany-dashboard?esemeny=uj"
-            className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/60 px-4 text-sm font-semibold text-white transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"
+            className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/70 bg-[rgba(10,47,66,0.6)] px-4 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-[rgba(10,47,66,0.8)] focus-visible:outline-2 focus-visible:outline-white"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
             Új esemény
@@ -380,6 +380,8 @@ function NextEvent({
     )
   }
 
+  const relative = relativeDays(event.startDate)
+  const countdown = relative === "ma" || relative === "holnap" ? relative : `${relative} múlva`
   const { confirmed, declined, unanswered, total } = event.attendance
   const percent = (value: number) => `${total > 0 ? (value / total) * 100 : 0}%`
   const shownPeople = event.confirmedPeople.slice(0, AVATARS_SHOWN)
@@ -388,9 +390,13 @@ function NextEvent({
   const breakdown = [declined > 0 ? `${declined} nem jön` : null, unanswered > 0 ? `${unanswered} nem válaszolt` : null].filter(Boolean).join(" · ")
 
   return (
-    <section aria-labelledby="captain-next-event" className="rounded-2xl border border-border bg-card p-5 sm:p-6">
+    // A lap fő kártyája: márkaszínű keret és enyhe árnyék emeli ki a többi, lapos kártya közül.
+    <section aria-labelledby="captain-next-event" className="rounded-2xl border border-brand/35 bg-card p-5 shadow-lg shadow-brand/10 sm:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 id="captain-next-event" className={sectionLabel}>Következő esemény</h2>
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <h2 id="captain-next-event" className={sectionLabel}>Következő esemény</h2>
+          <span className="text-sm font-medium text-brand-ink">· {countdown}</span>
+        </div>
         <Link href="/kapitany-dashboard?ful=esemenyek" className="text-sm font-medium text-brand-ink underline-offset-4 hover:underline">
           Összes esemény{upcomingCount > 1 ? ` (${upcomingCount})` : ""}
         </Link>
@@ -399,8 +405,8 @@ function NextEvent({
       <div className="flex flex-wrap items-start gap-5">
         <div className="w-[72px] shrink-0 rounded-xl bg-brand py-2.5 text-center text-white" aria-hidden="true">
           <div className="text-[13px] font-semibold uppercase tracking-widest text-white/85">{shortMonth(event.startDate)}</div>
+          {/* A visszaszámlálás a kártya fejlécében van, itt csak a dátum. */}
           <div className="text-[30px] font-bold leading-tight">{toDate(event.startDate).getDate()}</div>
-          <div className="text-[13px] text-white/85">{relativeDays(event.startDate)}</div>
         </div>
         <div className="min-w-0 flex-[999_1_240px]">
           <div className="flex flex-wrap items-center gap-2">
@@ -427,7 +433,7 @@ function NextEvent({
         {total === 0 ? (
           <p className="text-sm text-muted-foreground">Még nincs csapattagod. A kapitányi felületen hívhatod meg őket.</p>
         ) : capacity ? (
-          <CapacityAttendance confirmed={confirmed} unanswered={unanswered} breakdown={breakdown} capacity={capacity} />
+          <CapacityAttendance confirmed={confirmed} unanswered={unanswered} breakdown={breakdown} capacity={capacity} isRace={event.type === "Verseny"} />
         ) : (
           <>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -507,32 +513,37 @@ function NextEvent({
 }
 
 // A hajó létszámához mérve: a sáv a helyek betöltöttségét mutatja. Ha többen jönnek (pl. hajószerelésre
-// az egész csapat), az nem hiba, csak tájékoztatjuk a kapitányt.
+// az egész csapat), az nem hiba, csak tájékoztatjuk a kapitányt. Szabad helyet csak versenynél írunk ki:
+// edzésre, hajószerelésre nem kell teljes legénység, ott a "8 hely szabad" hiányt sugallna.
 function CapacityAttendance({
   confirmed,
   unanswered,
   breakdown,
   capacity,
+  isRace,
 }: {
   confirmed: number
   unanswered: number
   breakdown: string
   capacity: number
+  isRace: boolean
 }) {
   const confirmedShare = Math.min(confirmed, capacity)
   const unansweredShare = Math.min(unanswered, capacity - confirmedShare)
   const percent = (value: number) => `${(value / capacity) * 100}%`
   const note =
-    confirmed < capacity
-      ? `${capacity - confirmed} hely szabad`
+    confirmed > capacity
+      ? `${confirmed - capacity} fővel többen jönnek, mint a hajó létszáma`
       : confirmed === capacity
         ? "Megvan a teljes létszám"
-        : `${confirmed - capacity} fővel többen jönnek, mint a hajó létszáma`
+        : isRace
+          ? `${capacity - confirmed} hely szabad`
+          : null
 
   return (
     <>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="font-semibold">{`${confirmed} fő jön · ${capacity} fős hajó`}</p>
+        <p className="font-semibold">{isRace ? `${confirmed} fő jön · ${capacity} fős hajó` : `${confirmed} fő jön`}</p>
         {breakdown ? <p className="text-sm text-muted-foreground">{breakdown}</p> : null}
       </div>
       <div
@@ -543,7 +554,7 @@ function CapacityAttendance({
         <span className="bg-brand-ink" style={{ width: percent(confirmedShare) }} />
         <span className="bg-brand-orange" style={{ width: percent(unansweredShare) }} />
       </div>
-      <p className="mt-2 text-sm text-muted-foreground">{note}</p>
+      {note ? <p className="mt-2 text-sm text-muted-foreground">{note}</p> : null}
     </>
   )
 }
@@ -563,9 +574,11 @@ function LaterEvents({ events, upcomingCount, capacity }: { events: HomeEvent[];
             ? ""
             : confirmed + declined === 0
               ? "Még nincs válasz"
-              : capacity
+              : capacity && event.type === "Verseny"
                 ? `${confirmed} / ${capacity} fő`
-                : `${confirmed} / ${total} jön`
+                : capacity
+                  ? `${confirmed} fő jön`
+                  : `${confirmed} / ${total} jön`
           return (
             <li key={event.id} className="border-b border-border/70 last:border-b-0">
               <Link
@@ -599,14 +612,13 @@ function LaterEvents({ events, upcomingCount, capacity }: { events: HomeEvent[];
   )
 }
 
+const CREW_AVATARS_SHOWN = 6
+
+// Az eseményeket és a hirdetéseket a saját kártyáik mutatják; itt a csapat kerül előtérbe.
 function BoatCard({ data, onboarding }: { data: CaptainHomeData; onboarding: boolean }) {
-  const stats = [
-    { value: data.crewCount, label: "csapattag" },
-    { value: data.upcomingCount, label: "esemény" },
-    { value: data.listings.length, label: "hirdetés" },
-  ]
-  // Csupa nulla nem mond semmit: ilyenkor egy mondat áll a számok helyén.
-  const empty = stats.every((stat) => stat.value === 0)
+  const shownCrew = data.crew.slice(0, CREW_AVATARS_SHOWN)
+  const extraCrew = data.crewCount - shownCrew.length
+  const innerLink = "relative z-10 text-sm font-semibold text-brand-ink underline-offset-4 hover:underline"
 
   return (
     <section aria-labelledby="captain-boat" className="group relative overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-brand/40">
@@ -623,19 +635,36 @@ function BoatCard({ data, onboarding }: { data: CaptainHomeData; onboarding: boo
           </Link>
         </h2>
         <p className="text-sm text-muted-foreground">{[data.boat.type, data.boat.harbor].filter(Boolean).join(" · ")}</p>
-        {empty ? (
-          <p className="mt-3 text-sm text-muted-foreground">
-            Még nincs csapattag, esemény és hirdetés.{onboarding ? " A kezdő lépések végigvisznek rajta." : ""}
-          </p>
+        {data.crewCount === 0 ? (
+          onboarding ? (
+            <p className="mt-3 text-sm text-muted-foreground">Még nincs csapattagod. A kezdő lépések végigvisznek rajta.</p>
+          ) : (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Még nincs csapattagod.{" "}
+              <Link href="/kapitany-dashboard?meghivas=uj" className={innerLink}>Meghívás →</Link>
+            </p>
+          )
         ) : (
-          <ul className="mt-3.5 grid grid-cols-3 gap-2">
-            {stats.map((stat) => (
-              <li key={stat.label} className="rounded-lg bg-secondary px-3 py-2.5">
-                <span className="block text-xl font-bold">{stat.value}</span>
-                <span className="block text-[13px] text-muted-foreground">{stat.label}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg bg-secondary px-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="flex shrink-0 items-center">
+                {shownCrew.map((person, index) => (
+                  <span
+                    key={person.id}
+                    title={person.name}
+                    className={`relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border-2 border-secondary bg-brand-soft text-xs font-semibold text-brand-ink ${index > 0 ? "-ml-2" : ""}`}
+                  >
+                    {person.avatarUrl ? <Image src={person.avatarUrl} alt={person.name} fill sizes="32px" className="object-cover" /> : person.name.charAt(0).toUpperCase()}
+                  </span>
+                ))}
+                {extraCrew > 0 ? (
+                  <span className="-ml-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-secondary bg-card text-xs font-semibold text-muted-foreground">+{extraCrew}</span>
+                ) : null}
+              </span>
+              <span className="text-sm font-semibold">{data.crewCount} csapattag</span>
+            </div>
+            <Link href="/kapitany-dashboard?ful=csapat" className={innerLink}>Csapat kezelése →</Link>
+          </div>
         )}
       </div>
     </section>

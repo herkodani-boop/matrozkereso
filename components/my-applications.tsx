@@ -14,6 +14,9 @@ export type MyApplication = {
   title: string
   // A hirdetést a kapitány visszavonta vagy lezárta; a jelentkezés ettől még látszik.
   adClosed: "deleted" | "closed" | null
+  // A hirdetés eseménye és hajója: ha már a csapat eseményei között is ott van, nem mutatjuk kétszer.
+  eventId: string | null
+  boatId: string | null
   boatName: string
   location: string
   dateText: string
@@ -30,6 +33,8 @@ type AdEmbed = {
   date_text: string | null
   is_active: boolean
   is_deleted: boolean
+  event_id: string | null
+  boat_id: string | null
   positions: unknown[] | null
   commitment: string | null
   start_date: string | null
@@ -78,6 +83,8 @@ function toApplication(row: ApplicationQueryRow): MyApplication | null {
     createdAt: row.created_at,
     title: ad.title || "Hirdetés",
     adClosed: ad.is_deleted ? "deleted" : ad.is_active === false ? "closed" : null,
+    eventId: ad.event_id ? String(ad.event_id) : null,
+    boatId: ad.boat_id ? String(ad.boat_id) : null,
     boatName: boat?.name || "Hajó",
     location: ad.location || "",
     dateText: ad.date_text || "",
@@ -106,7 +113,7 @@ export function useMyApplications() {
 
     supabase
       .from("applications")
-      .select("id, status, created_at, captain_contact_shared_at, captain_contact_name, captain_contact_email, captain_contact_phone, ad:ads!inner(title, location, date_text, is_active, is_deleted, positions, commitment, start_date, end_date, boat:boats(name))")
+      .select("id, status, created_at, captain_contact_shared_at, captain_contact_name, captain_contact_email, captain_contact_phone, ad:ads!inner(title, location, date_text, is_active, is_deleted, event_id, boat_id, positions, commitment, start_date, end_date, boat:boats(name))")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(20)

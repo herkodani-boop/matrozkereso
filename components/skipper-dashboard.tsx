@@ -3607,7 +3607,7 @@ export function SkipperDashboard() {
                 Esemény törlése
               </DialogTitle>
               <DialogDescription className="text-pretty leading-relaxed">
-                Biztosan törölni szeretnéd az eseményt? A törlés végleges, a résztvevői rekordok törlődnek, a kapcsolt hirdetés pedig megmarad, de leválik erről az eseményről.
+                Biztosan törölni szeretnéd az eseményt? A törlés végleges, a résztvevői rekordok törlődnek, a kapcsolt hirdetés pedig megmarad, de leválik erről az eseményről. A csapat és a résztvevők értesítést kapnak az elmaradásról.
               </DialogDescription>
             </DialogHeader>
             <div className="flex gap-3 pt-2">
@@ -3816,8 +3816,8 @@ export function SkipperDashboard() {
                 {(() => {
                   const member = teamMembers.find((item) => item.id === confirmRemoveMemberId)
                   return member
-                    ? `Biztosan törölni akarod a csapatból ezt a személyt: ${member.name}?`
-                    : "Biztosan törölni akarod ezt a személyt a csapatból?"
+                    ? `Biztosan törölni akarod a csapatból ezt a személyt: ${member.name}? A közelgő eseményekre adott válaszai törlődnek, és értesítést kap az eltávolításról.`
+                    : "Biztosan törölni akarod ezt a személyt a csapatból? A közelgő eseményekre adott válaszai törlődnek, és értesítést kap az eltávolításról."
                 })()}
               </DialogDescription>
             </DialogHeader>

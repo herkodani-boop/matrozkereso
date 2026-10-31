@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
   const { data: invitations, error } = await adminClient
     .from("boat_team_invitations")
-    .select("token, boat_id, inviter_id, created_at, boat:boats(id, name, type, harbor, image_url, original_image_url, user_id)")
+    .select("token, boat_id, inviter_id, created_at, boat:boats(id, name, type, harbor, image_url, original_image_url, user_id, is_deleted)")
     .eq("invitee_email", user.email.trim().toLowerCase())
     .eq("status", "pending")
     .gt("expires_at", new Date().toISOString())
@@ -39,13 +39,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "A meghívókat nem sikerült betölteni." }, { status: 500 })
   }
 
-  type BoatRow = { id: string; name: string | null; type: string | null; harbor: string | null; image_url: string | null; original_image_url: string | null; user_id: string }
+  type BoatRow = { id: string; name: string | null; type: string | null; harbor: string | null; image_url: string | null; original_image_url: string | null; user_id: string; is_deleted: boolean | null }
   const rows = (invitations ?? []).map((row) => ({
     ...row,
     boat: (Array.isArray(row.boat) ? row.boat[0] ?? null : row.boat) as BoatRow | null,
   }))
-  // A saját hajóra szóló meghívó értelmetlen; a tulajdonos amúgy is a hajó kapitánya.
-  const relevant = rows.filter((row) => row.boat && row.boat.user_id !== user.id)
+  // A saját hajóra szóló meghívó értelmetlen; a tulajdonos amúgy is a hajó kapitánya. A service role
+  // nem kapja meg az RLS-ből a törölt elemek elrejtését, ezért a törölt hajót és eseményt itt szűrjük.
+  const relevant = rows.filter((row) => row.boat && row.boat.user_id !== user.id && !row.boat.is_deleted)
   const boatIds = relevant.map((row) => String(row.boat_id))
   const inviterIds = Array.from(new Set(relevant.map((row) => String(row.inviter_id))))
   const today = new Date().toISOString().slice(0, 10)
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
     inviterIds.length > 0 ? adminClient.from("users").select("id, full_name").in("id", inviterIds) : Promise.resolve({ data: [], error: null }),
     boatIds.length > 0 ? adminClient.from("boat_team_members").select("boat_id").in("boat_id", boatIds).eq("status", "active") : Promise.resolve({ data: [], error: null }),
     boatIds.length > 0
-      ? adminClient.from("boat_events").select("id, boat_id, title, type, start_date, end_date, location").in("boat_id", boatIds).gte("start_date", today).order("start_date").limit(20)
+      ? adminClient.from("boat_events").select("id, boat_id, title, type, start_date, end_date, location").in("boat_id", boatIds).eq("is_deleted", false).gte("start_date", today).order("start_date").limit(20)
       : Promise.resolve({ data: [], error: null }),
   ])
   const firstError = profilesResult.error ?? membersResult.error ?? eventsResult.error

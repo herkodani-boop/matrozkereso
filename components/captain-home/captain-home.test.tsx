@@ -58,6 +58,7 @@ function busyBoat(): CaptainHomeData {
   return {
     boat: { id: "boat-1", name: "Sirocco", imageUrl: null, type: "70-es cirkáló", harbor: "Balatonfüred", maxCrew: 6 },
     crewCount: 14,
+    crew: Array.from({ length: 14 }, (_, index) => ({ id: `c${index}`, name: `Tag ${index}`, avatarUrl: null })),
     upcomingCount: 12,
     events: [
       event({
@@ -133,7 +134,8 @@ describe("CaptainHome", () => {
   it("lists later events with the remaining count", () => {
     render(<CaptainHome />)
 
-    expect(screen.getByText("11 / 6 fő")).toBeInTheDocument()
+    // Edzésnél nem a hajó létszámához mérünk, csak azt mutatjuk, hányan jönnek.
+    expect(screen.getByText("11 fő jön")).toBeInTheDocument()
     expect(screen.getByText("Még nincs válasz")).toBeInTheDocument()
     // 12 közelgőből 1 fent, 2 a listában → 9 további.
     expect(screen.getByRole("link", { name: "További 9 esemény" })).toBeInTheDocument()
@@ -167,6 +169,24 @@ describe("CaptainHome", () => {
     mockState.data = { ...data, boat: { ...data.boat, maxCrew: 6 }, events: [withoutListing, ...data.events.slice(1)] }
     render(<CaptainHome />)
     expect(nextEvent().queryByRole("link", { name: "Hirdetés feladása" })).not.toBeInTheDocument()
+  })
+
+  it("shows the crew on the boat card instead of repeating event and listing counts", () => {
+    render(<CaptainHome />)
+
+    expect(screen.getByText("14 csapattag")).toBeInTheDocument()
+    expect(screen.getByText("+8")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Csapat kezelése →" })).toHaveAttribute("href", "/kapitany-dashboard?ful=csapat")
+  })
+
+  it("does not talk about free places for a non-race event", () => {
+    const data = busyBoat()
+    const repair = { ...data.events[0], type: "Hajószerelés", attendance: { confirmed: 2, declined: 0, unanswered: 1, total: 14 } }
+    mockState.data = { ...data, boat: { ...data.boat, maxCrew: 10 }, events: [repair, ...data.events.slice(1)] }
+    render(<CaptainHome />)
+
+    expect(screen.getByText("2 fő jön")).toBeInTheDocument()
+    expect(screen.queryByText(/hely szabad/)).not.toBeInTheDocument()
   })
 
   it("shows free places when fewer people come than the boat holds", () => {
@@ -207,7 +227,7 @@ describe("CaptainHome", () => {
     expect(screen.getAllByRole("link", { name: /Hirdetés feladása/ })).toHaveLength(1)
     expect(screen.queryByText("Még nincs közelgő eseményed")).not.toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "Hirdetéseid" })).not.toBeInTheDocument()
-    expect(screen.getByText(/Még nincs csapattag, esemény és hirdetés/)).toBeInTheDocument()
+    expect(screen.getByText("Még nincs csapattagod. A kezdő lépések végigvisznek rajta.")).toBeInTheDocument()
     expect(
       screen.getByText("A hajód kész, már csak a csapat hiányzik. Holnap: Hajószerelés (Nemere). 3 esemény vár a válaszodra."),
     ).toBeInTheDocument()
