@@ -88,14 +88,15 @@ export function SiteNavbar() {
     (process.env.NEXT_PUBLIC_VERCEL_ENV === "preview" || process.env.NEXT_PUBLIC_TEST_MODE === "true")
 
   const isCaptain = Boolean(boat?.name)
-  // A kapitány máshol legénység-oldala külön menüpontot kap; matróznál ez maga a kezdőlap.
-  const crew = useCrewData(isCaptain ? userId : null, pathname)
-  const sailsElsewhere = isCaptain && crew.status === "ready" && (crew.teams.length > 0 || crew.events.length > 0)
+  // "Csapataim": a kapitánynak mindig (a saját csapata csak olvasható módban), a matróznak, ha
+  // legalább egy csapat tagja. A számláló a más hajókon válaszra váró eseményeké.
+  const crew = useCrewData(userId, pathname)
+  const showTeams = isCaptain || (crew.status === "ready" && crew.teams.length > 0)
   const awaitingCount = crew.events.filter((event) => event.answer === "open").length
   const navLinks: NavLink[] = [
     { href: "/", label: "Kezdőlap" },
     ...(isCaptain ? [{ href: "/kapitany-dashboard", label: "Hajóm" }] : []),
-    ...(sailsElsewhere ? [{ href: "/vitorlazasaim", label: "Vitorlázásaim", badge: awaitingCount }] : []),
+    ...(showTeams ? [{ href: "/csapataim", label: "Csapataim", badge: awaitingCount }] : []),
     { href: "/bongeszes", label: "Szabad helyek" },
   ]
 

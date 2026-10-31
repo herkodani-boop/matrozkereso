@@ -109,12 +109,15 @@ describe("crew notices", () => {
         { id: "n1", kind: "event-cancelled", boat_name: "Sirocco", title: "Grillezés", event_date: "2026-11-21", created_at: ago(1) },
         { id: "n2", kind: "team-removed", boat_name: "Avalon", title: null, event_date: null, created_at: ago(2) },
         { id: "n3", kind: "team-removed", boat_name: "Régi", title: null, event_date: null, created_at: ago(400) },
+        { id: "n4", kind: "member-left", boat_name: "Pogácsa", title: "Nagy Anna", event_date: null, created_at: ago(3) },
       ],
     }), null)
     expect(items.map((item) => `${item.actor} ${item.headline} | ${item.subject}`)).toEqual([
       "Sirocco lemondott egy eseményt | Grillezés · november 21.",
       "Kikerültél az Avalon csapatából | ",
+      "Nagy Anna kilépett a Pogácsa csapatából | ",
     ])
+    expect(items[2].href).toBe("/kapitany-dashboard?ful=csapat")
   })
 })
 

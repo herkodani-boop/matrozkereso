@@ -194,7 +194,7 @@ export function InvitationCard({ invitation, moreCount = 0, onDone }: { invitati
           {[
             "Látod a hajó összes eseményét, és jelezheted, mikor mész.",
             "A kapitány és a csapat látja a nevedet és az elérhetőségedet.",
-            "Bármikor kiléphetsz a profilodban.",
+            "Bármikor kiléphetsz a Csapataim oldalon.",
           ].map((line) => (
             <li key={line} className="flex gap-2.5">
               <Check className="mt-1 h-4 w-4 shrink-0 text-success-ink" aria-hidden="true" />
@@ -355,7 +355,10 @@ export function TeamsCard({ teams, events, large = false }: { teams: CrewTeam[];
     const team = teams[0]
     return (
       <section aria-labelledby="crew-teams" className="overflow-hidden rounded-2xl border border-border bg-card">
-        <h2 id="crew-teams" className="border-b border-border/70 px-5 py-4 text-base font-semibold">Csapataim</h2>
+        <div className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
+          <h2 id="crew-teams" className="text-base font-semibold">Csapataim</h2>
+          <Link href={`/csapataim?hajo=${encodeURIComponent(team.boatId)}`} className="text-sm font-semibold text-brand-ink underline-offset-4 hover:underline">Naptár és tagok</Link>
+        </div>
         <div className="relative h-[120px] bg-brand-soft">
           {team.imageUrl ? <Image src={team.imageUrl} alt={`A ${team.name} vitorlás`} fill sizes="360px" className="object-cover" /> : null}
         </div>
@@ -372,13 +375,14 @@ export function TeamsCard({ teams, events, large = false }: { teams: CrewTeam[];
     <section aria-labelledby="crew-teams" className="overflow-hidden rounded-2xl border border-border bg-card">
       <div className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
         <h2 id="crew-teams" className="text-base font-semibold">Csapataim</h2>
-        <span className="text-sm text-muted-foreground">{teams.length}</span>
+        <Link href="/csapataim" className="text-sm font-semibold text-brand-ink underline-offset-4 hover:underline">Közös naptár</Link>
       </div>
       <ul>
         {teams.map((team) => {
           const status = statusFor(team)
           return (
-            <li key={team.boatId} className="flex items-center gap-3.5 border-b border-border/70 px-5 py-3.5 last:border-b-0">
+            <li key={team.boatId} className="border-b border-border/70 last:border-b-0">
+              <Link href={`/csapataim?hajo=${encodeURIComponent(team.boatId)}`} className="flex items-center gap-3.5 px-5 py-3.5 transition-colors hover:bg-secondary/60">
               <span className="relative h-12 w-16 shrink-0 overflow-hidden rounded-lg bg-brand-soft">
                 {team.imageUrl ? <Image src={team.imageUrl} alt="" fill sizes="64px" className="object-cover" /> : null}
               </span>
@@ -391,6 +395,7 @@ export function TeamsCard({ teams, events, large = false }: { teams: CrewTeam[];
                   {[team.captainName ? `Kapitány: ${team.captainName}` : null, status].filter(Boolean).join(" · ")}
                 </span>
               </span>
+              </Link>
             </li>
           )
         })}

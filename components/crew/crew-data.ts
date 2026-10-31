@@ -75,11 +75,25 @@ export function toOtherBoatEvents(rows: EventRow[], answers: Map<string, string>
 
 type CrewDataState = { status: "loading" | "ready" | "error"; events: OtherBoatEvent[]; teams: CrewTeam[] }
 
+const CREW_DATA_CHANGED = "matrozkereso:crew-data-changed"
+
+// Válasz vagy kilépés után szól a többi nézetnek (pl. a fejléc számlálójának), hogy töltsön újra.
+export function notifyCrewDataChanged() {
+  window.dispatchEvent(new Event(CREW_DATA_CHANGED))
+}
+
 // Az aktív csapataim eseményei a nem saját hajókon, a saját válaszommal. Csak csapattag válaszolhat,
 // ezért egy korábbi csapat eseményei (ahol még megvan a régi válaszom) nem jelennek meg.
 // A refreshKey változásakor újratölt (pl. a fejléc oldalváltáskor).
 export function useCrewData(userId: string | null, refreshKey: unknown = null) {
   const [state, setState] = useState<CrewDataState>({ status: "loading", events: [], teams: [] })
+  const [changeKey, setChangeKey] = useState(0)
+
+  useEffect(() => {
+    const bump = () => setChangeKey((key) => key + 1)
+    window.addEventListener(CREW_DATA_CHANGED, bump)
+    return () => window.removeEventListener(CREW_DATA_CHANGED, bump)
+  }, [])
 
   useEffect(() => {
     if (!userId) return
@@ -148,7 +162,7 @@ export function useCrewData(userId: string | null, refreshKey: unknown = null) {
     return () => {
       active = false
     }
-  }, [userId, refreshKey])
+  }, [userId, refreshKey, changeKey])
 
   const setAnswer = useCallback((eventId: string, answer: OtherBoatEvent["answer"]) =>
     setState((previous) => ({

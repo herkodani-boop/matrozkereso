@@ -6,7 +6,7 @@
 export type NotificationKind =
   | "confirmed" | "declined" | "applied" | "joined"
   | "event-new" | "event-changed" | "event-cancelled" | "application-accepted" | "application-rejected"
-  | "invited" | "team-removed"
+  | "invited" | "team-removed" | "member-left"
 
 export type CaptainNotification = {
   id: string
@@ -95,7 +95,7 @@ export type RawCrewNotificationData = {
   // A kapitány döntése a jelentkezéseimről (decided_at a döntés ideje).
   decisions: { ad_title: string | null; boat_name: string | null; status: string; decided_at: string | null }[]
   invitations: { token: string; inviterName: string; boatName: string; createdAt: string }[]
-  // A törölt eseményekről és a csapatból eltávolításról a crew_notices tábla őrzi a nyomot.
+  // A törölt eseményekről, a csapatból eltávolításról és (a kapitánynak) a kilépésről a crew_notices tábla őrzi a nyomot.
   notices: { id: string; kind: string; boat_name: string | null; title: string | null; event_date: string | null; created_at: string }[]
   since: string
   // Hová vigyen a kattintás: a matróznál a kezdőlap, a kapitánynál a Vitorlázásaim oldal.
@@ -169,6 +169,9 @@ export function buildCrewNotifications(raw: RawCrewNotificationData): Omit<Capta
       items.push({ id: `notice-${notice.id}`, kind: "event-cancelled", actor: boat, headline: "lemondott egy eseményt", subject: [title, when].filter(Boolean).join(" · "), at: notice.created_at, href: raw.crewHref })
     } else if (notice.kind === "team-removed") {
       items.push({ id: `notice-${notice.id}`, kind: "team-removed", actor: "Kikerültél", headline: `${hungarianArticle(boat)} ${boat} csapatából`, subject: "", at: notice.created_at, href: raw.crewHref })
+    } else if (notice.kind === "member-left") {
+      // A kapitánynak szól: a title itt a kilépett tag neve.
+      items.push({ id: `notice-${notice.id}`, kind: "member-left", actor: notice.title?.trim() || "Egy csapattag", headline: `kilépett ${hungarianArticle(boat)} ${boat} csapatából`, subject: "", at: notice.created_at, href: "/kapitany-dashboard?ful=csapat" })
     }
   }
 

@@ -33,11 +33,22 @@ A kezdőlap három változatban jelenik meg:
   - Új hajónál kezdő lépések: csapat meghívása és az első esemény. A hirdetés nem kötelező lépés, csak ajánlásként jelenik meg.
 - **Hiányos profil:** ha hiányzik a név, a telefonszám vagy a tapasztalat, egy figyelmeztető sáv jelenik meg a kezdőlap tetején.
 
+## Csapataim
+
+- Menüpont a fejlécben: a kapitánynak mindig, a matróznak akkor, ha legalább egy csapat tagja. A számláló a válaszra váró eseményeket mutatja.
+- Csapatonként:
+  - fejléc a hajó képével, a kapitány elérhetőségével („Hívás”, „E-mail”);
+  - havi naptár: a saját válasz színezi az eseményt (megyek, válaszra vár, nem megyek); mobilon pöttyös rács, a napra koppintva az események;
+  - közelgő események: ki jön a csapatból, és itt is lehet válaszolni;
+  - csapattagok szereppel és elérhetőséggel (ezt csak a csapat látja);
+  - „Kilépés a csapatból”: a válaszok törlődnek, a kapitány értesítést kap (`team-leave-migration.sql`).
+- Több csapatnál „Összes” nézet: közös naptár hajónkénti színnel, figyelmeztetés, ha két csapatnak ugyanarra a napra esik eseménye, és közös „Válaszra vár” lista.
+- A kapitány saját csapata csak olvasható: úgy látja, ahogy a tagjai, létszámokkal; a kezelés a Hajóm oldalon marad.
+- Akinek nincs csapata, magyarázatot és a szabad helyekre mutató gombot kap.
+
 ## Vitorlázásaim
 
-- Külön menüpont annak a kapitánynak, aki más hajón is csapattag vagy résztvevő.
-- A számláló mutatja, hány esemény vár válaszra.
-- Ugyanazt a teljes legénység-nézetet mutatja, mint a matróz kezdőlapja.
+- A kapitány teljes legénység-nézete más hajókon (a jelentkezésekkel együtt); a kapitányi kezdőlap „Más hajókon” részéből érhető el.
 
 ## Felhasználói szerepek
 

@@ -12,7 +12,7 @@ import {
   type MyApplication,
 } from "@/components/my-applications"
 import { daysUntil } from "@/components/captain-home/use-captain-home-data"
-import { respondToEvent, useCrewData, type CrewTeam, type OtherBoatEvent } from "./crew-data"
+import { notifyCrewDataChanged, respondToEvent, useCrewData, type CrewTeam, type OtherBoatEvent } from "./crew-data"
 import {
   BoatTag,
   DateBlock,
@@ -98,6 +98,7 @@ export function CrewOverview({ data, userId, mode }: { data: CrewOverviewData; u
     try {
       await respondToEvent(event.id, status)
       crew.setAnswer(event.id, status)
+      notifyCrewDataChanged()
       if (status === "declined") setDetails(null)
     } catch (error) {
       console.error("Esemény-visszajelzés mentési hiba:", error)
