@@ -3,15 +3,12 @@
 import { useAuth } from "@/components/auth-provider"
 import { useCaptainBoats } from "@/components/captain-boats-provider"
 import { CaptainHome } from "@/components/captain-home/captain-home"
-import { HeroSection } from "@/components/hero-section"
-import { HomeEventsHub } from "@/components/home-events-hub"
-import { CoreOptions } from "@/components/core-options"
-import { HomeGuestInfo } from "@/components/home-guest-info"
-import { LatestListings } from "@/components/latest-listings"
-import { MyApplications } from "@/components/my-applications"
+import { CrewHome } from "@/components/crew/crew-home"
+import { GuestHome } from "@/components/guest-home"
 import { Skeleton } from "@/components/ui/skeleton"
 
-// Akinek hajója van, a kapitányi kezdőlapot kapja; vendég és matróz a megszokottat.
+// Akinek hajója van, a kapitányi kezdőlapot kapja; a bejelentkezett matróz a saját vitorlázásait,
+// a vendég a bemutatkozó oldalt.
 export function HomeContent() {
   const { status: authStatus, user } = useAuth()
   const { status: boatsStatus, boats, ownerId } = useCaptainBoats()
@@ -29,23 +26,11 @@ export function HomeContent() {
     )
   }
 
-  if (boats.length > 0) {
-    return (
-      <div className="flex-1">
-        <CaptainHome />
-        <MyApplications />
-      </div>
-    )
-  }
+  if (!user) return <GuestHome />
 
   return (
-    <main className="flex-1">
-      <HeroSection />
-      <HomeEventsHub />
-      <CoreOptions />
-      <LatestListings />
-      <MyApplications />
-      <HomeGuestInfo />
-    </main>
+    <div className="flex-1">
+      {boats.length > 0 ? <CaptainHome /> : <CrewHome />}
+    </div>
   )
 }

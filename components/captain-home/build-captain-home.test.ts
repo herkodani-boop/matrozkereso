@@ -61,7 +61,7 @@ describe("buildCaptainHome", () => {
     expect(home.events[0].attendance).toEqual({ confirmed: 2, declined: 1, unanswered: 2, total: 5 })
     expect(home.events[0].confirmedPeople.map((person) => person.name)).toEqual(["Dani", "Anna"])
     expect(home.crewCount).toBe(2)
-    expect(home.boat.imageUrl).toBe("/big.jpg")
+    expect(home.boat.imageUrl).toBe("/small.jpg")
   })
 
   it("flags a race where fewer than half of the boat's places are confirmed", () => {

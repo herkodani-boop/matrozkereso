@@ -1,305 +1,278 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import Image from "next/image"
-import { CalendarDays, MapPin, Anchor, X, Mail, Phone } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
+import { useCallback, useEffect, useState } from "react"
+import { Mail, Phone } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { supabase } from "@/lib/supabase"
 import { isAdVisibleByDate } from "@/lib/ad-visibility"
+import { crewRoleLabel } from "@/lib/crew-roles"
 
-type ApplicationRow = {
+export type MyApplication = {
   id: string
   status: "pending" | "accepted" | "rejected"
+  createdAt: string
+  title: string
+  // A hirdetést a kapitány visszavonta vagy lezárta; a jelentkezés ettől még látszik.
+  adClosed: "deleted" | "closed" | null
+  boatName: string
+  location: string
+  dateText: string
+  startDate: string | null
+  endDate: string | null
+  roles: string[]
+  contact: { name: string | null; email: string | null; phone: string | null } | null
+}
+
+type BoatEmbed = { name: string | null }
+type AdEmbed = {
+  title: string | null
+  location: string | null
+  date_text: string | null
+  is_active: boolean
+  is_deleted: boolean
+  positions: unknown[] | null
+  commitment: string | null
+  start_date: string | null
+  end_date: string | null
+  boat: BoatEmbed | BoatEmbed[] | null
+}
+type ApplicationQueryRow = {
+  id: string
+  status: string
+  created_at: string
   captain_contact_shared_at: string | null
   captain_contact_name: string | null
   captain_contact_email: string | null
   captain_contact_phone: string | null
-  ad: {
-    id: string
-    title: string
-    location: string
-    date_text: string
-    is_active: boolean
-    is_deleted: boolean
-    commitment?: string | null
-    start_date?: string | null
-    end_date?: string | null
-    boat: {
-      name: string
-      image_url: string | null
-    } | null
-  } | null
+  ad: AdEmbed | AdEmbed[] | null
 }
 
-type ApplicationBoat = NonNullable<NonNullable<ApplicationRow["ad"]>["boat"]>
-type ApplicationAd = NonNullable<ApplicationRow["ad"]>
-type ApplicationQueryRow = Omit<ApplicationRow, "ad"> & {
-  ad: (Omit<ApplicationAd, "boat"> & {
-    boat: ApplicationBoat | ApplicationBoat[] | null
-  }) | (Omit<ApplicationAd, "boat"> & {
-    boat: ApplicationBoat | ApplicationBoat[] | null
-  })[] | null
+const HIDDEN_KEY = "matrozkereso:hidden-applications"
+
+// Az elrejtett elutasítások csak ennek a böngészőnek a kényelmét szolgálják, ezért elég a localStorage.
+function readHiddenIds(): string[] {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(HIDDEN_KEY) ?? "[]") as unknown
+    return Array.isArray(parsed) ? parsed.map(String) : []
+  } catch {
+    return []
+  }
 }
 
-const statusConfig = {
-  pending: {
-    label: "Elbírálás alatt",
-    className: "bg-secondary text-secondary-foreground",
-  },
-  accepted: {
-    label: "Elfogadva",
-    className: "bg-emerald-600 text-white",
-  },
-  rejected: {
-    label: "Elutasítva",
-    className: "bg-secondary text-muted-foreground",
-  },
+function writeHiddenIds(ids: string[]) {
+  try {
+    window.localStorage.setItem(HIDDEN_KEY, JSON.stringify(ids.slice(-100)))
+  } catch {
+    // Privát ablakban a tárolás tilthatja; ilyenkor csak erre a megtekintésre rejtjük el.
+  }
 }
 
-const MAX_SHOWN = 3
+function toApplication(row: ApplicationQueryRow): MyApplication | null {
+  const ad = Array.isArray(row.ad) ? row.ad[0] ?? null : row.ad
+  if (!ad) return null
+  const boat = Array.isArray(ad.boat) ? ad.boat[0] ?? null : ad.boat
+  const status = row.status === "accepted" || row.status === "rejected" ? row.status : "pending"
+  return {
+    id: String(row.id),
+    status,
+    createdAt: row.created_at,
+    title: ad.title || "Hirdetés",
+    adClosed: ad.is_deleted ? "deleted" : ad.is_active === false ? "closed" : null,
+    boatName: boat?.name || "Hajó",
+    location: ad.location || "",
+    dateText: ad.date_text || "",
+    startDate: ad.start_date,
+    endDate: ad.end_date,
+    roles: (ad.positions ?? []).map((position) => crewRoleLabel(position)),
+    contact: row.captain_contact_shared_at
+      ? { name: row.captain_contact_name, email: row.captain_contact_email, phone: row.captain_contact_phone }
+      : null,
+  }
+}
 
-export function MyApplications() {
+// A saját jelentkezések: a lejárt alkalmakra szólók és az elrejtett elutasítások nélkül.
+export function useMyApplications() {
   const { user } = useAuth()
-  const [applications, setApplications] = useState<ApplicationRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [cancelingId, setCancelingId] = useState<string | null>(null)
-  const [fetchError, setFetchError] = useState<string | null>(null)
+  const userId = user?.id ?? null
+  const [state, setState] = useState<{ status: "loading" | "ready" | "error"; applications: MyApplication[] }>({
+    status: "loading",
+    applications: [],
+  })
+  const [hiddenIds, setHiddenIds] = useState<string[]>([])
 
   useEffect(() => {
-    if (!user) {
-      setApplications([])
-      setLoading(false)
-      return
-    }
+    if (!userId) return
+    let active = true
 
-    const fetchApplications = async () => {
-      setLoading(true)
-      setFetchError(null)
-
-      const { data, error } = await supabase
-        .from("applications")
-        .select("id, status, captain_contact_shared_at, captain_contact_name, captain_contact_email, captain_contact_phone, ad:ads!inner(id, title, location, date_text, is_active, is_deleted, commitment, start_date, end_date, boat:boats(name, image_url))")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(20)
-
-      if (error) {
-        console.error("Jelentkezések lekérdezési hiba:", error)
-        setFetchError("A jelentkezések betöltése most nem sikerült.")
-        setLoading(false)
-        return
-      }
-
-      const normalizedApplications = ((data ?? []) as unknown as ApplicationQueryRow[]).map((row) => {
-        const relatedAd = Array.isArray(row.ad) ? row.ad[0] ?? null : row.ad
-        const relatedBoat = relatedAd
-          ? Array.isArray(relatedAd.boat)
-            ? relatedAd.boat[0] ?? null
-            : relatedAd.boat
-          : null
-
-        return {
-          ...row,
-          ad: relatedAd ? { ...relatedAd, boat: relatedBoat } : null,
-        } satisfies ApplicationRow
+    supabase
+      .from("applications")
+      .select("id, status, created_at, captain_contact_shared_at, captain_contact_name, captain_contact_email, captain_contact_phone, ad:ads!inner(title, location, date_text, is_active, is_deleted, positions, commitment, start_date, end_date, boat:boats(name))")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(20)
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          console.error("Jelentkezések lekérdezési hiba:", error)
+          setState({ status: "error", applications: [] })
+          return
+        }
+        const rows = ((data ?? []) as unknown as ApplicationQueryRow[])
+          .map((row) => {
+            const ad = Array.isArray(row.ad) ? row.ad[0] : row.ad
+            return ad && isAdVisibleByDate(ad) ? toApplication(row) : null
+          })
+          .filter((row): row is MyApplication => row !== null)
+        // Az elrejtett azonosítókat a betöltéssel együtt olvassuk, így szerveroldalon nem nyúlunk a localStorage-hoz.
+        setHiddenIds(readHiddenIds())
+        setState({ status: "ready", applications: rows })
       })
 
-      const visibleApplications = normalizedApplications
-        .filter((row) => (row.ad ? !row.ad.is_active || isAdVisibleByDate(row.ad) : false))
-        .slice(0, MAX_SHOWN)
-
-      setApplications(visibleApplications)
-      setLoading(false)
+    return () => {
+      active = false
     }
+  }, [userId])
 
-    void fetchApplications()
-  }, [user])
-
-  async function cancelApplication(applicationId: string) {
-    setFetchError(null)
-    setCancelingId(applicationId)
-
+  const cancel = useCallback(async (applicationId: string) => {
     const { error } = await supabase.from("applications").delete().eq("id", applicationId)
-
     if (error) {
       console.error("Visszavonási hiba:", error)
-      setFetchError("A jelentkezés visszavonása nem sikerült.")
-      setCancelingId(null)
-      return
+      throw new Error("A jelentkezés visszavonása nem sikerült.")
     }
+    setState((previous) => ({ ...previous, applications: previous.applications.filter((row) => row.id !== applicationId) }))
+  }, [])
 
-    setApplications((prev) => prev.filter((a) => a.id !== applicationId))
-    setCancelingId(null)
+  const hide = useCallback((applicationId: string) => {
+    setHiddenIds((previous) => {
+      const next = [...previous, applicationId]
+      writeHiddenIds(next)
+      return next
+    })
+  }, [])
+
+  return {
+    status: userId ? state.status : "ready",
+    applications: userId ? state.applications.filter((row) => !hiddenIds.includes(row.id)) : [],
+    cancel,
+    hide,
   }
+}
 
-  if (!user) {
-    return null
+const dayMonthFormat = new Intl.DateTimeFormat("hu-HU", { month: "long", day: "numeric" })
+
+function formatDay(dateKey: string) {
+  return dayMonthFormat.format(new Date(`${dateKey}T12:00:00`))
+}
+
+export function applicationMeta(application: MyApplication) {
+  return [application.boatName, application.dateText, application.location, ...application.roles].filter(Boolean).join(" · ")
+}
+
+const statusChip = {
+  pending: { label: "Elbírálás alatt", className: "bg-secondary text-muted-foreground" },
+  accepted: { label: "Elfogadva erre az alkalomra", className: "bg-success-soft text-success-ink" },
+  rejected: { label: "Most nem jött össze", className: "bg-secondary text-muted-foreground" },
+}
+
+const quietButton =
+  "inline-flex h-10 shrink-0 items-center justify-center rounded-lg px-3.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-60"
+
+export function ApplicationStatusChip({ status }: { status: MyApplication["status"] }) {
+  const chip = statusChip[status]
+  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${chip.className}`}>{chip.label}</span>
+}
+
+// Elfogadott jelentkezés: egy mondat arról, mire szól, és ha a kapitány megosztotta, az elérhetősége.
+export function AcceptedApplicationDetails({ application }: { application: MyApplication }) {
+  const contact = application.contact
+  if (!contact) {
+    return <p className="mt-2.5 text-sm text-muted-foreground">A kapitány a profilodban megadott elérhetőségeden keres a részletekkel.</p>
   }
+  return (
+    <>
+      <p className="mt-2.5 text-sm text-muted-foreground">A kapitány erre az alkalomra vesz fel. Vedd fel vele a kapcsolatot a részletekért:</p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg bg-secondary px-3.5 py-2.5 text-sm">
+        {contact.name ? <span className="font-semibold">{contact.name}</span> : null}
+        {contact.phone ? (
+          <a href={`tel:${contact.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 hover:text-brand-ink">
+            <Phone className="h-3.5 w-3.5 text-brand-ink" aria-hidden="true" />
+            {contact.phone}
+          </a>
+        ) : null}
+        {contact.email ? (
+          <a href={`mailto:${contact.email}`} className="inline-flex items-center gap-1.5 hover:text-brand-ink">
+            <Mail className="h-3.5 w-3.5 text-brand-ink" aria-hidden="true" />
+            {contact.email}
+          </a>
+        ) : null}
+      </div>
+      <p className="mt-2.5 text-[13px] text-muted-foreground">
+        Ez nem csapattagság: ha a kapitány később a csapatába hív, arról külön meghívót kapsz.
+      </p>
+    </>
+  )
+}
 
-  if (loading) {
-    return (
-      <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-        <div className="mb-6">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="mt-2 h-4 w-96" />
-        </div>
-        <div className="flex flex-col gap-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="rounded-2xl border border-border bg-card p-4">
-              <div className="flex items-center gap-4">
-                <Skeleton className="h-16 w-16 rounded-xl" />
-                <div className="flex-1">
-                  <Skeleton className="h-5 w-2/3" />
-                  <Skeleton className="mt-2 h-3.5 w-full" />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    )
-  }
+// Egy jelentkezés egy sorban: állapot, legfeljebb egy teendő (visszavonás vagy elrejtés).
+export function ApplicationItem({
+  application,
+  onCancel,
+  onHide,
+}: {
+  application: MyApplication
+  onCancel: (id: string) => Promise<void>
+  onHide: (id: string) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const rejected = application.status === "rejected"
 
-  if (applications.length === 0) {
-    return null
+  async function cancel() {
+    setBusy(true)
+    setError(null)
+    try {
+      await onCancel(application.id)
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : "A jelentkezés visszavonása nem sikerült.")
+      setBusy(false)
+    }
   }
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-      <div className="mb-6">
-        <div>
-          <h2 className="text-balance text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            Legutóbbi jelentkezéseim
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Az általad beküldött legutóbbi {MAX_SHOWN} jelentkezés állapota.
+    <li className="flex flex-wrap items-start gap-x-4 gap-y-3 border-b border-border/70 px-5 py-4 last:border-b-0">
+      <div className="min-w-0 flex-[999_1_280px]">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className={`font-semibold ${rejected ? "text-muted-foreground" : ""}`}>{application.title}</p>
+          <ApplicationStatusChip status={application.status} />
+          {application.adClosed ? (
+            <span className="text-xs text-muted-foreground">
+              {application.adClosed === "deleted" ? "A hirdetést visszavonták" : "A hirdetés lezárult"}
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-0.5 text-sm text-muted-foreground">{applicationMeta(application)}</p>
+        {application.status === "pending" ? (
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            Elküldve {formatDay(application.createdAt.slice(0, 10))}. Ha a kapitány dönt, e-mailt kapsz.
           </p>
-        </div>
+        ) : null}
+        {application.status === "accepted" ? <AcceptedApplicationDetails application={application} /> : null}
+        {error ? <p role="alert" className="mt-1.5 text-sm text-destructive">{error}</p> : null}
       </div>
-
-      {fetchError ? (
-        <div className="mb-4 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {fetchError}
-        </div>
+      {application.status === "pending" ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void cancel()}
+          className={`${quietButton} border border-border bg-card text-foreground hover:bg-secondary`}
+        >
+          {busy ? "Visszavonás..." : "Visszavonom"}
+        </button>
+      ) : rejected ? (
+        <button type="button" onClick={() => onHide(application.id)} className={`${quietButton} text-muted-foreground hover:bg-secondary`}>
+          Elrejtés
+        </button>
       ) : null}
-
-      <div className="flex flex-col gap-3">
-        {applications.map((application) => {
-          const ad = application.ad
-          const boat = ad?.boat
-          const config = statusConfig[application.status] ?? statusConfig.pending
-          const isCanceling = cancelingId === application.id
-
-          return (
-            <div
-              key={application.id}
-              className={`flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 transition-opacity sm:flex-row sm:items-center sm:gap-6 ${
-                application.status === "rejected" ? "opacity-60" : ""
-              }`}
-            >
-              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl">
-                <Image
-                  src={boat?.image_url ?? "/placeholder.svg"}
-                  alt={boat?.name ?? "Hajó"}
-                  fill
-                  className="object-cover"
-                  sizes="64px"
-                />
-              </div>
-
-              <div className="flex flex-1 flex-col gap-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-semibold text-foreground truncate">{ad?.title ?? "Ismeretlen hirdetés"}</h3>
-                  <Badge className={`shrink-0 border-0 ${config.className}`}>{config.label}</Badge>
-                  {ad?.is_deleted ? (
-                    <Badge className="shrink-0 border-0 bg-muted text-muted-foreground">Hirdetés visszavonva</Badge>
-                  ) : ad?.is_active === false ? (
-                    <Badge className="shrink-0 border-0 bg-muted text-muted-foreground">Hirdetés lezárva</Badge>
-                  ) : null}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  {boat?.name && (
-                    <span className="flex items-center gap-1.5">
-                      <Anchor className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-                      {boat.name}
-                    </span>
-                  )}
-                  {ad?.location && (
-                    <span className="flex items-center gap-1.5">
-                      <MapPin className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-                      {ad.location}
-                    </span>
-                  )}
-                  {ad?.date_text && (
-                    <span className="flex items-center gap-1.5">
-                      <CalendarDays className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-                      {ad.date_text}
-                    </span>
-                  )}
-                </div>
-
-                {application.status === "accepted" ? (
-                  <div role="status" className="mt-2 flex flex-col gap-2">
-                    <p className="text-sm font-medium text-emerald-800">
-                      A kapitány elfogadta a jelentkezésed, és várhatóan a megadott elérhetőségeden keresni fog.
-                    </p>
-                    <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950">
-                      Ez még nem végleges részvételi visszaigazolás. A részleteket egyeztessétek közvetlenül.
-                    </p>
-                  </div>
-                ) : null}
-
-                {application.captain_contact_shared_at ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm">
-                    <span className="basis-full text-xs font-semibold text-emerald-800">
-                      A kapitány megosztotta az elérhetőségeit
-                    </span>
-                    {application.captain_contact_name ? (
-                      <span className="font-medium text-foreground">{application.captain_contact_name}</span>
-                    ) : null}
-                    {application.captain_contact_phone ? (
-                      <a
-                        href={`tel:${application.captain_contact_phone.replace(/\s/g, "")}`}
-                        className="flex items-center gap-1.5 text-foreground hover:text-emerald-700"
-                      >
-                        <Phone className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
-                        {application.captain_contact_phone}
-                      </a>
-                    ) : null}
-                    {application.captain_contact_email ? (
-                      <a
-                        href={`mailto:${application.captain_contact_email}`}
-                        className="flex items-center gap-1.5 text-foreground hover:text-emerald-700"
-                      >
-                        <Mail className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />
-                        {application.captain_contact_email}
-                      </a>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-
-              {application.status === "pending" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={isCanceling}
-                  onClick={() => void cancelApplication(application.id)}
-                  className="shrink-0 h-9 text-muted-foreground hover:text-destructive hover:border-destructive/50"
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  {isCanceling ? "Visszavonás..." : "Visszavon"}
-                </Button>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-    </section>
+    </li>
   )
 }

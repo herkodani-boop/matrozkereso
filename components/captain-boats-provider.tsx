@@ -54,7 +54,8 @@ export function CaptainBoatsProvider({ children }: { children: ReactNode }) {
       const boats = (boatsResult.data ?? []).map((boat) => ({
         id: boat.id as string,
         name: (boat.name as string) || "Névtelen hajó",
-        imageUrl: (boat.original_image_url as string | null) ?? (boat.image_url as string | null) ?? null,
+        // A kapitány által beállított kivágás az image_url; az eredeti kép csak tartalék.
+        imageUrl: (boat.image_url as string | null) ?? (boat.original_image_url as string | null) ?? null,
       }))
       const fullName = (profile.data?.full_name as string | undefined)?.trim() ?? ""
       // Magyar névsorrendben a keresztnév az utolsó tag.

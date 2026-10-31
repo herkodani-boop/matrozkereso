@@ -4,8 +4,8 @@ import { escapeHtml, getAppBaseUrl } from "@/lib/email-html"
 export type MessageGroup = "confirmed" | "unanswered" | "declined"
 
 export const MAX_MESSAGE_LENGTH = 2000
-// Egy üzenet legfeljebb ennyi címzettnek mehet ki; ennél nagyobb csapat itt nem várható.
-export const MAX_MESSAGE_RECIPIENTS = 60
+// Egy levél legfeljebb ennyi címzettnek mehet ki (a Resend korlátja); ennél nagyobb csapat itt nem várható.
+export const MAX_MESSAGE_RECIPIENTS = 50
 
 // A címzettek ugyanabból a körből jönnek, mint a kezdőlap részvételi számai: a csapattagok
 // (aktív és meghívott) és az esemény többi résztvevője. A kapitány maga sosem címzett.
@@ -46,7 +46,8 @@ type EventMessage = {
   message: string
 }
 
-// Címzettenként külön levél, így senki nem látja a többiek címét; a válasz a kapitányhoz megy.
+// Egyetlen levél: a csapat a címzett, a kapitány másolatban. Így a „Válasz mindenkinek” valódi
+// levelezési láncot indít a csapat és a kapitány között; a Reply-To miatt a válasz nem a mi címünkre megy.
 export async function sendEventMessage(content: EventMessage) {
   const apiKey = process.env.RESEND_API_KEY
   const senderEmail = process.env.RESEND_FROM_EMAIL?.trim()
@@ -59,10 +60,12 @@ export async function sendEventMessage(content: EventMessage) {
   const subject = `${content.boatName}: ${content.eventTitle} – üzenet a kapitánytól`
   const messageHtml = escapeHtml(content.message)
   const ctaUrl = `${getAppBaseUrl()}/`
+  const replyHint = "A „Válasz mindenkinek” gombbal a kapitány és a csapat is megkapja a válaszodat."
 
-  const emails = content.recipients.map((recipient) => ({
+  const { data, error } = await new Resend(apiKey).emails.send({
     from: `${content.captainName} (${senderName}) <${senderEmail}>`,
-    to: [recipient.email],
+    to: content.recipients.map((recipient) => recipient.email),
+    cc: [content.captainEmail],
     replyTo: content.captainEmail,
     subject,
     html: `
@@ -71,17 +74,15 @@ export async function sendEventMessage(content: EventMessage) {
           <img src="${logoImageUrl}" alt="Matrózkereső" width="48" height="48" style="display: block; width: 48px; height: 48px; margin: 0 0 18px; border-radius: 10px;" />
           <p style="margin: 0; color: #475569; font-size: 14px;">${escapeHtml(content.boatName)} · ${escapeHtml(content.eventTitle)} · ${escapeHtml(content.eventDate)}</p>
           <h1 style="margin: 6px 0 18px; font-size: 22px; line-height: 1.3;">Üzenet ${escapeHtml(content.captainName)} kapitánytól</h1>
-          <p style="margin: 0;">Kedves ${escapeHtml(recipient.name)}!</p>
+          <p style="margin: 0;">Sziasztok!</p>
           <div style="margin: 14px 0 0; padding: 14px 16px; border-left: 3px solid #0e3f57; background: #f8fafc; white-space: pre-line;">${messageHtml}</div>
-          <p style="margin: 18px 0 0; color: #475569; font-size: 14px;">Ha válaszolsz erre a levélre, a válaszod közvetlenül a kapitányhoz érkezik.</p>
+          <p style="margin: 18px 0 0; color: #475569; font-size: 14px;">${replyHint}</p>
           <p style="margin: 18px 0 0;"><a href="${escapeHtml(ctaUrl)}" style="display: inline-block; padding: 10px 16px; border-radius: 6px; background: #0e3f57; color: #ffffff; font-weight: 700; text-decoration: none;">Megnyitom a Matrózkeresőt</a></p>
         </div>
       </div>
     `,
-    text: `${content.boatName} · ${content.eventTitle} · ${content.eventDate}\n\nKedves ${recipient.name}!\n\n${content.message}\n\nHa válaszolsz erre a levélre, a válaszod közvetlenül a kapitányhoz érkezik.\n\n${ctaUrl}`,
-  }))
-
-  const { data, error } = await new Resend(apiKey).batch.send(emails)
-  if (error) throw new Error(error.message)
-  return data?.data?.length ?? emails.length
+    text: `${content.boatName} · ${content.eventTitle} · ${content.eventDate}\n\nSziasztok!\n\n${content.message}\n\n${replyHint}\n\n${ctaUrl}`,
+  })
+  if (error || !data) throw new Error(error?.message ?? "Ismeretlen küldési hiba.")
+  return content.recipients.length
 }

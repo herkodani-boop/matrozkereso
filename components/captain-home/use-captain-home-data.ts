@@ -138,7 +138,8 @@ async function loadCaptainHome(boatId: string, captainId: string): Promise<Capta
       .eq("is_active", true)
       .eq("is_deleted", false),
     supabase.from("boat_events").select("id", { count: "exact", head: true }).eq("boat_id", boatId),
-    supabase.from("ads").select("id", { count: "exact", head: true }).eq("boat_id", boatId),
+    // A visszavont hirdetés nem számít: különben a lépés kész lenne, miközben nincs hirdetés.
+    supabase.from("ads").select("id", { count: "exact", head: true }).eq("boat_id", boatId).eq("is_deleted", false),
   ])
 
   const firstError = boatResult.error ?? teamResult.error ?? eventsResult.error ?? adsResult.error ?? anyEventResult.error ?? anyListingResult.error
@@ -418,7 +419,8 @@ export function buildCaptainHome(raw: RawCaptainHome, captainId: string, now = D
     boat: {
       id: String(boat.id),
       name: (boat.name as string) || "Névtelen hajó",
-      imageUrl: (boat.original_image_url as string | null) ?? (boat.image_url as string | null) ?? null,
+      // A kapitány által beállított kivágás (image_url) jelenjen meg; az eredeti kép csak tartalék.
+      imageUrl: (boat.image_url as string | null) ?? (boat.original_image_url as string | null) ?? null,
       type: (boat.type as string) || "",
       harbor: (boat.harbor as string) || "",
       maxCrew: typeof boat.max_crew_size === "number" && boat.max_crew_size > 0 ? boat.max_crew_size : null,

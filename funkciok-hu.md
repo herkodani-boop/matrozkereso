@@ -10,11 +10,31 @@ Ez az oldal egy magyar nagyhajós vitorlázó közösséghez készült crew-matc
 
 ## Nyitóoldal
 
-- Erős hero szekcióval mutatja be a szolgáltatást.
-- Két fő útvonalat kínál:
-  - hajóm van, és legénységet keresek
-  - hajóra szeretnék kerülni
-- Közvetlen navigációt ad a böngészéshez és a kapitányi felülethez.
+A kezdőlap három változatban jelenik meg:
+
+- **Vendégnek** (bejelentkezés nélkül):
+  - hős rész két úttal: „Szabad helyek böngészése” és „Legénységet keresek”;
+  - a szabad helyek és hajók aktuális száma;
+  - friss hirdetések;
+  - „Hogyan működik?” matróz- és kapitánylépésekkel;
+  - regisztrációs felhívás.
+- **Matróznak** (bejelentkezett, saját hajó nélkül): ez egyben a „Vitorlázásaim” nézet.
+  - Új felhasználónál: kezdő lépések, az „Így jutsz fel egy hajóra” magyarázat, kezdőbarát szabad helyek szerepszűrővel.
+  - Függő csapatmeghívónál: a meghívó a köszöntés helyére kerül „Elfogadom” és „Most nem” gombbal.
+  - A következő vitorlázás kártyája:
+    - időjárás és a kapitány megjegyzése;
+    - kik jönnek;
+    - „Mégsem tudok menni” gomb.
+  - „Válaszra vár”, amire mész, a csapataid és a jelentkezéseid.
+  - Több csapatnál hónapokra bontott lista, hajónkénti színjelöléssel.
+- **Kapitánynak** (akinek hajója van): a saját hajó zónája, és ha máshol is legénység, a „Más hajókon” kivonat.
+- **Hiányos profil:** ha hiányzik a név, a telefonszám vagy a tapasztalat, egy figyelmeztető sáv jelenik meg a kezdőlap tetején.
+
+## Vitorlázásaim
+
+- Külön menüpont annak a kapitánynak, aki más hajón is csapattag vagy résztvevő.
+- A számláló mutatja, hány esemény vár válaszra.
+- Ugyanazt a teljes legénység-nézetet mutatja, mint a matróz kezdőlapja.
 
 ## Felhasználói szerepek
 
@@ -58,16 +78,19 @@ Ez az oldal egy magyar nagyhajós vitorlázó közösséghez készült crew-matc
 - Bejelentkezés nélkül auth modal nyílik meg.
 - Saját jelentkezés visszavonása.
 
-## Legutóbbi jelentkezések
+## Jelentkezések állapota
 
-- A bejelentkezett felhasználó legutóbbi jelentkezéseit mutatja.
-- Megjeleníti a hirdetés címét, a hajó nevét, a helyszínt, a dátumot és az állapotot.
-- A függőben lévő jelentkezések visszavonhatók.
+- Elbírálás alatt: a jelentkezés visszavonható.
+- Elfogadva erre az alkalomra:
+  - a „Megyek” listában jelenik meg, a kapitány megosztott elérhetőségével;
+  - ez nem csapattagság.
+- Elutasítva („Most nem jött össze”): elrejthető; ezt csak az adott böngésző jegyzi meg.
 
 ## Nyitott hirdetések a főoldalon
 
 - A legfrissebb aktív hirdetésekből válogat.
-- Kártyákon mutatja a hajó képét és a fő információkat.
+- Kihagyja a saját, a már megpályázott és a saját csapatok hajóinak hirdetéseit.
+- Kártyákon mutatja a hajó képét, a helyek számát, a kezdőbarát jelölést és a keresett szerepeket.
 - Gyors ugrópontot ad a böngészés oldalra.
 
 ## Kapitányi vezérlőpult

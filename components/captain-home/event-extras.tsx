@@ -12,7 +12,7 @@ import { daysUntil, type HomeEvent } from "./use-captain-home-data"
 const FORECAST_DAYS = 7
 
 // Az előrejelzés az esemény előtti héten jelenik meg; a lekérés a saját szerverünkön át, gyorsítótárral megy.
-export function EventWeatherPanel({ event, harbor }: { event: HomeEvent; harbor: string }) {
+export function EventWeatherPanel({ event, harbor }: { event: Pick<HomeEvent, "startDate" | "location">; harbor: string }) {
   const days = daysUntil(event.startDate)
   // Helyszín nélkül is kérünk: a szerver a hajó kikötőjére, végső esetben Balatonfüredre kér előrejelzést.
   const inRange = days >= 0 && days <= FORECAST_DAYS
@@ -166,7 +166,7 @@ function EventMessageDialog({ event, dateLabel, onClose }: { event: HomeEvent; d
         {sentCount !== null ? (
           <div className="flex flex-col gap-4 px-5 py-6">
             <p className="text-base font-semibold text-foreground">Elküldve {sentCount} főnek.</p>
-            <p className="text-sm text-muted-foreground">Ha valaki válaszol, a válasz a te e-mail címedre érkezik.</p>
+            <p className="text-sm text-muted-foreground">Te másolatban kaptad meg; a válaszok ebben a levelezési láncban érkeznek.</p>
             <Button type="button" className="h-11 self-end bg-brand px-5 text-white hover:bg-brand/90" onClick={onClose}>
               Rendben
             </Button>
@@ -220,7 +220,7 @@ function EventMessageDialog({ event, dateLabel, onClose }: { event: HomeEvent; d
                   className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-[15px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 />
                 <p className="text-[13px] text-muted-foreground">
-                  E-mailben megy ki. Ha valaki válaszol, a válasz a te e-mail címedre érkezik. A címzettek egymás címét nem látják.
+                  Egy közös e-mail megy ki, te másolatban kapod. A címzettek látják egymás címét, és a válaszokkal levelezési lánc indul.
                 </p>
               </div>
               {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}

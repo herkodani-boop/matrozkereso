@@ -4,7 +4,11 @@ import { CaptainHome } from "./captain-home"
 import type { CaptainHomeData, HomeEvent } from "./use-captain-home-data"
 
 // A vi.mock a fájl elejére emelkedik; az adatot vi.hoisted-del tesszük elérhetővé neki.
-const mockState = vi.hoisted(() => ({ data: null as CaptainHomeData | null }))
+const mockState = vi.hoisted(() => ({
+  data: null as CaptainHomeData | null,
+  going: [] as { id: string; title: string; boatName: string; startDate: string }[],
+  awaiting: [] as { id: string }[],
+}))
 
 vi.mock("@/lib/supabase", () => ({ supabase: {} }))
 vi.mock("@/components/auth-provider", () => ({
@@ -13,8 +17,12 @@ vi.mock("@/components/auth-provider", () => ({
 vi.mock("@/components/captain-boats-provider", () => ({
   useCaptainBoats: () => ({ status: "ready", firstName: "Dani", boats: [{ id: "boat-1", name: "Sirocco", imageUrl: "https://example.com/sirocco.jpg" }], ownerId: "captain" }),
 }))
-vi.mock("./captain-other-listings", () => ({ CaptainOtherListings: () => null }))
-vi.mock("@/components/home-events-hub", () => ({ HomeEventsHub: () => null }))
+vi.mock("@/components/crew/open-listings", () => ({ OpenListings: () => null }))
+vi.mock("@/components/crew/crew-data", () => ({ useProfileGaps: () => null }))
+vi.mock("@/components/crew/crew-overview", () => ({
+  CrewOverview: () => null,
+  useCrewOverviewData: () => ({ going: mockState.going, awaiting: mockState.awaiting, loading: false, empty: true }),
+}))
 vi.mock("./event-extras", () => ({ EventWeatherPanel: () => null, EventMessageButton: () => null }))
 
 vi.mock("./use-captain-home-data", async (importOriginal) => ({
@@ -85,6 +93,8 @@ function busyBoat(): CaptainHomeData {
 describe("CaptainHome", () => {
   beforeEach(() => {
     mockState.data = busyBoat()
+    mockState.going = []
+    mockState.awaiting = []
   })
 
   it("greets the captain and summarizes todos and the next event", () => {
@@ -142,7 +152,7 @@ describe("CaptainHome", () => {
   it("shows the boat photo only once, on the boat card", () => {
     const { container } = render(<CaptainHome />)
 
-    expect(container.querySelector("section[aria-labelledby=\"captain-greeting\"] img")?.getAttribute("src")).toContain("hero-sailing")
+    expect(container.querySelector("section[aria-labelledby=\"captain-greeting\"] img")?.getAttribute("src")).toContain("hero-balaton")
   })
 
   it("offers a listing for the next event only while the boat is not full", () => {
@@ -180,6 +190,27 @@ describe("CaptainHome", () => {
     expect(screen.getByText("1 / 4 kész")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Meghívás" })).toHaveAttribute("href", "/kapitany-dashboard?meghivas=uj")
     expect(screen.queryByRole("heading", { name: /Teendők/ })).not.toBeInTheDocument()
+  })
+
+  it("offers each action once while the getting-started steps are open", () => {
+    mockState.data = {
+      ...busyBoat(),
+      crewCount: 0, events: [], listings: [], todos: [], totalPending: 0, upcomingCount: 0,
+      onboarding: { invitedCrew: false, createdEvent: false, createdListing: false },
+    }
+    mockState.going = [{ id: "sz", title: "Hajószerelés", boatName: "Nemere", startDate: inDays(1) }]
+    mockState.awaiting = [{ id: "a" }, { id: "b" }, { id: "c" }]
+    render(<CaptainHome />)
+
+    // Csak a lépéssor kínálja: nincs gyorsgomb a köszöntésben és üres esemény- vagy hirdetéskártya.
+    expect(screen.getAllByRole("link", { name: /Új esemény/ })).toHaveLength(1)
+    expect(screen.getAllByRole("link", { name: /Hirdetés feladása/ })).toHaveLength(1)
+    expect(screen.queryByText("Még nincs közelgő eseményed")).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Hirdetéseid" })).not.toBeInTheDocument()
+    expect(screen.getByText(/Még nincs csapattag, esemény és hirdetés/)).toBeInTheDocument()
+    expect(
+      screen.getByText("A hajód kész, már csak a csapat hiányzik. Holnap: Hajószerelés (Nemere). 3 esemény vár a válaszodra."),
+    ).toBeInTheDocument()
   })
 
   it("handles a quiet boat without events, listings or todos", () => {

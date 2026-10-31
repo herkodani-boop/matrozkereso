@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AuthGateModal } from "@/components/auth-gate-modal"
 import { NotificationsMenu } from "@/components/notifications-menu"
+import { useCrewData } from "@/components/crew/crew-data"
 import { supabase } from "@/lib/supabase"
 import { clearHungarianValidationMessage, setHungarianValidationMessage } from "@/lib/hungarian-form-validation"
 
@@ -18,7 +19,7 @@ type UserProfile = {
   avatar_url: string | null
 }
 
-type NavLink = { href: string; label: string }
+type NavLink = { href: string; label: string; badge?: number }
 
 function getInitials(fullName: string) {
   return fullName
@@ -50,6 +51,16 @@ function ProfileAvatar({ profile, className }: { profile: UserProfile; className
   )
 }
 
+function NavBadge({ count }: { count?: number }) {
+  if (!count) return null
+  return (
+    <span className="min-w-[18px] rounded-full bg-brand-orange px-1.5 text-center text-[11px] font-bold leading-[18px] text-brand-orange-foreground">
+      {count}
+      <span className="sr-only"> válaszra vár</span>
+    </span>
+  )
+}
+
 export function SiteNavbar() {
   const router = useRouter()
   const pathname = usePathname()
@@ -77,21 +88,16 @@ export function SiteNavbar() {
     (process.env.NEXT_PUBLIC_VERCEL_ENV === "preview" || process.env.NEXT_PUBLIC_TEST_MODE === "true")
 
   const isCaptain = Boolean(boat?.name)
+  // A kapitány máshol legénység-oldala külön menüpontot kap; matróznál ez maga a kezdőlap.
+  const crew = useCrewData(isCaptain ? userId : null, pathname)
+  const sailsElsewhere = isCaptain && crew.status === "ready" && (crew.teams.length > 0 || crew.events.length > 0)
+  const awaitingCount = crew.events.filter((event) => event.answer === "open").length
   const navLinks: NavLink[] = [
     { href: "/", label: "Kezdőlap" },
-    { href: "/bongeszes", label: "Szabad helyek" },
     ...(isCaptain ? [{ href: "/kapitany-dashboard", label: "Hajóm" }] : []),
+    ...(sailsElsewhere ? [{ href: "/vitorlazasaim", label: "Vitorlázásaim", badge: awaitingCount }] : []),
+    { href: "/bongeszes", label: "Szabad helyek" },
   ]
-
-  async function fetchBoatSummary(userId: string) {
-    const { data: ownBoat } = await supabase
-      .from("boats")
-      .select("id, name")
-      .eq("user_id", userId)
-      .maybeSingle()
-
-    setBoatState(ownBoat?.id ? { userId, id: String(ownBoat.id), name: ownBoat.name ?? "Hajó" } : { userId, id: null, name: null })
-  }
 
   async function signOut() {
     setMenuOpen(false)
@@ -188,7 +194,6 @@ export function SiteNavbar() {
       }
 
       setProfileState({ userId, profile: data })
-      void fetchBoatSummary(userId)
     }
 
     void fetchProfile()
@@ -202,6 +207,31 @@ export function SiteNavbar() {
       window.removeEventListener("profile-updated", handleProfileUpdated)
     }
   }, [userId])
+
+  // A fejléc oldalváltáskor nem töltődik újra: hajófelvétel után is frissüljön a "Hajóm" menüpont és a csengő.
+  useEffect(() => {
+    if (!userId) return
+    let active = true
+    // Több hajónál a maybeSingle hibát adna; a kezdőlaphoz hasonlóan a legelsőt vesszük.
+    supabase
+      .from("boats")
+      .select("id, name")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          console.error("Hajó lekérdezési hiba a fejlécben:", error)
+          return
+        }
+        const ownBoat = data?.[0]
+        setBoatState(ownBoat?.id ? { userId, id: String(ownBoat.id), name: ownBoat.name ?? "Hajó" } : { userId, id: null, name: null })
+      })
+    return () => {
+      active = false
+    }
+  }, [userId, pathname])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -243,11 +273,12 @@ export function SiteNavbar() {
                   key={link.href}
                   href={link.href}
                   aria-current={active ? "page" : undefined}
-                  className={`flex items-center border-b-[3px] px-3.5 pt-[3px] text-[15px] font-semibold transition-colors ${
+                  className={`flex items-center gap-1.5 border-b-[3px] px-3.5 pt-[3px] text-[15px] font-semibold transition-colors ${
                     active ? "border-brand text-brand-ink" : "border-transparent text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {link.label}
+                  <NavBadge count={link.badge} />
                 </Link>
               )
             })}
@@ -371,11 +402,12 @@ export function SiteNavbar() {
                 key={link.href}
                 href={link.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex h-11 min-w-0 flex-1 items-center justify-center border-b-[3px] pt-[3px] text-[15px] font-semibold ${
+                className={`flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 border-b-[3px] pt-[3px] text-[15px] font-semibold ${
                   active ? "border-brand text-brand-ink" : "border-transparent text-muted-foreground"
                 }`}
               >
-                {link.label}
+                <span className="truncate">{link.label}</span>
+                <NavBadge count={link.badge} />
               </Link>
             )
           })}

@@ -7,8 +7,10 @@ import { CalendarDays, Check, ChevronDown, ChevronUp, Mail, Plus, UserCheck, Use
 import { useAuth } from "@/components/auth-provider"
 import { useCaptainBoats } from "@/components/captain-boats-provider"
 import { Skeleton } from "@/components/ui/skeleton"
-import { HomeEventsHub } from "@/components/home-events-hub"
-import { CaptainOtherListings } from "./captain-other-listings"
+import { CrewOverview, useCrewOverviewData, type CrewOverviewData } from "@/components/crew/crew-overview"
+import { useProfileGaps } from "@/components/crew/crew-data"
+import { ProfileBanner } from "@/components/crew/crew-ui"
+import { OpenListings } from "@/components/crew/open-listings"
 import { EventMessageButton, EventWeatherPanel } from "./event-extras"
 import {
   daysUntil,
@@ -84,58 +86,87 @@ export function CaptainHome() {
   const { user } = useAuth()
   const { boats, firstName } = useCaptainBoats()
   const { status, data, retry } = useCaptainHomeData(boats[0]?.id ?? null, user?.id ?? null)
+  const otherBoats = useCrewOverviewData(user?.id ?? null)
+  const gaps = useProfileGaps(user?.id ?? null)
   const capacity = data?.boat.maxCrew ?? null
+  const onboarding = data ? !isOnboardingDone(data.onboarding) : false
 
   return (
     <div className="bg-secondary/60">
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 sm:gap-7 sm:px-6 sm:py-8">
-        <Greeting firstName={firstName} data={data} />
+      <main className="mx-auto flex max-w-6xl flex-col gap-7 px-4 py-6 sm:gap-8 sm:px-6 sm:py-8">
+        <ProfileBanner gaps={gaps} />
+        <Greeting firstName={firstName} data={data} otherBoats={otherBoats} />
 
-        {status === "error" ? (
-          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-card p-5 text-sm text-destructive">
-            A kezdőlap adatait nem sikerült betölteni.
-            <button type="button" onClick={retry} className={secondaryButton}>
-              Újrapróbálás
-            </button>
-          </div>
-        ) : status === "loading" || !data ? (
-          <HomeSkeleton />
-        ) : (
-          <>
-            <GettingStarted onboarding={data.onboarding} />
-            {/* Új hajónál a lépéssor mutatja az irányt; üres teendőlistát ilyenkor nem teszünk mellé. */}
-            {data.todos.length > 0 || isOnboardingDone(data.onboarding) ? <Todos todos={data.todos} /> : null}
-            <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="flex min-w-0 flex-col gap-4">
-                <NextEvent event={data.events[0] ?? null} upcomingCount={data.upcomingCount} capacity={capacity} harbor={data.boat.harbor} />
-                <LaterEvents events={data.events.slice(1)} upcomingCount={data.upcomingCount} capacity={capacity} />
-              </div>
-              <aside aria-label="Hajóm és hirdetéseim" className="flex min-w-0 flex-col gap-4">
-                <BoatCard data={data} />
-                <MyListings listings={data.listings} />
-              </aside>
+        <section aria-labelledby="captain-zone-boat" className="flex flex-col gap-3.5">
+          <h2 id="captain-zone-boat" className="text-xl font-bold tracking-tight">A hajóm</h2>
+          {status === "error" ? (
+            <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-card p-5 text-sm text-destructive">
+              A kezdőlap adatait nem sikerült betölteni.
+              <button type="button" onClick={retry} className={secondaryButton}>
+                Újrapróbálás
+              </button>
             </div>
-          </>
-        )}
+          ) : status === "loading" || !data ? (
+            <HomeSkeleton />
+          ) : (
+            <>
+              {/* Új hajónál a lépéssor mutatja az irányt; üres teendőlistát ilyenkor nem teszünk mellé. */}
+              {data.todos.length > 0 || !onboarding ? <Todos todos={data.todos} /> : null}
+              <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="flex min-w-0 flex-col gap-4">
+                  {onboarding ? <GettingStarted onboarding={data.onboarding} /> : null}
+                  {/* A kezdő lépések már kínálják az új eseményt: üres eseménykártya ilyenkor nem kell. */}
+                  {data.events[0] || !onboarding ? (
+                    <NextEvent event={data.events[0] ?? null} upcomingCount={data.upcomingCount} capacity={capacity} harbor={data.boat.harbor} />
+                  ) : null}
+                  <LaterEvents events={data.events.slice(1)} upcomingCount={data.upcomingCount} capacity={capacity} />
+                </div>
+                <aside aria-label="Hajóm és hirdetéseim" className="flex min-w-0 flex-col gap-4">
+                  <BoatCard data={data} onboarding={onboarding} />
+                  {data.listings.length > 0 || !onboarding ? <MyListings listings={data.listings} /> : null}
+                </aside>
+              </div>
+            </>
+          )}
+        </section>
 
-        {/* Ha a kapitány más hajón is csapattag, ott elérhető eseményei; üresen nem jelenik meg. */}
-        <HomeEventsHub otherBoatsOnly />
-        <CaptainOtherListings />
+        {/* Ha a kapitány más hajón is csapattag vagy jelentkezett valahova; a teljes nézet a Vitorlázásaim oldalon. */}
+        {otherBoats.loading || otherBoats.empty ? null : (
+          <section aria-labelledby="captain-other-boats" className="flex flex-col gap-3.5">
+            <div>
+              <h2 id="captain-other-boats" className="text-xl font-bold tracking-tight">Más hajókon</h2>
+              <p className="text-sm text-muted-foreground">Ahol csapattag vagy, vagy ahova jelentkeztél.</p>
+            </div>
+            <CrewOverview data={otherBoats} userId={user?.id ?? null} mode="summary" />
+          </section>
+        )}
+        <OpenListings title="Más hajók keresnek legénységet" subtitle="Olyan hirdetések, amelyekre még nem jelentkeztél." />
       </main>
     </div>
   )
 }
 
-function Greeting({ firstName, data }: { firstName: string | null; data: CaptainHomeData | null }) {
+function relativeDayPhrase(dateKey: string) {
+  const days = daysUntil(dateKey)
+  if (days <= 0) return "Ma"
+  if (days === 1) return "Holnap"
+  if (days < 7) return capitalize(weekdayFormat.format(toDate(dateKey)))
+  return `${days} nap múlva`
+}
+
+function Greeting({ firstName, data, otherBoats }: { firstName: string | null; data: CaptainHomeData | null; otherBoats: Pick<CrewOverviewData, "going" | "awaiting"> }) {
   const todayKey = getTodayKey()
   const dateLine = `${capitalize(weekdayFormat.format(toDate(todayKey)))}, ${formatLongDate(todayKey)}`
+  const onboarding = data ? !isOnboardingDone(data.onboarding) : false
 
   let summary: string | null = null
   if (data) {
     const count = data.todos.length
     const todoPart = count > 0
       ? `${count} teendőd van${data.totalPending > 0 && count > 1 ? `, köztük ${data.totalPending} új jelentkező` : ""}.`
-      : "Minden rendben, most nincs teendőd."
+      : onboarding && !data.onboarding.invitedCrew
+        ? "A hajód kész, már csak a csapat hiányzik."
+        : "Minden rendben, most nincs teendőd."
     const next = data.events[0]
     const days = next ? daysUntil(next.startDate) : null
     const eventPart = !next || days === null
@@ -145,19 +176,24 @@ function Greeting({ firstName, data }: { firstName: string | null; data: Captain
         : days === 1
           ? ` Holnap: ${next.title}.`
           : ` A következő esemény ${days} nap múlva: ${next.title}.`
-    summary = todoPart + eventPart
+    // Saját esemény hiányában a más hajón következő vitorlázás kerül az összefoglalóba.
+    const otherNext = otherBoats.going[0]
+    const otherPart = !next && otherNext ? ` ${relativeDayPhrase(otherNext.startDate)}: ${otherNext.title} (${otherNext.boatName}).` : ""
+    const awaitingCount = otherBoats.awaiting.length
+    const awaitingPart = awaitingCount > 0 ? ` ${awaitingCount} esemény vár a válaszodra.` : ""
+    summary = todoPart + eventPart + otherPart + awaitingPart
   }
 
   return (
     <section aria-labelledby="captain-greeting" className="relative overflow-hidden rounded-2xl text-white">
-      {/* Általános vitorlás kép: a saját hajó fotója a hajó-kártyán szerepel, itt nem ismételjük. */}
+      {/* Közös balatoni versenykép: a saját hajó fotója a hajó-kártyán szerepel, itt nem ismételjük. */}
       <Image
-        src="/hero-sailing.png"
+        src="/hero-balaton.jpg"
         alt=""
         fill
         priority
         sizes="(max-width: 1200px) 100vw, 1152px"
-        className="object-cover object-[center_38%]"
+        className="object-cover object-[28%_82%] sm:object-[center_80%]"
       />
       {/* Sötét réteg a fotón, hogy a fehér szöveg olvasható maradjon. */}
       <div className="relative flex min-h-[200px] flex-wrap items-end justify-between gap-5 bg-[rgba(10,47,66,0.76)] p-6 sm:p-8">
@@ -172,6 +208,8 @@ function Greeting({ firstName, data }: { firstName: string | null; data: Captain
             <Skeleton className="mt-3 h-4 w-72 bg-white/20" />
           )}
         </div>
+        {/* A kezdő lépések alatt a lépések adják a gombokat; itt nem ismételjük őket. */}
+        {data && !onboarding ? (
         <div className="flex flex-wrap gap-2.5">
           <Link
             href="/kapitany-dashboard?esemeny=uj"
@@ -188,6 +226,7 @@ function Greeting({ firstName, data }: { firstName: string | null; data: Captain
             Hirdetés feladása
           </Link>
         </div>
+        ) : null}
       </div>
     </section>
   )
@@ -199,8 +238,6 @@ function isOnboardingDone(onboarding: CaptainHomeData["onboarding"]) {
 
 // Új hajónál a három üres állapot helyett egy rövid, sorrendbe tett útmutató; ha minden lépés kész, eltűnik.
 function GettingStarted({ onboarding }: { onboarding: CaptainHomeData["onboarding"] }) {
-  if (isOnboardingDone(onboarding)) return null
-
   const steps = [
     { done: true, title: "Hajó felvéve", text: "A hajód adatai rendben vannak.", href: null, action: null },
     { done: onboarding.invitedCrew, title: "Hívd meg a csapatodat", text: "E-mailben küldhetsz meghívót a meglévő legénységednek.", href: "/kapitany-dashboard?meghivas=uj", action: "Meghívás" },
@@ -562,18 +599,20 @@ function LaterEvents({ events, upcomingCount, capacity }: { events: HomeEvent[];
   )
 }
 
-function BoatCard({ data }: { data: CaptainHomeData }) {
+function BoatCard({ data, onboarding }: { data: CaptainHomeData; onboarding: boolean }) {
   const stats = [
     { value: data.crewCount, label: "csapattag" },
     { value: data.upcomingCount, label: "esemény" },
     { value: data.listings.length, label: "hirdetés" },
   ]
+  // Csupa nulla nem mond semmit: ilyenkor egy mondat áll a számok helyén.
+  const empty = stats.every((stat) => stat.value === 0)
 
   return (
     <section aria-labelledby="captain-boat" className="group relative overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-brand/40">
-      <div className="relative h-[170px] bg-brand">
+      <div className="relative h-[150px] bg-brand">
         {data.boat.imageUrl ? (
-          <Image src={data.boat.imageUrl} alt={`A ${data.boat.name} vitorlás`} fill sizes="360px" className="object-cover object-[center_60%]" />
+          <Image src={data.boat.imageUrl} alt={`A ${data.boat.name} vitorlás`} fill sizes="360px" className="object-cover" />
         ) : null}
       </div>
       <div className="px-5 pb-5 pt-4">
@@ -584,14 +623,20 @@ function BoatCard({ data }: { data: CaptainHomeData }) {
           </Link>
         </h2>
         <p className="text-sm text-muted-foreground">{[data.boat.type, data.boat.harbor].filter(Boolean).join(" · ")}</p>
-        <ul className="mt-3.5 grid grid-cols-3 gap-2">
-          {stats.map((stat) => (
-            <li key={stat.label} className="rounded-lg bg-secondary px-3 py-2.5">
-              <span className="block text-xl font-bold">{stat.value}</span>
-              <span className="block text-[13px] text-muted-foreground">{stat.label}</span>
-            </li>
-          ))}
-        </ul>
+        {empty ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            Még nincs csapattag, esemény és hirdetés.{onboarding ? " A kezdő lépések végigvisznek rajta." : ""}
+          </p>
+        ) : (
+          <ul className="mt-3.5 grid grid-cols-3 gap-2">
+            {stats.map((stat) => (
+              <li key={stat.label} className="rounded-lg bg-secondary px-3 py-2.5">
+                <span className="block text-xl font-bold">{stat.value}</span>
+                <span className="block text-[13px] text-muted-foreground">{stat.label}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </section>
   )
