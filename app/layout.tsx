@@ -11,10 +11,29 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 })
 
+const siteDescription =
+  'Nagyhajós vitorlázás: szervezd a csapatodat, kövesd, ki jön a következő versenyre, vagy találj szabad helyet egy hajón. Kezdőként is.'
+
 export const metadata: Metadata = {
-  title: 'Matrózkereső — Crew-matching vitorlázóknak',
-  description:
-    'A magyar nagyhajós vitorlázó közösség crew-matching és versenynaptár platformja. Találd meg a csapatod, vagy töltsd fel a hajód!',
+  // A megosztási kép abszolút címéhez kell; a getAppBaseUrl-lel azonos alapértelmezéssel.
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL && !/localhost|127\.0\.0\.1/i.test(process.env.NEXT_PUBLIC_APP_URL) ? process.env.NEXT_PUBLIC_APP_URL : 'https://www.matrozkereso.com'),
+  title: 'Matrózkereső – Találd meg a csapatod',
+  description: siteDescription,
+  // Facebook, Messenger, WhatsApp és társaik előnézete: a balatoni fotó a címmel.
+  openGraph: {
+    type: 'website',
+    locale: 'hu_HU',
+    siteName: 'Matrózkereső',
+    title: 'Matrózkereső – Találd meg a csapatod',
+    description: siteDescription,
+    images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: 'Vitorlás versenyhajók a Balatonon, Tihany előtt' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Matrózkereső – Találd meg a csapatod',
+    description: siteDescription,
+    images: ['/og-image.jpg'],
+  },
   icons: {
     icon: [
       {
