@@ -11,6 +11,7 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 })
 
+const shareTitle = 'Matrózkereső – vitorlás csapatok és szabad helyek a Balatonon'
 const siteDescription =
   'Nagyhajós vitorlázás: szervezd a csapatodat, kövesd, ki jön a következő versenyre, vagy találj szabad helyet egy hajón. Kezdőként is.'
 
@@ -24,16 +25,17 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'hu_HU',
     siteName: 'Matrózkereső',
-    title: 'Matrózkereső – Találd meg a csapatod',
+    // A kép már mondja a "Találd meg a csapatod"-ot; a link címe kiegészíti, nem ismétli.
+    title: shareTitle,
     description: siteDescription,
     // A ?v= a Facebook képgyorsítótára miatt: a kép cseréjekor növelni kell.
-    images: [{ url: '/og-image.jpg?v=2', width: 1200, height: 630, alt: 'Vitorlás versenyhajók a Balatonon, Tihany előtt' }],
+    images: [{ url: '/og-image.jpg?v=3', width: 1200, height: 630, alt: 'Vitorlás versenyhajók a Balatonon, Tihany előtt' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Matrózkereső – Találd meg a csapatod',
+    title: shareTitle,
     description: siteDescription,
-    images: ['/og-image.jpg?v=2'],
+    images: ['/og-image.jpg?v=3'],
   },
   // A ?v= a böngészők favicon-gyorsítótára miatt: a logó cseréjekor növelni kell.
   icons: {
