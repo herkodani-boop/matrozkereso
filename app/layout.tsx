@@ -26,30 +26,28 @@ export const metadata: Metadata = {
     siteName: 'Matrózkereső',
     title: 'Matrózkereső – Találd meg a csapatod',
     description: siteDescription,
-    images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: 'Vitorlás versenyhajók a Balatonon, Tihany előtt' }],
+    // A ?v= a Facebook képgyorsítótára miatt: a kép cseréjekor növelni kell.
+    images: [{ url: '/og-image.jpg?v=2', width: 1200, height: 630, alt: 'Vitorlás versenyhajók a Balatonon, Tihany előtt' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Matrózkereső – Találd meg a csapatod',
     description: siteDescription,
-    images: ['/og-image.jpg'],
+    images: ['/og-image.jpg?v=2'],
   },
+  // A ?v= a böngészők favicon-gyorsítótára miatt: a logó cseréjekor növelni kell.
   icons: {
     icon: [
       {
-        url: '/logo-mark.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/logo-mark.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/logo-mark.svg',
+        url: '/logo-mark.svg?v=2',
         type: 'image/svg+xml',
       },
+      {
+        url: '/logo-mark.png?v=2',
+        type: 'image/png',
+      },
     ],
-    apple: '/logo-mark.png',
+    apple: '/logo-mark.png?v=2',
   },
 }
 
